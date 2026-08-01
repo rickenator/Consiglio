@@ -1,8 +1,13 @@
 #include "panelmanager.h"
+#include "sessionlist.h"
+#include "eventtimeline.h"
+#include "filebrowser.h"
+#include "discussionpanel.h"
+#include "secretsmanager.h"
+#include "mobilepairing.h"
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QLabel>
-#include <QCoreApplication>
 
 PanelManager::PanelManager(QStackedWidget *stack, QObject *parent)
     : QObject(parent), m_stack(stack)
@@ -16,16 +21,20 @@ void PanelManager::createPanels(QWidget *mainWindow) {
     m_stack->addWidget(createWelcomePanel());
 
     // Sessions panel
-    m_stack->addWidget(createSessionsPanel());
+    m_sessionsPanel = new SessionList(mainWindow);
+    m_stack->addWidget(m_sessionsPanel);
 
     // Timeline panel
-    m_stack->addWidget(createTimelinePanel());
+    m_timelinePanel = new EventTimeline(mainWindow);
+    m_stack->addWidget(m_timelinePanel);
 
     // Files panel
-    m_stack->addWidget(createFilesPanel());
+    m_filesPanel = new FileBrowser(mainWindow);
+    m_stack->addWidget(m_filesPanel);
 
     // Discussions panel
-    m_stack->addWidget(createDiscussionsPanel());
+    m_discussionsPanel = new DiscussionPanel(mainWindow);
+    m_stack->addWidget(m_discussionsPanel);
 
     // Secrets panel
     m_stack->addWidget(createSecretsPanel());
@@ -51,92 +60,12 @@ QWidget *PanelManager::createWelcomePanel() {
     return widget;
 }
 
-QWidget *PanelManager::createSessionsPanel() {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-
-    auto *label = new QLabel("Sessions Panel", widget);
-    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #f0f6fc;");
-    layout->addWidget(label);
-
-    auto *info = new QLabel("Active and past agent sessions will appear here.", widget);
-    info->setStyleSheet("color: #8b949e;");
-    layout->addWidget(info);
-
-    return widget;
-}
-
-QWidget *PanelManager::createTimelinePanel() {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-
-    auto *label = new QLabel("Event Timeline", widget);
-    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #f0f6fc;");
-    layout->addWidget(label);
-
-    auto *info = new QLabel("Real-time event stream from the active agent session.", widget);
-    info->setStyleSheet("color: #8b949e;");
-    layout->addWidget(info);
-
-    return widget;
-}
-
-QWidget *PanelManager::createFilesPanel() {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-
-    auto *label = new QLabel("File Browser", widget);
-    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #f0f6fc;");
-    layout->addWidget(label);
-
-    auto *info = new QLabel("Browse and manage files in the agent's working directory.", widget);
-    info->setStyleSheet("color: #8b949e;");
-    layout->addWidget(info);
-
-    return widget;
-}
-
-QWidget *PanelManager::createDiscussionsPanel() {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-
-    auto *label = new QLabel("Discussions", widget);
-    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #f0f6fc;");
-    layout->addWidget(label);
-
-    auto *info = new QLabel("Threaded discussions and notes.", widget);
-    info->setStyleSheet("color: #8b949e;");
-    layout->addWidget(info);
-
-    return widget;
-}
-
 QWidget *PanelManager::createSecretsPanel() {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-
-    auto *label = new QLabel("Secrets Manager", widget);
-    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #f0f6fc;");
-    layout->addWidget(label);
-
-    auto *info = new QLabel("Manage API keys and credentials securely.", widget);
-    info->setStyleSheet("color: #8b949e;");
-    layout->addWidget(info);
-
+    auto *widget = new SecretsManager;
     return widget;
 }
 
 QWidget *PanelManager::createMobilePanel() {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-
-    auto *label = new QLabel("Mobile Pairing", widget);
-    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #f0f6fc;");
-    layout->addWidget(label);
-
-    auto *info = new QLabel("Pair mobile devices for remote control.", widget);
-    info->setStyleSheet("color: #8b949e;");
-    layout->addWidget(info);
-
+    auto *widget = new MobilePairing;
     return widget;
 }

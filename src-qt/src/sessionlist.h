@@ -1,7 +1,29 @@
 #pragma once
 #include <QWidget>
-class SESSIONLIST : public QWidget {
+#include <QTreeView>
+#include <QVBoxLayout>
+#include <QPushButton>
+#include <QLabel>
+#include "models/sessionmodel.h"
+
+class SessionList : public QWidget {
     Q_OBJECT
 public:
-    explicit SESSIONLIST(QWidget *parent = nullptr);
+    explicit SessionList(QWidget *parent = nullptr);
+
+signals:
+    void sessionSelected(const QString &sessionId);
+    void sessionStopped(const QString &sessionId);
+
+public slots:
+    void setSessions(const QList<SessionRecord> &sessions);
+    void onSessionDoubleClicked(const QModelIndex &index);
+    void onStopSession();
+
+private:
+    void setupUI();
+    SessionModel *m_model = nullptr;
+    QTreeView *m_treeView = nullptr;
+    QPushButton *m_stopBtn = nullptr;
+    QLabel *m_emptyLabel = nullptr;
 };
