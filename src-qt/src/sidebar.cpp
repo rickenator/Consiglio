@@ -19,7 +19,7 @@ void Sidebar::setupUI() {
             background: #1a1a1a;
             border: none;
             color: #c9d1d9;
-            font-size: 13px;
+            font-size: 14px;
             outline: none;
         }
         QListWidget::item {

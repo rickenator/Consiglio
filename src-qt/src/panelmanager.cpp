@@ -49,11 +49,11 @@ QWidget *PanelManager::createWelcomePanel() {
     layout->setAlignment(Qt::AlignCenter);
 
     auto *title = new QLabel("Welcome to Consiglio", widget);
-    title->setStyleSheet("font-size: 28px; font-weight: bold; color: #f0f6fc;");
+    title->setStyleSheet("font-size: 32px; font-weight: bold; color: #f0f6fc;");
     layout->addWidget(title, 0, Qt::AlignCenter);
 
     auto *subtitle = new QLabel("A native C++ desktop control plane for AI agents.\nSelect a panel from the sidebar to get started.", widget);
-    subtitle->setStyleSheet("font-size: 14px; color: #8b949e; text-align: center;");
+    subtitle->setStyleSheet("font-size: 16px; color: #8b949e; text-align: center;");
     subtitle->setWordWrap(true);
     layout->addWidget(subtitle, 0, Qt::AlignCenter);
 

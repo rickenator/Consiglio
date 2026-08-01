@@ -14,7 +14,7 @@ void FileBrowser::setupUI() {
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Files"), this);
-    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     mainLayout->addLayout(headerLayout);

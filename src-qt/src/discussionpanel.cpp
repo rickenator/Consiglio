@@ -13,7 +13,7 @@ void DiscussionPanel::setupUI() {
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Discussions"), this);
-    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     mainLayout->addLayout(headerLayout);
@@ -74,7 +74,7 @@ void DiscussionPanel::setupUI() {
     // Empty state label
     m_emptyLabel = new QLabel(tr("No messages yet. Start a discussion."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 13px; padding: 20px;");
+    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 14px; padding: 20px;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections

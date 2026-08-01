@@ -32,10 +32,15 @@ static void setDarkPalette(QApplication *app) {
 
     app->setPalette(dark);
     app->setStyleSheet(R"(
+        * {
+            font-size: 14px;
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+        }
         QMenuBar {
             background: #161b22;
             color: #c9d1d9;
             border-bottom: 1px solid #30363d;
+            font-size: 14px;
         }
         QMenuBar::item:selected {
             background: #30363d;
@@ -44,6 +49,7 @@ static void setDarkPalette(QApplication *app) {
             background: #161b22;
             color: #c9d1d9;
             border: 1px solid #30363d;
+            font-size: 14px;
         }
         QMenu::item:selected {
             background: #30363d;
@@ -52,8 +58,9 @@ static void setDarkPalette(QApplication *app) {
             background: #21262d;
             color: #c9d1d9;
             border: 1px solid #30363d;
-            border-radius: 4px;
-            padding: 6px 12px;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
         }
         QPushButton:hover {
             background: #30363d;
@@ -63,8 +70,9 @@ static void setDarkPalette(QApplication *app) {
             background: #0d1117;
             color: #c9d1d9;
             border: 1px solid #30363d;
-            border-radius: 4px;
-            padding: 6px 8px;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 14px;
         }
         QLineEdit:focus {
             border-color: #58a6ff;
@@ -73,8 +81,9 @@ static void setDarkPalette(QApplication *app) {
             background: #0d1117;
             color: #c9d1d9;
             border: 1px solid #30363d;
-            border-radius: 4px;
+            border-radius: 6px;
             padding: 4px;
+            font-size: 14px;
         }
         QTreeView::item:hover {
             background: rgba(88, 166, 255, 0.08);
@@ -84,15 +93,16 @@ static void setDarkPalette(QApplication *app) {
         }
         QTabWidget::pane {
             border: 1px solid #30363d;
-            border-radius: 4px;
+            border-radius: 6px;
             background: #0d1117;
         }
         QTabBar::tab {
             background: #161b22;
             color: #8b949e;
-            padding: 8px 16px;
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
+            padding: 10px 20px;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            font-size: 14px;
         }
         QTabBar::tab:selected {
             background: #0d1117;
@@ -103,34 +113,38 @@ static void setDarkPalette(QApplication *app) {
         }
         QLabel {
             color: #c9d1d9;
+            font-size: 14px;
         }
         QTextEdit {
             background: #0d1117;
             color: #c9d1d9;
             border: 1px solid #30363d;
-            border-radius: 4px;
+            border-radius: 6px;
+            font-size: 14px;
         }
         QStatusBar {
             background: #161b22;
             color: #8b949e;
             border-top: 1px solid #30363d;
+            font-size: 13px;
         }
         QComboBox {
             background: #0d1117;
             color: #c9d1d9;
             border: 1px solid #30363d;
-            border-radius: 4px;
-            padding: 4px 8px;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 14px;
         }
         QScrollBar:vertical {
             background: #0d1117;
-            width: 10px;
-            border-radius: 5px;
+            width: 12px;
+            border-radius: 6px;
         }
         QScrollBar::handle:vertical {
             background: #30363d;
-            border-radius: 4px;
-            min-height: 20px;
+            border-radius: 5px;
+            min-height: 30px;
         }
         QScrollBar::handle:vertical:hover {
             background: #484f58;
@@ -152,7 +166,8 @@ int main(int argc, char *argv[]) {
     app.setStyle(QStyleFactory::create("Fusion"));
     setDarkPalette(&app);
 
-    QFont font("Segoe UI", 10);
+    // Larger base font — 14pt for readability
+    QFont font("Segoe UI", 14);
     font.setStyleHint(QFont::SansSerif);
     app.setFont(font);
 

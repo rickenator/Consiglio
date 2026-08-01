@@ -82,7 +82,7 @@ SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetect
             auto *name = new QLabel(a.name, lanPage);
             name->setStyleSheet("font-weight: bold;");
             auto *status = new QLabel(a.diagnostic, lanPage);
-            status->setStyleSheet("color: #8b949e; font-size: 11px;");
+            status->setStyleSheet("color: #8b949e; font-size: 13px;");
             row->addWidget(name);
             row->addStretch();
             row->addWidget(status);

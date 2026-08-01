@@ -14,7 +14,7 @@ void SessionList::setupUI() {
     // Header with title and stop button
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Sessions"), this);
-    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
 
@@ -64,7 +64,7 @@ void SessionList::setupUI() {
     // Empty state label
     m_emptyLabel = new QLabel(tr("No sessions yet. Start a session to see it here."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 13px; padding: 20px;");
+    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 14px; padding: 20px;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections

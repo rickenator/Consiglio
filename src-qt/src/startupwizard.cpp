@@ -90,7 +90,7 @@ StartupWizard::StartupWizard(AgentDetector *agentDetector, AppSettings *settings
                 item->setData(Qt::UserRole, a.diagnostic);
 
                 auto *detailLabel = new QLabel(a.diagnostic, agentList);
-                detailLabel->setStyleSheet("color: #8b949e; font-size: 11px;");
+                detailLabel->setStyleSheet("color: #8b949e; font-size: 13px;");
                 agentList->setItemWidget(item, detailLabel);
             }
 

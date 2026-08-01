@@ -15,7 +15,7 @@ void EventTimeline::setupUI() {
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Timeline"), this);
-    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
 
@@ -43,7 +43,7 @@ void EventTimeline::setupUI() {
             border-radius: 6px;
             padding: 8px;
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
-            font-size: 12px;
+            font-size: 14px;
         }
     )");
 
@@ -83,7 +83,7 @@ void EventTimeline::setupUI() {
     // Empty state label
     m_emptyLabel = new QLabel(tr("No events yet. Start a session to see activity here."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 13px; padding: 20px;");
+    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 14px; padding: 20px;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections
@@ -128,7 +128,7 @@ void EventTimeline::appendEvent(const EventModel::EventItem &event) {
                        .arg(event.content).arg(ts);
             break;
         case EventModel::CommandOutput:
-            html = QString("<pre style='background: #161b22; padding: 8px; border-radius: 4px; margin: 4px 0; color: #c9d1d9; font-size: 11px;'>%1</pre><span style='color: #484f58;'>%2</span>")
+            html = QString("<pre style='background: #161b22; padding: 8px; border-radius: 4px; margin: 4px 0; color: #c9d1d9; font-size: 14px;'>%1</pre><span style='color: #484f58;'>%2</span>")
                        .arg(event.content).arg(ts);
             break;
         case EventModel::Error:
