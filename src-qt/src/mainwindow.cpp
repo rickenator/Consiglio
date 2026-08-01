@@ -26,8 +26,8 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle("Consiglio");
-    setMinimumSize(900, 600);
-    resize(1200, 750);
+    setMinimumSize(1280, 800);
+    resize(1440, 900);
 
     setupUI();
     loadSettings();

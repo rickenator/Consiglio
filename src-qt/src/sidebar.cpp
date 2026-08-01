@@ -13,7 +13,7 @@ Sidebar::Sidebar(QWidget *parent)
 }
 
 void Sidebar::setupUI() {
-    setFixedWidth(220);
+    setFixedWidth(240);
     setStyleSheet(R"(
         QListWidget {
             background: #1a1a1a;
