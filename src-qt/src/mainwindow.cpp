@@ -1,6 +1,8 @@
 #include "mainwindow.h"
 #include "sidebar.h"
 #include "panelmanager.h"
+#include "sessionlist.h"
+#include "eventtimeline.h"
 #include "startupwizard.h"
 #include "settingsdialog.h"
 #include "approvaldialog.h"
@@ -16,6 +18,9 @@
 #include <QIcon>
 #include <QApplication>
 #include <QStyle>
+#include <QFileDialog>
+#include <QDateTime>
+#include <QSettings>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -29,7 +34,15 @@ MainWindow::MainWindow(QWidget *parent)
     showStartupWizardIfNeeded();
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    // Save window state
+    ::QSettings s;
+    s.setValue("windowGeometry", saveGeometry());
+    s.setValue("windowState", saveState());
+    s.setValue("lastPanelIndex", m_lastPanelIndex);
+
+    m_sessionManager.stopAllSessions();
+}
 
 Settings &MainWindow::settings() { return m_settings; }
 AgentDetector &MainWindow::agentDetector() { return m_agentDetector; }
@@ -51,9 +64,34 @@ void MainWindow::setupUI() {
 
     // Panel manager creates all panels
     m_panelManager = new PanelManager(m_content, this);
-    connect(m_sidebar, &Sidebar::panelChanged, m_content, [this](Sidebar::PanelId id) { m_content->setCurrentIndex(static_cast<int>(id)); });
+    m_panelManager->createPanels(this);
+
+    // Sidebar navigation
+    connect(m_sidebar, &Sidebar::panelChanged, m_content, [this](Sidebar::PanelId id) {
+        m_content->setCurrentIndex(static_cast<int>(id));
+        m_lastPanelIndex = static_cast<int>(id);
+    });
     connect(m_sidebar, &Sidebar::newSessionRequested, this, &MainWindow::onNewSession);
     connect(m_sidebar, &Sidebar::settingsRequested, this, &MainWindow::onSettings);
+
+    // ─── Backend → Frontend wiring ──────────────────────────────────────
+    // SessionManager signals → panel updates
+    connect(&m_sessionManager, &SessionManager::sessionStarted,
+            this, &MainWindow::onSessionStarted);
+    connect(&m_sessionManager, &SessionManager::sessionStopped,
+            this, &MainWindow::onSessionStopped);
+    connect(&m_sessionManager, &SessionManager::sessionError,
+            this, &MainWindow::onSessionError);
+    connect(&m_sessionManager, &SessionManager::outputReceived,
+            this, &MainWindow::onOutputReceived);
+
+    // Panel signals → SessionManager actions
+    connect(m_panelManager->sessionsPanel(), &SessionList::sessionSelected,
+            this, &MainWindow::onSessionSelected);
+    connect(m_panelManager->sessionsPanel(), &SessionList::sessionStopped,
+            this, &MainWindow::onSessionStoppedFromList);
+    connect(m_panelManager->timelinePanel(), &EventTimeline::commandExecuted,
+            this, &MainWindow::onCommandExecuted);
 
     // Approval signals
     connect(&m_approvalRouter, &ApprovalRouter::approvalRequested,
@@ -65,6 +103,21 @@ void MainWindow::setupUI() {
     setupMenuBar();
     setupStatusBar();
     setupTray();
+
+    // Restore window state if available
+    ::QSettings s;
+    auto geom = s.value("windowGeometry");
+    if (!geom.toByteArray().isEmpty()) {
+        restoreGeometry(geom.toByteArray());
+    }
+    auto state = s.value("windowState");
+    if (!state.toByteArray().isEmpty()) {
+        restoreState(state.toByteArray());
+    }
+    int savedPanel = s.value("lastPanelIndex", 0).toInt();
+    if (savedPanel >= 0 && savedPanel < m_content->count()) {
+        m_content->setCurrentIndex(savedPanel);
+    }
 
     // Show welcome panel by default
     m_sidebar->selectPanel(Sidebar::PanelId::Welcome);
@@ -143,7 +196,7 @@ void MainWindow::setupMenuBar() {
         QMessageBox::about(this, tr("About Consiglio"),
             tr("<h2>Consiglio %1</h2>"
                "<p>A native C++ desktop control plane for AI agents.</p>"
-               "<p>Qt6 / C++20</p>")
+               "<p>Qt5 / C++17</p>")
                 .arg(QApplication::applicationVersion()));
     });
     helpMenu->addAction(aboutAction);
@@ -160,7 +213,8 @@ void MainWindow::setupStatusBar() {
     m_approvalBadge->setVisible(false);
     statusBar->addWidget(m_approvalBadge);
 
-    statusBar->addPermanentWidget(new QLabel("Ready", statusBar));
+    m_sessionStatusLabel = new QLabel("Ready", statusBar);
+    statusBar->addPermanentWidget(m_sessionStatusLabel);
 }
 
 void MainWindow::setupTray() {
@@ -197,10 +251,80 @@ void MainWindow::showStartupWizardIfNeeded() {
     }
 }
 
+void MainWindow::refreshSessionList() {
+    auto sessions = m_sessionManager.listSessions();
+    m_panelManager->sessionsPanel()->setSessions(sessions);
+}
+
+void MainWindow::addTimelineEvent(const EventModel::EventItem &event) {
+    m_panelManager->timelinePanel()->addEvent(event);
+}
+
+void MainWindow::updateStatusBarSessionState() {
+    if (m_activeSessionId.isEmpty()) {
+        m_sessionStatusLabel->setText("Ready");
+    } else {
+        auto sessions = m_sessionManager.listSessions();
+        for (const auto &s : sessions) {
+            if (s.id == m_activeSessionId) {
+                if (s.status == "running") {
+                    m_sessionStatusLabel->setText(QString("Running: %1").arg(s.provider));
+                } else if (s.status == "error") {
+                    m_sessionStatusLabel->setText("Error");
+                } else {
+                    m_sessionStatusLabel->setText("Stopped");
+                }
+                return;
+            }
+        }
+        m_sessionStatusLabel->setText("Ready");
+    }
+}
+
 void MainWindow::onNewSession() {
-    // TODO: Show session creation dialog
-    QMessageBox::information(this, tr("New Session"),
-        tr("Session creation will be implemented with provider selection."));
+    // Show file dialog to select repository/workspace directory
+    auto repoDir = QFileDialog::getExistingDirectory(this, tr("Select Workspace Directory"),
+                                                      QDir::homePath(),
+                                                      QFileDialog::ShowDirsOnly);
+    if (repoDir.isEmpty()) {
+        return;
+    }
+
+    // Read provider from settings
+    QString provider = m_settings.value().defaultProvider;
+    if (provider == "default" || provider.isEmpty()) {
+        provider = "ollama";  // fallback
+    }
+
+    // Build options map
+    QVariantMap options;
+    if (provider == "ollama") {
+        options["model"] = m_settings.value().ollama.model;
+    } else if (provider == "llama-cpp") {
+        options["host"] = m_settings.value().remoteLlamaCpp.baseUrl.isEmpty()
+                              ? "127.0.0.1"
+                              : m_settings.value().remoteLlamaCpp.baseUrl;
+        options["model"] = m_settings.value().remoteLlamaCpp.model;
+    }
+
+    // Start the session
+    auto sessionId = m_sessionManager.startSession(provider, repoDir, "", options);
+    m_activeSessionId = sessionId;
+
+    // Switch to timeline panel
+    m_sidebar->selectPanel(Sidebar::PanelId::Timeline);
+
+    // Update UI
+    refreshSessionList();
+    updateStatusBarSessionState();
+
+    // Add system event to timeline
+    EventModel::EventItem evt;
+    evt.type = EventModel::SystemEvent;
+    evt.content = QString("Session started with provider '%1' in %2")
+                      .arg(provider, repoDir);
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
 }
 
 void MainWindow::onSettings() {
@@ -252,4 +376,114 @@ void MainWindow::onPendingApprovalsChanged(int count) {
     } else {
         m_approvalBadge->setVisible(false);
     }
+}
+
+// ─── Wiring slots ──────────────────────────────────────────────────────
+
+void MainWindow::onSessionStarted(const QString &sessionId, const SessionRecord &record) {
+    Q_UNUSED(sessionId);
+    refreshSessionList();
+    updateStatusBarSessionState();
+
+    // If timeline is visible, add a system event
+    if (qobject_cast<EventTimeline *>(m_content->currentWidget()) == m_panelManager->timelinePanel()) {
+        EventModel::EventItem evt;
+        evt.type = EventModel::SystemEvent;
+        evt.content = QString("Session started (%1) — provider: %2")
+                          .arg(sessionId.left(8), record.provider);
+        evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+        addTimelineEvent(evt);
+    }
+}
+
+void MainWindow::onSessionStopped(const QString &sessionId) {
+    if (m_activeSessionId == sessionId) {
+        m_activeSessionId.clear();
+    }
+    refreshSessionList();
+    updateStatusBarSessionState();
+
+    // Add system event to timeline if visible
+    if (qobject_cast<EventTimeline *>(m_content->currentWidget()) == m_panelManager->timelinePanel()) {
+        EventModel::EventItem evt;
+        evt.type = EventModel::SystemEvent;
+        evt.content = QString("Session stopped (%1)").arg(sessionId.left(8));
+        evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+        addTimelineEvent(evt);
+    }
+}
+
+void MainWindow::onSessionError(const QString &sessionId, const QString &error) {
+    if (m_activeSessionId == sessionId) {
+        m_activeSessionId.clear();
+    }
+    refreshSessionList();
+    updateStatusBarSessionState();
+
+    // Add error event to timeline
+    EventModel::EventItem evt;
+    evt.type = EventModel::Error;
+    evt.content = QString("Session error (%1): %2").arg(sessionId.left(8), error);
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
+}
+
+void MainWindow::onOutputReceived(const QString &sessionId, const QString &data) {
+    if (data.isEmpty()) return;
+
+    // Add as command output event to timeline
+    EventModel::EventItem evt;
+    evt.type = EventModel::CommandOutput;
+    evt.content = data.trimmed();
+    evt.sessionId = sessionId;
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
+}
+
+void MainWindow::onSessionSelected(const QString &sessionId) {
+    m_activeSessionId = sessionId;
+    updateStatusBarSessionState();
+
+    // Switch to timeline to show the session activity
+    m_sidebar->selectPanel(Sidebar::PanelId::Timeline);
+
+    EventModel::EventItem evt;
+    evt.type = EventModel::SystemEvent;
+    evt.content = QString("Switched to session %1").arg(sessionId.left(8));
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
+}
+
+void MainWindow::onSessionStoppedFromList(const QString &sessionId) {
+    m_sessionManager.stopSession(sessionId);
+    if (m_activeSessionId == sessionId) {
+        m_activeSessionId.clear();
+    }
+    updateStatusBarSessionState();
+}
+
+void MainWindow::onCommandExecuted(const QString &command, const QString &workingDir) {
+    // Show the command as a user message in the timeline
+    EventModel::EventItem evt;
+    evt.type = EventModel::UserMessage;
+    evt.content = command;
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
+
+    // If we have an active session, send the command to it
+    if (!m_activeSessionId.isEmpty() && m_sessionManager.hasSession(m_activeSessionId)) {
+        sendCommandToActiveSession(command, workingDir);
+    } else {
+        // No active session — show a hint
+        EventModel::EventItem hint;
+        hint.type = EventModel::SystemEvent;
+        hint.content = "No active session. Start a session first (File → New Session).";
+        hint.timestamp = QDateTime::currentMSecsSinceEpoch();
+        addTimelineEvent(hint);
+    }
+}
+
+void MainWindow::sendCommandToActiveSession(const QString &command, const QString &workingDir) {
+    Q_UNUSED(workingDir);
+    m_sessionManager.sendCommand(m_activeSessionId, command);
 }

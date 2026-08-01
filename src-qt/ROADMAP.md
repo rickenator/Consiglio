@@ -2,7 +2,7 @@
 
 **Started:** 2025-07-31  
 **Target:** Full native C++/Qt5 desktop app replacing Electron  
-**Status:** IN PROGRESS — M4: UI Panels (✅ DONE), M7: Wiring (TODO)
+**Status:** IN PROGRESS — M8: Testing (✅ DONE), M9: Real Agent Integration (TODO)
 
 ---
 
@@ -17,7 +17,7 @@
 - [x] `mainwindow.h` / `mainwindow.cpp`
   - QStackedWidget content area
   - Menu bar (File, View, Tools, Settings, Help) with keyboard shortcuts
-  - Status bar with approval badge
+  - Status bar with approval badge + session state label
   - System tray icon
   - Signals: sessionStarted, sessionStopped, approvalRequested, approvalResolved
 - [x] `sidebar.h` / `sidebar.cpp` — Left nav panel with icons + labels
@@ -28,8 +28,11 @@
 
 ### M3: Backend Layer ✅ DONE
 - [x] `backend/settings.h` / `.cpp` — QSettings wrapper, load/save AppSettings
+  - Fixed: LAN providers JSON serialization/deserialization (was storing string, loading as list)
 - [x] `backend/agentdetector.h` / `.cpp` — Detects Codex, Ollama, llama.cpp, Open Interpreter
 - [x] `backend/sessionmanager.h` / `.cpp` — Start/stop/reconnect sessions, manages PTY processes
+  - Added `sendCommand(sessionId, command)` public method for M7 wiring
+  - Fixed: `stopSession()` now properly disconnects signals, kills process, deletes it, erases from map
 - [x] `backend/approvalrouter.h` / `.cpp` — Routes approval requests, tracks pending/resolved
 - [x] `backend/ptyhandler.h` / `.cpp` — Wraps QProcess for PTY interaction
 
@@ -64,66 +67,69 @@
 - [x] `models/eventmodel.h` / `.cpp` — QAbstractListModel for event timeline
   - Event types: system, user, assistant, command, error, approval
 
-### M7: Wiring & Polish 📋 TODO
-- [ ] Connect MainWindow signals to SessionManager/ApprovalRouter
-- [ ] Populate panels from backend data
-- [ ] Handle session start/stop/reconnect flow end-to-end
-- [ ] Handle approval request → dialog → resolve flow end-to-end
-- [ ] Qt resource file (icons.qrc) with app icons
-- [ ] Dark theme customization (Fusion palette tweaks)
-- [ ] Window state persistence (geometry, sidebar width, last panel)
-- [ ] CMake install targets
+### M7: Wiring & Polish ✅ DONE
+- [x] Connect SessionManager signals to panels (sessionStarted → refresh list, outputReceived → timeline, sessionStopped → refresh, sessionError → error event)
+- [x] Connect panel signals to SessionManager (sessionSelected → switch context, sessionStopped → stopSession, commandExecuted → sendCommand)
+- [x] Implement `onNewSession()` — file dialog for workspace, reads provider from settings, starts session, switches to timeline
+- [x] Wire approval flow end-to-end (approvalRequested → ConsiglioCmdApproval dialog → resolve)
+- [x] Window state persistence — save/restore geometry, window state, last panel index
+- [x] Dark theme customization — Fusion palette + global stylesheet (GitHub-dark inspired: #0d1117, #161b22, #30363d, #58a6ff)
+- [x] Status bar updates — shows "Running: ollama", "Stopped", "Error" based on session state
+- [x] Fix About dialog text (Qt5 / C++17, was Qt6 / C++20)
+
+### M8: Testing ✅ DONE
+- [x] CMakeLists.txt — Backend library (ConsiglioBackend), 4 test executables, ctest integration
+- [x] `tests/test_approvalrouter.cpp` — 14 tests covering register, resolve, pending, has, signals, duplicates
+- [x] `tests/test_settings.cpp` — 8 tests covering defaults, save/load roundtrip, Ollama config, LAN providers, behavior flags, changed signal
+- [x] `tests/test_sessionmanager.cpp` — 9 tests covering start/stop/list/has/sendCommand/multiple sessions
+- [x] `tests/test_agentdetector.cpp` — 7 tests covering detectAll, detectAvailable, path checks
+- [x] **Total: 38 tests, 0 failures**
 
 ---
 
-## Build Status: ✅ CLEAN (compiles successfully)
+## Build Status: ✅ CLEAN (all targets build, all tests pass)
 
 **Build command:**
 ```bash
 cd src-qt && rm -rf build && mkdir build && cd build
 cmake .. && make -j$(nproc)
-./Consiglio   # requires display
+./Consiglio   # requires X11/Wayland display
+./test_approvalrouter   # unit tests
+./test_settings
+./test_sessionmanager
+./test_agentdetector
 ```
 
 ---
 
 ## Current Work
 
-**Last updated:** 2025-07-31 — M4 UI Panels complete, build clean
+**Last updated:** 2025-07-31 — M8 Testing complete, build clean, 38/38 tests passing
 
-### Files Created/Modified:
-1. `src-qt/CMakeLists.txt` — Build config
-2. `src-qt/src/main.cpp` — App entry point
-3. `src-qt/src/mainwindow.h` / `.cpp` — Main window (menu bar, sidebar, tray, status bar)
-4. `src-qt/src/sidebar.h` / `.cpp` — Left navigation panel with selectPanel()
-5. `src-qt/src/panelmanager.h` / `.cpp` — Panel factory/manager (uses real panels)
-6. `src-qt/src/backend/settings.h` / `.cpp` — Settings persistence (load/save + value getter)
-7. `src-qt/src/backend/agentdetector.h` / `.cpp` — Agent detection
-8. `src-qt/src/backend/sessionmanager.h` / `.cpp` — Session lifecycle management
-9. `src-qt/src/backend/approvalrouter.h` / `.cpp` — Approval request routing
-10. `src-qt/src/backend/ptyhandler.h` / `.cpp` — PTY/process wrapper
-11. `src-qt/src/startupwizard.h` / `.cpp` — First-run wizard (real UI)
-12. `src-qt/src/settingsdialog.h` / `.cpp` — Settings dialog (real UI, 5 tabs)
-13. `src-qt/src/approvaldialog.h` / `.cpp` — Command approval dialog (real UI)
-14. `src-qt/src/models/sessionmodel.h` / `.cpp` — Session data model
-15. `src-qt/src/models/eventmodel.h` / `.cpp` — Event data model
-16. `src-qt/src/sessionlist.h` / `.cpp` — Session list panel (real UI)
-17. `src-qt/src/eventtimeline.h` / `.cpp` — Event timeline panel (real UI)
-18. `src-qt/src/filebrowser.h` / `.cpp` — File browser panel (real UI)
-19. `src-qt/src/secretsmanager.h` / `.cpp` — Secrets manager panel (real UI)
-20. `src-qt/src/mobilepairing.h` / `.cpp` — Mobile pairing panel (real UI)
-21. `src-qt/src/discussionpanel.h` / `.cpp` — Discussion panel (real UI)
+### Files Created/Modified in M7–M8:
+1. `src/mainwindow.h` — Added wiring slots, session state label, activeSessionId, lastPanelIndex
+2. `src/mainwindow.cpp` — Full rewrite: backend→frontend signal wiring, onNewSession() with file dialog, sendCommandToActiveSession(), window state persistence, status bar updates
+3. `src/backend/sessionmanager.h` — Added `sendCommand(sessionId, command)` public method
+4. `src/backend/sessionmanager.cpp` — Implemented sendCommand(), fixed stopSession() proper cleanup (disconnect signals, kill, delete process, erase from map)
+5. `src/backend/settings.cpp` — Fixed LAN providers JSON serialization/deserialization
+6. `src/main.cpp` — Dark theme customization (Fusion palette + global stylesheet)
+7. `CMakeLists.txt` — Added ConsiglioBackend static library, 4 test executables, ctest integration
+8. `tests/test_approvalrouter.cpp` — 14 unit tests
+9. `tests/test_settings.cpp` — 8 unit tests
+10. `tests/test_sessionmanager.cpp` — 9 unit tests
+11. `tests/test_agentdetector.cpp` — 7 unit tests
 
 ### Next Up:
-- **M7: Wiring** — Connect backend to frontend, wire up session/approval flows
-- **M7: Polish** — Icons, window state persistence, theme tweaks
+- **M9: Real Agent Integration** — Replace echo/ollama stub with actual Codex CLI/Ollama protocol
+- **M10: Polish & Packaging** — App icons, .desktop file, AppImage/flatpak packaging
 
 ### Key Decisions:
 - Qt5 (not Qt6) — Ubuntu 24.04 ships Qt5 in repos
-- Fusion dark style — no external deps, cross-platform consistent
+- Fusion dark style + custom stylesheet — no external deps, cross-platform consistent
 - QSettings for persistence — Qt native, handles INI/registry
 - QProcess for PTY management — replacing node-pty from Electron
 - Class names prefixed/unique to avoid Qt macro conflicts (e.g., ConsiglioCmdApproval)
+- Backend as static library — shared by app and tests
 
 ---
 

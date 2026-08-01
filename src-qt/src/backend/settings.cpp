@@ -35,17 +35,20 @@ void AppSettings::load() {
 
     // Load LAN providers from JSON array
     if (settings.contains("lanProviders")) {
-        auto arr = settings.value("lanProviders").toList();
-        for (const auto &v : arr) {
-            auto map = v.toMap();
-            LanProviderConfig cfg;
-            cfg.id = map.value("id", "").toString();
-            cfg.name = map.value("name", "").toString();
-            cfg.host = map.value("host", "").toString();
-            cfg.port = map.value("port", 8081).toUInt();
-            cfg.model = map.value("model", "").toString();
-            cfg.apiKey = map.value("apiKey", "").toString();
-            lanProviders.append(cfg);
+        QByteArray json = settings.value("lanProviders").toByteArray();
+        QJsonDocument doc = QJsonDocument::fromJson(json);
+        if (doc.isArray()) {
+            for (const auto &v : doc.array()) {
+                auto map = v.toObject().toVariantMap();
+                LanProviderConfig cfg;
+                cfg.id = map.value("id", "").toString();
+                cfg.name = map.value("name", "").toString();
+                cfg.host = map.value("host", "").toString();
+                cfg.port = map.value("port", 8081).toUInt();
+                cfg.model = map.value("model", "").toString();
+                cfg.apiKey = map.value("apiKey", "").toString();
+                lanProviders.append(cfg);
+            }
         }
     }
 }

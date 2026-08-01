@@ -40,21 +40,29 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
 
     // Connect signals
     connect(state.process, &QProcess::readyReadStandardOutput, this, [this, sessionId]() {
-        auto data = m_sessions[sessionId].process->readAllStandardOutput();
-        emit outputReceived(sessionId, QString::fromUtf8(data));
+        auto it = m_sessions.find(sessionId);
+        if (it != m_sessions.end() && it.value().process) {
+            auto data = it.value().process->readAllStandardOutput();
+            emit outputReceived(sessionId, QString::fromUtf8(data));
+        }
     });
 
     connect(state.process, &QProcess::readyReadStandardError, this, [this, sessionId]() {
-        auto data = m_sessions[sessionId].process->readAllStandardError();
-        emit outputReceived(sessionId, QString::fromUtf8(data));
+        auto it = m_sessions.find(sessionId);
+        if (it != m_sessions.end() && it.value().process) {
+            auto data = it.value().process->readAllStandardError();
+            emit outputReceived(sessionId, QString::fromUtf8(data));
+        }
     });
 
     connect(state.process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, [this, sessionId](int exitCode, QProcess::ExitStatus exitStatus) {
+        Q_UNUSED(exitCode);
         onProcessFinished(exitCode, exitStatus);
     });
 
     connect(state.process, &QProcess::errorOccurred, this, [this, sessionId](QProcess::ProcessError error) {
+        Q_UNUSED(error);
         onProcessError(error);
     });
 
@@ -103,9 +111,15 @@ bool SessionManager::stopSession(const QString &sessionId) {
     auto it = m_sessions.find(sessionId);
     if (it == m_sessions.end() || !it.value().process) return false;
 
+    // Disconnect signals to prevent callbacks after removal
+    it.value().process->disconnect();
     it.value().process->kill();
     it.value().process->waitForFinished(3000);
+    delete it.value().process;
+    it.value().process = nullptr;
+
     it.value().record.status = "stopped";
+    m_sessions.erase(it);
     emit sessionStopped(sessionId);
     return true;
 }
@@ -129,7 +143,9 @@ bool SessionManager::hasSession(const QString &sessionId) const {
 }
 
 void SessionManager::stopAllSessions() {
-    for (const auto &id : m_sessions.keys()) {
+    // Copy keys to avoid iterator invalidation during erase
+    QStringList ids = m_sessions.keys();
+    for (const auto &id : ids) {
         stopSession(id);
     }
 }
@@ -152,12 +168,15 @@ void SessionManager::onProcessFinished(int exitCode, QProcess::ExitStatus exitSt
     if (!process) return;
 
     QString sessionId;
-    for (auto it = m_sessions.begin(); it != m_sessions.end(); ++it) {
+    auto it = m_sessions.begin();
+    while (it != m_sessions.end()) {
         if (it.value().process == process) {
             sessionId = it.key();
             it.value().record.status = exitStatus == QProcess::NormalExit ? "stopped" : "error";
-            m_sessions.erase(it);
+            it = m_sessions.erase(it);
             break;
+        } else {
+            ++it;
         }
     }
 
@@ -171,15 +190,27 @@ void SessionManager::onProcessError(QProcess::ProcessError error) {
     if (!process) return;
 
     QString sessionId;
-    for (auto it = m_sessions.begin(); it != m_sessions.end(); ++it) {
+    auto it = m_sessions.begin();
+    while (it != m_sessions.end()) {
         if (it.value().process == process) {
             sessionId = it.key();
             it.value().record.status = "error";
             break;
+        } else {
+            ++it;
         }
     }
 
     if (!sessionId.isEmpty()) {
         emit sessionError(sessionId, process->errorString());
     }
+}
+
+bool SessionManager::sendCommand(const QString &sessionId, const QString &command) {
+    auto it = m_sessions.find(sessionId);
+    if (it == m_sessions.end() || !it.value().process) return false;
+
+    it.value().process->write((command + "\n").toUtf8());
+    it.value().record.lastActivity = QDateTime::currentMSecsSinceEpoch();
+    return true;
 }

@@ -7,9 +7,22 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt5 REQUIRED COMPONENTS Core Widgets Network Concurrent Sql)
+find_package(Qt5 REQUIRED COMPONENTS Core Widgets Network Concurrent Sql Test)
 
-# ─── Sources ──────────────────────────────────────────────────────────────────
+# ─── Backend Library (shared by app and tests) ──────────────────────────────
+set(BACKEND_SOURCES
+    src/backend/agentdetector.cpp
+    src/backend/approvalrouter.cpp
+    src/backend/ptyhandler.cpp
+    src/backend/sessionmanager.cpp
+    src/backend/settings.cpp
+)
+
+add_library(ConsiglioBackend STATIC ${BACKEND_SOURCES})
+target_include_directories(ConsiglioBackend PUBLIC src)
+target_link_libraries(ConsiglioBackend PUBLIC Qt5::Core Qt5::Network)
+
+# ─── Main Application ───────────────────────────────────────────────────────
 set(QT_SOURCES
     src/main.cpp
     src/mainwindow.cpp
@@ -36,20 +49,8 @@ set(QT_SOURCES
     src/discussionpanel.h
     src/approvaldialog.cpp
     src/approvaldialog.h
-    src/backend/agentdetector.cpp
-    src/backend/agentdetector.h
-    src/backend/sessionmanager.cpp
-    src/backend/sessionmanager.h
-    src/backend/settings.cpp
-    src/backend/settings.h
-    src/backend/approvalrouter.cpp
-    src/backend/approvalrouter.h
-    src/backend/ptyhandler.cpp
-    src/backend/ptyhandler.h
     src/models/sessionmodel.cpp
-    src/models/sessionmodel.h
     src/models/eventmodel.cpp
-    src/models/eventmodel.h
     resources/icons.qrc
 )
 
@@ -63,7 +64,27 @@ target_link_libraries(Consiglio PRIVATE
     Qt5::Network
     Qt5::Concurrent
     Qt5::Sql
+    ConsiglioBackend
 )
+
+# ─── Tests (one executable per test class) ──────────────────────────────────
+enable_testing()
+
+add_executable(test_approvalrouter tests/test_approvalrouter.cpp)
+target_link_libraries(test_approvalrouter PRIVATE Qt5::Core Qt5::Test ConsiglioBackend)
+add_test(NAME ApprovalRouterTests COMMAND test_approvalrouter)
+
+add_executable(test_settings tests/test_settings.cpp)
+target_link_libraries(test_settings PRIVATE Qt5::Core Qt5::Test ConsiglioBackend)
+add_test(NAME SettingsTests COMMAND test_settings)
+
+add_executable(test_sessionmanager tests/test_sessionmanager.cpp)
+target_link_libraries(test_sessionmanager PRIVATE Qt5::Core Qt5::Test ConsiglioBackend)
+add_test(NAME SessionManagerTests COMMAND test_sessionmanager)
+
+add_executable(test_agentdetector tests/test_agentdetector.cpp)
+target_link_libraries(test_agentdetector PRIVATE Qt5::Core Qt5::Test ConsiglioBackend)
+add_test(NAME AgentDetectorTests COMMAND test_agentdetector)
 
 # Install
 install(TARGETS Consiglio BUNDLE DESTINATION .)

@@ -30,6 +30,7 @@ public:
     bool stopSession(const QString &sessionId);
     bool reconnectSession(const QString &sessionId);
     bool hasSession(const QString &sessionId) const;
+    bool sendCommand(const QString &sessionId, const QString &command);
 
 signals:
     void sessionStarted(const QString &sessionId, const SessionRecord &record);
