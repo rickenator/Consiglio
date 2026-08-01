@@ -12,7 +12,14 @@
  * - Approval handling
  */
 
-import { app } from 'electron';
+// Platform abstraction — can be overridden in tests
+let _getUserDataPath: (() => string) | null = null;
+export function setUserDataPathGetter(getter: () => string) {
+  _getUserDataPath = getter;
+}
+function getUserDataPath(): string {
+  return _getUserDataPath?.() ?? '/tmp';
+}
 import fs from 'fs';
 import path from 'path';
 import { execFileSync, spawnSync } from 'child_process';
@@ -26,8 +33,8 @@ import type {
   AgentSession,
   AgentSessionOptions,
   AgentInfo,
-} from '../agent-adapter';
-import { resolveCodexCommand, type ExecutableCommand } from '../platform';
+} from '../agent-adapter.ts';
+import { resolveCodexCommand, type ExecutableCommand } from '../platform.ts';
 
 // ─── Internal Types (Codex-specific) ──────────────────────────────────────────
 
@@ -72,13 +79,15 @@ export class CodexAdapter implements AgentAdapter {
   // Session storage (kept here for now; will move to main.ts later)
   static sessions = new Map<string, SessionState>();
 
-  constructor(
-    private emitters: {
+  constructor(emitters: {
       emitEvent: (event: AgentEvent) => void;
       emitApproval: (approval: AgentApproval) => void;
       emitTerminalOutput: (sessionId: string, data: string) => void;
-    }
-  ) {}
+    }) {
+
+    this.emitters = emitters;
+
+  }
 
   // ─── Detection ───────────────────────────────────────────────────────────────
 
@@ -245,7 +254,7 @@ export class CodexAdapter implements AgentAdapter {
       } || {};
       
       if (behavior.isolateProfile) {
-        const profileHome = path.join(app.getPath('userData'), 'local-provider-profiles', options.repository);
+        const profileHome = path.join(getUserDataPath(), 'local-provider-profiles', options.repository);
         fs.mkdirSync(profileHome, { recursive: true });
         // Note: env.CODEX_HOME is set in main.ts, not here
       }

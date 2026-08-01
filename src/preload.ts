@@ -84,7 +84,6 @@ contextBridge.exposeInMainWorld('codexApi', {
       localProviderBehavior?: {
         isolateProfile?: boolean;
         enableWebSearch?: boolean;
-        enableMultiAgent?: boolean;
       };
     }) =>
       ipcRenderer.invoke('settings:update', settings),
@@ -132,27 +131,28 @@ contextBridge.exposeInMainWorld('codexApi', {
       return () => ipcRenderer.removeListener('codex:event', handler);
     },
     onTerminalOutput: (callback: (output: { sessionId: string; data: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, output: { sessionId: string; data: string }) => callback(output);
+      const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; data: string }) => callback(data);
       ipcRenderer.on('codex:terminal-output', handler);
       return () => ipcRenderer.removeListener('codex:terminal-output', handler);
     },
-
-    // Session recovery notifications
     onSessionsRecovered: (callback: (sessionIds: string[]) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, sessionIds: string[]) => callback(sessionIds);
+      const handler = (_event: Electron.IpcRendererEvent, data: string[]) => callback(data);
       ipcRenderer.on('codex:sessions-recovered', handler);
       return () => ipcRenderer.removeListener('codex:sessions-recovered', handler);
     },
     onSessionsUpdated: (callback: (sessions: SessionRecord[]) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, sessions: SessionRecord[]) => callback(sessions);
+      const handler = (_event: Electron.IpcRendererEvent, data: SessionRecord[]) => callback(data);
       ipcRenderer.on('codex:sessions-updated', handler);
       return () => ipcRenderer.removeListener('codex:sessions-updated', handler);
     },
 
     // Approvals
-    getPendingApprovals: (sessionId?: string) => getLivePendingApprovals(sessionId),
-    approveCommand: (approvalId: string) => resolveApprovalDecision(approvalId, true),
-    rejectCommand: (approvalId: string) => resolveApprovalDecision(approvalId, false),
+    getPendingApprovals: (sessionId?: string) =>
+      getLivePendingApprovals(sessionId),
+    approveCommand: (approvalId: string) =>
+      resolveApprovalDecision(approvalId, true),
+    rejectCommand: (approvalId: string) =>
+      resolveApprovalDecision(approvalId, false),
 
     // Approval notifications
     onApprovalRequest: (callback: (approval: ApprovalRecord) => void) => {
@@ -213,38 +213,7 @@ contextBridge.exposeInMainWorld('codexApi', {
       return () => ipcRenderer.removeListener('system:bootstrap-progress', handler);
     },
 
-    // Discussions (multi-agent)
-    startDiscussion: (opts: {
-      repository?: string;
-      branch?: string;
-      agents: Array<{ id: string; model?: string; customInstructions?: string }>;
-      maxTurns?: number;
-      moderatorStrategy?: 'round-robin' | 'context-aware' | 'user-select';
-      synthesisAgent?: string;
-    }) => ipcRenderer.invoke('discussion:start', opts),
-    stopDiscussion: (sessionId: string) =>
-      ipcRenderer.invoke('discussion:stop', sessionId),
-    getDiscussionHistory: (sessionId: string) =>
-      ipcRenderer.invoke('discussion:get-history', sessionId),
-    sendDiscussionMessage: (sessionId: string, content: string) =>
-      ipcRenderer.invoke('discussion:send-message', { sessionId, content }),
-    listDiscussions: () =>
-      ipcRenderer.invoke('discussion:list'),
-    onDiscussionMessage: (callback: (data: { sessionId: string; message: any }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: any }) => callback(data);
-      ipcRenderer.on('discussion:message', handler);
-      return () => ipcRenderer.removeListener('discussion:message', handler);
-    },
-    onDiscussionEvent: (callback: (data: { sessionId: string; event: any }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; event: any }) => callback(data);
-      ipcRenderer.on('discussion:event', handler);
-      return () => ipcRenderer.removeListener('discussion:event', handler);
-    },
-    onDiscussionError: (callback: (data: { sessionId: string; error: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; error: string }) => callback(data);
-      ipcRenderer.on('discussion:error', handler);
-      return () => ipcRenderer.removeListener('discussion:error', handler);
-    },
+    // Agent readiness
     getAvailableAgents: () =>
       ipcRenderer.invoke('agents:readiness'),
 });

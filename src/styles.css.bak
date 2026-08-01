@@ -77,6 +77,16 @@ textarea:focus-visible {
   color: var(--text);
 }
 
+.codex-app-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px) 0 0 / 100% 28px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px) 0 0 / 28px 100%;
+  opacity: 0.18;
+}
 
 .codex-app-shell > * {
   position: relative;

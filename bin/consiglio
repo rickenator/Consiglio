@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-launcher_path="$(readlink -f "${BASH_SOURCE[0]}")"
-project_root="$(cd "$(dirname "$launcher_path")/.." && pwd)"
-cd "$project_root"
-exec npm run dev:all -- "$@"
+# Resolve symlinks so this works even when called via /home/rick/bin/consiglio
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
+# Clean up stale singleton sockets from crashed previous launches
+# These block the single-instance lock and cause the app to quit immediately
+rm -rf /tmp/scoped_dir* 2>/dev/null || true
+rm -f ~/.config/consiglio/Singleton* 2>/dev/null || true
+
+# Build if dist is missing or stale
+if [ ! -f dist/main.js ] || [ src/main.ts -nt dist/main.js ]; then
+  npm run build
+fi
+
+exec ./node_modules/.bin/electron . "$@"

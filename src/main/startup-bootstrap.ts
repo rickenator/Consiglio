@@ -9,7 +9,6 @@ export type BootstrapPhase =
   | 'discovering-local'
   | 'configuring-local'
   | 'installing-codex'
-  | 'installing-open-interpreter'
   | 'refreshing'
   | 'complete';
 
@@ -23,7 +22,7 @@ export interface BootstrapProgress {
 }
 
 export interface AgentInstallResult {
-  id: 'codex' | 'open-interpreter';
+  id: 'codex';
   attempted: boolean;
   installed: boolean;
   executable?: string;
@@ -141,18 +140,8 @@ export function managedCodexExecutable(userDataPath: string, platform: NodeJS.Pl
 
 export function managedOpenInterpreterExecutable(userDataPath: string, platform: NodeJS.Platform = process.platform) {
   const platformPath = pathForPlatform(platform);
-  const venv = platformPath.join(managedAgentHome(userDataPath, platform), 'open-interpreter');
-  return platform === 'win32'
-    ? platformPath.join(venv, 'Scripts', 'interpreter.exe')
-    : platformPath.join(venv, 'bin', 'interpreter');
-}
-
-function managedOpenInterpreterPython(userDataPath: string, platform: NodeJS.Platform) {
-  const platformPath = pathForPlatform(platform);
-  const venv = platformPath.join(managedAgentHome(userDataPath, platform), 'open-interpreter');
-  return platform === 'win32'
-    ? platformPath.join(venv, 'Scripts', 'python.exe')
-    : platformPath.join(venv, 'bin', 'python');
+  const base = platformPath.join(managedAgentHome(userDataPath, platform), 'open-interpreter', platform === 'win32' ? 'Scripts' : 'bin');
+  return platformPath.join(base, platform === 'win32' ? 'interpreter.exe' : 'interpreter');
 }
 
 export function configureManagedAgentEnvironment(
@@ -160,45 +149,54 @@ export function configureManagedAgentEnvironment(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   fileExists: (candidate: string) => boolean = executableExists,
-) {
+): void {
   const home = managedAgentHome(userDataPath, platform);
   env.CONSIGLIO_AGENT_HOME = home;
-  const codex = managedCodexExecutable(userDataPath, platform);
-  const interpreter = managedOpenInterpreterExecutable(userDataPath, platform);
-  const configuredCodex = env.CODEX_BIN?.trim();
-  const configuredInterpreter = env.OI_BIN?.trim();
-  if ((!configuredCodex || !fileExists(configuredCodex)) && fileExists(codex)) env.CODEX_BIN = codex;
-  if ((!configuredInterpreter || !fileExists(configuredInterpreter)) && fileExists(interpreter)) env.OI_BIN = interpreter;
-  return { home, codex, interpreter };
-}
 
-function progress(
-  phase: BootstrapPhase,
-  message: string,
-  completed: number,
-  total: number,
-): BootstrapProgress {
-  return { phase, message, active: phase !== 'complete', completed, total, updatedAt: Date.now() };
-}
-
-async function probe(
-  runner: InstallCommandRunner,
-  command: string,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-) {
-  return runner({ command, args, env, timeoutMs: 15_000 });
-}
-
-async function findPython(runner: InstallCommandRunner, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
-  const candidates = platform === 'win32'
-    ? [{ command: 'py', prefix: ['-3'] }, { command: 'python', prefix: [] }, { command: 'python3', prefix: [] }]
-    : [{ command: 'python3', prefix: [] }, { command: 'python', prefix: [] }];
-  for (const candidate of candidates) {
-    const result = await probe(runner, candidate.command, [...candidate.prefix, '--version'], env);
-    if (!result.timedOut && result.exitCode === 0) return candidate;
+  const codexBin = managedCodexExecutable(userDataPath, platform);
+  if (fileExists(codexBin)) {
+    env.CODEX_BIN = codexBin;
+    const binDir = path.dirname(codexBin);
+    env.PATH = `${binDir}${path.delimiter}${env.PATH || ''}`;
   }
-  return null;
+
+  const oiBin = managedOpenInterpreterExecutable(userDataPath, platform);
+  if (fileExists(oiBin)) {
+    env.OI_BIN = oiBin;
+    const binDir = path.dirname(oiBin);
+    env.PATH = `${binDir}${path.delimiter}${env.PATH || ''}`;
+  }
+
+  try {
+    fs.mkdirSync(home, { recursive: true });
+  } catch { /* best effort */ }
+}
+
+function findPython(
+  runner: InstallCommandRunner,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): Promise<{ command: string; prefix: string[] } | null> {
+  const candidates = platform === 'win32'
+    ? ['python', 'python3']
+    : ['python3', 'python'];
+
+  for (const candidate of candidates) {
+    try {
+      const result = runner({
+        command: candidate,
+        args: ['--version'],
+        env,
+        timeoutMs: 5_000,
+      });
+      return result.then(r => r.exitCode === 0 ? { command: candidate, prefix: [] } : null);
+    } catch { /* try next */ }
+  }
+  return Promise.resolve(null);
+}
+
+function progress(phase: BootstrapPhase, message: string, completed: number, total: number): BootstrapProgress {
+  return { phase, message, active: true, completed, total, updatedAt: Date.now() };
 }
 
 async function installCodex(
@@ -208,22 +206,28 @@ async function installCodex(
   runner: InstallCommandRunner,
   fileExists: (candidate: string) => boolean,
 ): Promise<AgentInstallResult> {
-  const platformPath = pathForPlatform(platform);
-  const prefix = platformPath.join(managedAgentHome(userDataPath, platform), 'codex');
-  fs.mkdirSync(prefix, { recursive: true });
-  const npmProbe = await probe(runner, platform === 'win32' ? 'npm.cmd' : 'npm', ['--version'], env);
-  if (npmProbe.exitCode === 0 && !npmProbe.timedOut) {
-    const npmCommand = platform === 'win32' ? 'npm.cmd' : 'npm';
+  configureManagedAgentEnvironment(userDataPath, env, platform, fileExists);
+
+  if (platform === 'win32') {
     const result = await runner({
-      command: npmCommand,
-      args: ['install', '--no-audit', '--no-fund', '--prefix', prefix, '@openai/codex'],
+      command: 'npm',
+      args: ['install', '-g', '@openai/codex'],
       env,
       timeoutMs: INSTALL_TIMEOUT_MS,
     });
-    const executable = managedCodexExecutable(userDataPath, platform);
-    if (result.exitCode === 0 && fileExists(executable)) {
-      env.CODEX_BIN = executable;
-      return { id: 'codex', attempted: true, installed: true, executable, diagnostic: 'Codex was installed in Consiglio application data.' };
+    if (result.exitCode === 0) {
+      const userHome = env.USERPROFILE?.trim() || '';
+      const executable = [
+        userHome ? path.win32.join(userHome, 'AppData', 'Roaming', 'npm', 'codex.cmd') : '',
+        userHome ? path.win32.join(userHome, 'AppData', 'Roaming', 'npm', 'codex') : '',
+      ].find(candidate => candidate && fileExists(candidate));
+      if (executable) env.CODEX_BIN = executable;
+      return {
+        id: 'codex', attempted: true, installed: true, executable: executable || undefined,
+        diagnostic: executable
+          ? 'Codex was installed via npm and the executable was detected.'
+          : 'Codex was installed via npm; Consiglio will rescan standard executable locations.',
+      };
     }
     return {
       id: 'codex', attempted: true, installed: false,
@@ -231,7 +235,7 @@ async function installCodex(
     };
   }
 
-  if (platform !== 'win32') {
+  if (platform === 'darwin') {
     const result = await runner({
       command: 'sh',
       args: ['-lc', 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'],
@@ -258,9 +262,53 @@ async function installCodex(
     };
   }
 
+  // Linux — try npm first, then the standalone installer
+  const npmResult = await runner({
+    command: 'npm',
+    args: ['install', '-g', '@openai/codex'],
+    env,
+    timeoutMs: INSTALL_TIMEOUT_MS,
+  });
+  if (npmResult.exitCode === 0) {
+    const userHome = env.HOME?.trim() || '';
+    const executable = [
+      userHome ? path.posix.join(userHome, '.local', 'bin', 'codex') : '',
+      userHome ? path.posix.join(userHome, 'bin', 'codex') : '',
+      '/usr/local/bin/codex',
+    ].find(candidate => candidate && fileExists(candidate));
+    if (executable) env.CODEX_BIN = executable;
+    return {
+      id: 'codex', attempted: true, installed: true, executable: executable || undefined,
+      diagnostic: executable
+        ? 'Codex was installed via npm and the executable was detected.'
+        : 'Codex was installed via npm; Consiglio will rescan standard executable locations.',
+    };
+  }
+
+  const result = await runner({
+    command: 'sh',
+    args: ['-lc', 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'],
+    env,
+    timeoutMs: INSTALL_TIMEOUT_MS,
+  });
+  if (result.exitCode === 0) {
+    const userHome = env.HOME?.trim() || '';
+    const executable = [
+      userHome ? path.posix.join(userHome, '.local', 'bin', 'codex') : '',
+      userHome ? path.posix.join(userHome, 'bin', 'codex') : '',
+    ].find(candidate => candidate && fileExists(candidate));
+    if (executable) env.CODEX_BIN = executable;
+    return {
+      id: 'codex', attempted: true, installed: true, executable: executable || undefined,
+      diagnostic: executable
+        ? 'The official Codex standalone installer completed and the executable was detected.'
+        : 'The official Codex standalone installer completed; Consiglio will rescan standard executable locations.',
+    };
+  }
+
   return {
     id: 'codex', attempted: true, installed: false,
-    diagnostic: 'Codex was not found and npm is unavailable. Install Node.js/npm or Codex manually, then refresh.',
+    diagnostic: `Codex installation failed: ${commandOutput(result) || 'no installer output'}`,
   };
 }
 
@@ -271,48 +319,43 @@ async function installOpenInterpreter(
   runner: InstallCommandRunner,
   fileExists: (candidate: string) => boolean,
 ): Promise<AgentInstallResult> {
-  const python = await findPython(runner, env, platform);
-  if (!python) {
-    return {
-      id: 'open-interpreter', attempted: true, installed: false,
-      diagnostic: 'Open Interpreter was not found and Python 3 is unavailable. Install Python 3, then refresh.',
-    };
-  }
+  configureManagedAgentEnvironment(userDataPath, env, platform, fileExists);
 
-  const platformPath = pathForPlatform(platform);
-  const venv = platformPath.join(managedAgentHome(userDataPath, platform), 'open-interpreter');
-  fs.mkdirSync(path.dirname(venv), { recursive: true });
-  const create = await runner({
-    command: python.command,
-    args: [...python.prefix, '-m', 'venv', venv],
+  const result = await runner({
+    command: 'npm',
+    args: ['install', '-g', 'open-interpreter'],
     env,
     timeoutMs: INSTALL_TIMEOUT_MS,
   });
-  if (create.exitCode !== 0) {
+  if (result.exitCode === 0) {
+    const oiBin = managedOpenInterpreterExecutable(userDataPath, platform);
+    if (fileExists(oiBin)) {
+      env.OI_BIN = oiBin;
+      return {
+        id: 'open-interpreter', attempted: true, installed: true, executable: oiBin,
+        diagnostic: 'Open Interpreter was installed in the managed environment.',
+      };
+    }
+    // Fallback: try to find it in npm global bin
+    const userHome = env.HOME || env.USERPROFILE || '';
+    const npmBin = platform === 'win32'
+      ? path.win32.join(userHome, 'AppData', 'Roaming', 'npm', 'interpreter.exe')
+      : path.posix.join(userHome, '.local', 'bin', 'interpreter');
+    if (fileExists(npmBin)) {
+      env.OI_BIN = npmBin;
+      return {
+        id: 'open-interpreter', attempted: true, installed: true, executable: npmBin,
+        diagnostic: 'Open Interpreter was installed via npm and detected.',
+      };
+    }
     return {
-      id: 'open-interpreter', attempted: true, installed: false,
-      diagnostic: `Could not create the Open Interpreter environment: ${commandOutput(create) || 'no installer output'}`,
-    };
-  }
-
-  const venvPython = managedOpenInterpreterPython(userDataPath, platform);
-  const install = await runner({
-    command: venvPython,
-    args: ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'open-interpreter'],
-    env,
-    timeoutMs: INSTALL_TIMEOUT_MS,
-  });
-  const executable = managedOpenInterpreterExecutable(userDataPath, platform);
-  if (install.exitCode === 0 && fileExists(executable)) {
-    env.OI_BIN = executable;
-    return {
-      id: 'open-interpreter', attempted: true, installed: true, executable,
-      diagnostic: 'Open Interpreter was installed in an isolated Consiglio-managed Python environment.',
+      id: 'open-interpreter', attempted: true, installed: true,
+      diagnostic: 'Open Interpreter was installed via npm; Consiglio will rescan standard executable locations.',
     };
   }
   return {
     id: 'open-interpreter', attempted: true, installed: false,
-    diagnostic: `Open Interpreter installation failed: ${commandOutput(install) || 'no installer output'}`,
+    diagnostic: `Open Interpreter installation with npm failed: ${commandOutput(result) || 'no installer output'}`,
   };
 }
 
@@ -321,23 +364,26 @@ export async function installMissingAgentFrontends(options: InstallMissingAgentO
   const platform = options.platform || process.platform;
   const runner = options.runner || runInstallCommand;
   const fileExists = options.fileExists || executableExists;
-  const total = 4;
+  const total = 2;
   const results: AgentInstallResult[] = [];
 
   configureManagedAgentEnvironment(options.userDataPath, env, platform, fileExists);
+  
   const codex = options.readiness.find(agent => agent.id === 'codex');
   if (codex?.installed) {
     results.push({ id: 'codex', attempted: false, installed: true, diagnostic: codex.diagnostic });
   } else {
-    options.onProgress?.(progress('installing-codex', 'Installing the Codex agent front end…', 2, total));
+    options.onProgress?.(progress('installing-codex', 'Installing the Codex agent front end…', 1, total));
     results.push(await installCodex(options.userDataPath, platform, env, runner, fileExists));
   }
 
-  const interpreter = options.readiness.find(agent => agent.id === 'open-interpreter');
-  if (interpreter?.installed) {
-    results.push({ id: 'open-interpreter', attempted: false, installed: true, diagnostic: interpreter.diagnostic });
+  configureManagedAgentEnvironment(options.userDataPath, env, platform, fileExists);
+  
+  const oi = options.readiness.find(agent => agent.id === 'open-interpreter');
+  if (oi?.installed) {
+    results.push({ id: 'open-interpreter', attempted: false, installed: true, diagnostic: oi.diagnostic });
   } else {
-    options.onProgress?.(progress('installing-open-interpreter', 'Installing Open Interpreter in an isolated environment…', 3, total));
+    options.onProgress?.(progress('installing-open-interpreter', 'Installing Open Interpreter…', 2, total));
     results.push(await installOpenInterpreter(options.userDataPath, platform, env, runner, fileExists));
   }
 

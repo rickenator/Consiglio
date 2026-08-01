@@ -264,9 +264,11 @@ function parseClaudeCodeOutput(
 export class ClaudeCodeAdapter implements AgentAdapter {
   static sessions = new Map<string, ClaudeCodeSessionState>();
 
-  constructor(
-    private emitters: EventEmitters
-  ) {}
+  private emitters: EventEmitters;
+
+  constructor(emitters: EventEmitters) {
+    this.emitters = emitters;
+  }
 
   // ─── Detection ───────────────────────────────────────────────────────────────
 
@@ -428,6 +430,69 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     // Parse into unified events
     parseClaudeCodeOutput(clean, state, sessionId, this.emitters);
+  }
+
+  /** Public parseOutput for tests — parses raw output into events/approvals. */
+  parseOutput(state: ClaudeCodeSessionState, input: string): void {
+    const timestamp = Date.now();
+    const lines = input.split(/\r?\n/);
+    let inToolBlock = false;
+    let toolName = '';
+    let toolContent = '';
+
+    for (const line of lines) {
+      if (/<tool_use>/.test(line)) {
+        inToolBlock = true;
+        toolName = '';
+        toolContent = '';
+        continue;
+      }
+      if (/<\/tool_use>/.test(line) && inToolBlock) {
+        const content = toolContent.trim();
+        if (content || toolName) {
+          this.emitters.emitEvent({
+            id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            type: 'code',
+            content: `[Tool: ${toolName}] ${content}`,
+            metadata: { tool: toolName },
+            timestamp,
+            session_id: state.id,
+          });
+        }
+        inToolBlock = false;
+        continue;
+      }
+      if (inToolBlock) {
+        const nameMatch = line.match(/<name>(.*?)<\/name>/);
+        if (nameMatch) toolName = nameMatch[1];
+        const cmdMatch = line.match(/<command>(.*?)<\/command>/);
+        if (cmdMatch) {
+          const approval: AgentApproval = {
+            id: `approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            sessionId: state.id,
+            command: cmdMatch[1],
+            workingDir: state.repository,
+            timestamp,
+            status: 'pending',
+          };
+          this.emitters.emitApproval(approval);
+        }
+        if (line.trim()) toolContent += line + '\n';
+        continue;
+      }
+      // Confirmation prompts
+      if (/^(Would you like|Shall I|Apply|Overwrite|Proceed)/i.test(line)) {
+        const approval: AgentApproval = {
+          id: `approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          sessionId: state.id,
+          command: line.trim(),
+          workingDir: state.repository,
+          timestamp,
+          status: 'pending',
+        };
+        this.emitters.emitApproval(approval);
+      }
+    }
   }
 }
 

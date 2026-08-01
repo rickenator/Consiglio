@@ -30,7 +30,7 @@ import type {
   AgentSessionOptions,
   AgentInfo,
   EventEmitters,
-} from '../agent-adapter';
+} from '../agent-adapter.ts';
 
 // ─── Internal Types (Amazon Q-specific) ───────────────────────────────────────
 
@@ -182,9 +182,11 @@ function parseAmazonQOutput(
 export class AmazonQAdapter implements AgentAdapter {
   static sessions = new Map<string, AmazonQSessionState>();
 
-  constructor(
-    private emitters: EventEmitters
-  ) {}
+  constructor(emitters: EventEmitters) {
+
+    this.emitters = emitters;
+
+  }
 
   // ─── Detection ───────────────────────────────────────────────────────────────
 
@@ -341,6 +343,62 @@ export class AmazonQAdapter implements AgentAdapter {
     // Parse into unified events
     parseAmazonQOutput(clean, state, sessionId, this.emitters);
   }
+
+  /** Public parseOutput for tests — parses raw output into events/approvals. */
+  parseOutput(state: AmazonQSessionState, input: string): void {
+    const timestamp = Date.now();
+    const lines = input.split(/\r?\n/);
+    let inCodeBlock = false;
+    let codeContent = '';
+    
+    for (const line of lines) {
+      if (/^```/.test(line)) {
+        if (inCodeBlock) {
+          const content = codeContent.trim();
+          if (content) {
+            this.emitters.emitEvent({
+              id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              type: 'code',
+              content: content,
+              timestamp,
+              session_id: state.id,
+            });
+          }
+          inCodeBlock = false;
+          codeContent = '';
+        } else {
+          inCodeBlock = true;
+          codeContent = '';
+        }
+        continue;
+      }
+      if (inCodeBlock) {
+        codeContent += line + '\n';
+        continue;
+      }
+      if (/^(Would you like|Shall I|Apply|Overwrite|Proceed)/i.test(line)) {
+        const approval: AgentApproval = {
+          id: `approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          sessionId: state.id,
+          command: line.trim(),
+          workingDir: state.repository,
+          timestamp,
+          status: 'pending',
+        };
+        this.emitters.emitApproval(approval);
+      }
+    }
+    if (inCodeBlock && codeContent.trim()) {
+      this.emitters.emitEvent({
+        id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        type: 'code',
+        content: codeContent.trim(),
+        timestamp,
+        session_id: state.id,
+      });
+    }
+  }
+
 }
 
 // ─── Helper Functions ──────────────────────────────────────────────────────────

@@ -1,11 +1,6 @@
 type CodexProvider = 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
 
-type AgentId = 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
-type AgentSupportTier = 'supported' | 'preview' | 'detected-only';
-type AgentReadinessState = 'ready' | 'configuration-required' | 'missing' | 'timeout' | 'error';
-type AgentConfigurationState = 'ready' | 'required' | 'not-required' | 'unknown';
-
-type BootstrapPhase = 'idle' | 'discovering-local' | 'configuring-local' | 'installing-codex' | 'installing-open-interpreter' | 'refreshing' | 'complete';
+type BootstrapPhase = 'idle' | 'discovering-local' | 'configuring-local' | 'installing-codex' | 'refreshing' | 'complete';
 
 interface BootstrapProgress {
   phase: BootstrapPhase;
@@ -17,7 +12,7 @@ interface BootstrapProgress {
 }
 
 interface AgentInstallResult {
-  id: 'codex' | 'open-interpreter';
+  id: 'codex';
   attempted: boolean;
   installed: boolean;
   executable?: string;
@@ -25,16 +20,16 @@ interface AgentInstallResult {
 }
 
 interface AgentReadiness {
-  id: AgentId;
+  id: 'codex';
   name: string;
   installed: boolean;
   authenticated: boolean | null;
-  configuration: AgentConfigurationState;
+  configuration: 'ready' | 'required' | 'not-required' | 'unknown';
   selectable: boolean;
-  state: AgentReadinessState;
+  state: 'ready' | 'configuration-required' | 'missing' | 'timeout' | 'error';
   version?: string;
   diagnostic: string;
-  supportTier: AgentSupportTier;
+  supportTier: 'supported' | 'preview' | 'detected-only';
   checkedAt: number;
 }
 
@@ -64,7 +59,6 @@ interface CodexSettings {
   localProviderBehavior: {
     isolateProfile: boolean;
     enableWebSearch: boolean;
-    enableMultiAgent: boolean;
   };
 }
 
@@ -82,7 +76,7 @@ interface CodexSettingsInput {
   };
   lanProviders?: LanProviderConfig[];
   defaultModel?: string;
-  localProviderBehavior?: Partial<CodexSettings['localProviderBehavior']>;
+  localProviderBehavior?: Partial<Pick<CodexSettings['localProviderBehavior'], 'isolateProfile' | 'enableWebSearch'>>;
 }
 
 type SecretScope = 'all' | 'codex' | 'local';
@@ -208,16 +202,11 @@ interface CodexAPI {
   getTerminalBuffer: (sessionId: string) => Promise<string>;
   sendInput: (sessionId: string, input: string) => Promise<boolean>;
   listWorkspaceFiles: (sessionId: string, path?: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean; isImage: boolean }>>;
-  readWorkspaceFile: (sessionId: string, path: string) => Promise<{ kind: 'image'; path: string; dataUrl: string } | { kind: 'text'; path: string; text: string }>;
-  addSessionAttachments: (sessionId: string) => Promise<TaskAttachment[]>;
-  resizeTerminal: (sessionId: string, cols: number, rows: number) => Promise<boolean>;
-  reconnectSession: (sessionId: string) => Promise<boolean>;
+  readWorkspaceFile: (sessionId: string, filePath: string) => Promise<{ kind: 'text' | 'image'; dataUrl?: string; text?: string; path: string }>;
   getSettings: () => Promise<CodexSettings>;
-  updateSettings: (settings: CodexSettingsInput) => Promise<CodexSettings>;
-  listSecrets: () => Promise<SecretsStatus>;
-  upsertSecret: (secret: SecretInput) => Promise<SecretsStatus>;
-  removeSecret: (id: string) => Promise<SecretsStatus>;
-  getMobileBridgeStatus: () => Promise<MobileBridgeStatus>;
+  updateSettings: (input: CodexSettingsInput) => Promise<CodexSettings>;
+
+  // Mobile Bridge
   enableMobileBridge: (config: { port?: number; publicUrl?: string }) => Promise<MobileBridgePairingResult>;
   rotateMobileBridgeToken: (config: { port?: number; publicUrl?: string }) => Promise<MobileBridgePairingResult>;
   disableMobileBridge: () => Promise<MobileBridgeStatus>;
@@ -260,31 +249,8 @@ interface CodexAPI {
   lanUpdateProvider: (provider: { id: string; name: string; host: string; port: number; model: string; apiKey: string }) => Promise<CodexSettings>;
   lanDiscover: () => Promise<{ found: number; added: number; error?: string; providers: LanProviderConfig[] }>;
 
-  // Discussions (multi-agent)
-  startDiscussion: (opts: {
-    repository?: string;
-    branch?: string;
-    agents: Array<{ id: string; model?: string; customInstructions?: string }>;
-    maxTurns?: number;
-    moderatorStrategy?: 'round-robin' | 'context-aware' | 'user-select';
-    synthesisAgent?: string;
-  }) => Promise<{ sessionId: string; agents: string[]; history: DiscussionMessage[] }>;
-  stopDiscussion: (sessionId: string) => Promise<boolean>;
-  getDiscussionHistory: (sessionId: string) => Promise<DiscussionMessage[]>;
-  sendDiscussionMessage: (sessionId: string, content: string) => Promise<DiscussionMessage[]>;
-  listDiscussions: () => Promise<Array<{ sessionId: string; agents: string[]; messageCount: number; isRunning: boolean }>>;
-  onDiscussionMessage: (callback: (data: { sessionId: string; message: DiscussionMessage }) => void) => () => void;
-  onDiscussionEvent: (callback: (data: { sessionId: string; event: CodexEvent }) => void) => () => void;
-  onDiscussionError: (callback: (data: { sessionId: string; error: string }) => void) => () => void;
+  // Agent readiness
   getAvailableAgents: () => Promise<AgentReadiness[]>;
-}
-
-interface DiscussionMessage {
-  id: string;
-  role: 'user' | 'agent' | 'synthesis';
-  agentId?: string;
-  content: string;
-  timestamp: number;
 }
 
 interface SessionRecord {

@@ -1,4 +1,4 @@
-import type { AgentApproval } from './agent-adapter';
+import type { AgentApproval } from './agent-adapter.ts';
 
 export type ApprovalResolutionFailure =
   | 'not-found'

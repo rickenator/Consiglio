@@ -31,3 +31,4 @@ Thumbs.db
 *.deb
 *.rpm
 __pycache__/
+.aider*

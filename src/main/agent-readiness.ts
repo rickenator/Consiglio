@@ -61,7 +61,7 @@ interface AgentSpec {
   versionArgs: string[];
   supportTier: AgentSupportTier;
   installDiagnostic: string;
-  authentication: 'codex' | 'not-required' | 'unknown';
+  authentication: 'codex' | 'not-required' | 'unknown' | 'open-interpreter' | 'claude-code' | 'gemini' | 'copilot' | 'amazon-q';
 }
 
 const DEFAULT_TIMEOUT_MS = 4_000;
@@ -85,7 +85,7 @@ const AGENT_SPECS: AgentSpec[] = [
     command: 'interpreter',
     versionArgs: ['--version'],
     supportTier: 'preview',
-    installDiagnostic: 'Open Interpreter was not found. Consiglio will attempt an isolated user-level installation; OI_BIN may override it.',
+    installDiagnostic: 'Open Interpreter was not found. Consiglio will attempt a user-level installation; OI_BIN may override it.',
     authentication: 'not-required',
   },
   {
@@ -95,8 +95,8 @@ const AGENT_SPECS: AgentSpec[] = [
     command: 'aider',
     versionArgs: ['--version'],
     supportTier: 'preview',
-    installDiagnostic: 'Aider was not found. Install it with `pip install aider-chat` or set AIDER_BIN.',
-    authentication: 'unknown',
+    installDiagnostic: 'Aider was not found. Install via pip or your package manager; AIDER_BIN may override it.',
+    authentication: 'not-required',
   },
   {
     id: 'claude-code',
@@ -105,8 +105,8 @@ const AGENT_SPECS: AgentSpec[] = [
     command: 'claude',
     versionArgs: ['--version'],
     supportTier: 'preview',
-    installDiagnostic: 'Claude Code was not found. Install `@anthropic-ai/claude-code` or set CLAUDE_BIN.',
-    authentication: 'unknown',
+    installDiagnostic: 'Claude Code was not found. Install via npm; CLAUDE_BIN may override it.',
+    authentication: 'claude-code',
   },
   {
     id: 'gemini',
@@ -115,28 +115,28 @@ const AGENT_SPECS: AgentSpec[] = [
     command: 'gemini',
     versionArgs: ['--version'],
     supportTier: 'preview',
-    installDiagnostic: 'Gemini CLI was not found. Install via `npm install -g @anthropic-ai/claude-code` or set GEMINI_BIN.',
-    authentication: 'unknown',
+    installDiagnostic: 'Gemini CLI was not found. Install via npm; GEMINI_BIN may override it.',
+    authentication: 'not-required',
   },
   {
     id: 'copilot',
-    name: 'GitHub Copilot CLI',
+    name: 'GitHub Copilot',
     commandEnv: 'COPILOT_BIN',
     command: 'copilot',
     versionArgs: ['--version'],
     supportTier: 'preview',
-    installDiagnostic: 'GitHub Copilot CLI was not found. Install via `npm install -g @anthropic-ai/claude-code` or set COPILOT_BIN.',
-    authentication: 'unknown',
+    installDiagnostic: 'GitHub Copilot CLI was not found. Install via npm; COPILOT_BIN may override it.',
+    authentication: 'not-required',
   },
   {
     id: 'amazon-q',
-    name: 'Amazon Q Developer CLI',
+    name: 'Amazon Q',
     commandEnv: 'Q_BIN',
     command: 'q',
     versionArgs: ['--version'],
     supportTier: 'preview',
-    installDiagnostic: 'Amazon Q Developer CLI was not found. Install via `npm install -g @anthropic-ai/claude-code` or set Q_BIN.',
-    authentication: 'unknown',
+    installDiagnostic: 'Amazon Q was not found. Install via npm; Q_BIN may override it.',
+    authentication: 'not-required',
   },
 ];
 
@@ -174,40 +174,25 @@ export const runCommandProbe: CommandRunner = request => new Promise(resolve => 
 
   timer = setTimeout(() => {
     timedOut = true;
-    try {
-      child.kill();
-    } catch {
-      // The readiness result must not wait for a process that ignores termination.
-    }
+    try { child.kill(); } catch { /* best effort */ }
     finish({ exitCode: null, stdout, stderr, timedOut: true });
   }, request.timeoutMs);
 
-  child.stdout?.on('data', chunk => {
-    stdout = appendLimited(stdout, chunk);
-  });
-  child.stderr?.on('data', chunk => {
-    stderr = appendLimited(stderr, chunk);
-  });
+  child.stdout?.on('data', chunk => { stdout = appendLimited(stdout, chunk); });
+  child.stderr?.on('data', chunk => { stderr = appendLimited(stderr, chunk); });
   child.on('error', error => {
     const code = 'code' in error ? String(error.code) : undefined;
     finish({ exitCode: null, stdout, stderr, errorCode: code, timedOut });
   });
-  child.on('close', exitCode => {
-    finish({ exitCode, stdout, stderr, timedOut });
-  });
+  child.on('close', exitCode => finish({ exitCode, stdout, stderr, timedOut }));
 });
 
-function probeOutput(result: CommandProbeResult): string {
-  return `${result.stdout}\n${result.stderr}`
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('WARNING:'))
-    .join('\n')
-    .trim();
+function firstLine(output: string): string | undefined {
+  return output.split(/\r?\n/).find(line => line.trim());
 }
 
-function firstLine(value: string): string | undefined {
-  return value.split(/\r?\n/).map(line => line.trim()).find(Boolean);
+function probeOutput(result: CommandProbeResult): string {
+  return (result.stdout || result.stderr || '').trim();
 }
 
 function resolvedCommand(
@@ -215,18 +200,22 @@ function resolvedCommand(
   env: NodeJS.ProcessEnv,
   commandResolver?: AgentCommandResolver,
 ): ResolvedProbeCommand {
-  const hostResolved = commandResolver?.(spec.id, env);
-  if (hostResolved) return hostResolved;
+  if (commandResolver) {
+    const resolved = commandResolver(spec.id, env);
+    if (resolved) return resolved;
+  }
 
-  return {
-    command: env[spec.commandEnv]?.trim() || spec.command,
-    prefixArgs: [],
-  };
+  const explicitBin = env[spec.commandEnv];
+  if (explicitBin) {
+    return { command: explicitBin, prefixArgs: [] };
+  }
+
+  return { command: spec.command, prefixArgs: [] };
 }
 
 function unavailable(
   spec: AgentSpec,
-  state: Extract<AgentReadinessState, 'missing' | 'timeout' | 'error'>,
+  state: 'missing' | 'timeout' | 'error',
   diagnostic: string,
   checkedAt: number,
   installed = false,
@@ -281,95 +270,116 @@ async function detectOne(
 
   const version = firstLine(probeOutput(versionResult)) || 'installed';
 
-  if (spec.authentication === 'codex') {
-    let authResult: CommandProbeResult;
-    try {
-      authResult = await runner({
-        command: command.command,
-        args: [...command.prefixArgs, 'login', 'status'],
-        timeoutMs,
-        env,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        id: spec.id,
-        name: spec.name,
-        installed: true,
-        authenticated: false,
-        configuration: 'required',
-        selectable: false,
-        state: 'error',
-        version,
-        diagnostic: `Codex authentication check failed: ${message}`,
-        supportTier: spec.supportTier,
-        checkedAt,
-      };
-    }
+  // Only agents that require authentication get an auth check
+  const requiresAuth = spec.authentication !== 'not-required';
 
-    if (authResult.timedOut) {
-      return {
-        id: spec.id,
-        name: spec.name,
-        installed: true,
-        authenticated: false,
-        configuration: 'required',
-        selectable: false,
-        state: 'timeout',
-        version,
-        diagnostic: `Codex did not answer \`login status\` within ${timeoutMs} ms.`,
-        supportTier: spec.supportTier,
-        checkedAt,
-      };
-    }
-
-    const authOutput = probeOutput(authResult);
-    const explicitlyUnauthenticated = /\bnot logged in\b|\bnot authenticated\b|\bunauthenticated\b/i.test(authOutput);
-    const positivelyAuthenticated = /\blogged in\b|\bauthenticated\b/i.test(authOutput);
-    const authenticated = authResult.exitCode === 0 && !explicitlyUnauthenticated && positivelyAuthenticated;
-    return {
-      id: spec.id,
-      name: spec.name,
-      installed: true,
-      authenticated,
-      configuration: authenticated ? 'ready' : 'required',
-      selectable: authenticated,
-      state: authenticated ? 'ready' : 'configuration-required',
-      version,
-      diagnostic: authenticated
-        ? authOutput || `Codex ${version} is installed and authenticated.`
-        : authOutput || 'Codex is installed but not signed in. Run `codex login` and refresh.',
-      supportTier: spec.supportTier,
-      checkedAt,
-    };
-  }
-
-  if (spec.authentication === 'not-required') {
+  if (!requiresAuth) {
     return {
       id: spec.id,
       name: spec.name,
       installed: true,
       authenticated: null,
-      configuration: 'not-required',
+      configuration: 'unknown',
       selectable: true,
       state: 'ready',
       version,
-      diagnostic: `${spec.name} ${version} is available. This integration remains preview until real-CLI validation is complete.`,
+      diagnostic: `${spec.name} ${version} is installed.`,
       supportTier: spec.supportTier,
       checkedAt,
     };
   }
 
+  let authResult: CommandProbeResult;
+  try {
+    authResult = await runner({
+      command: command.command,
+      args: [...command.prefixArgs, 'login', 'status'],
+      timeoutMs,
+      env,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // If the auth command doesn't exist, treat as not requiring auth
+    if (message.includes('ENOENT') || message.includes('not found')) {
+      return {
+        id: spec.id,
+        name: spec.name,
+        installed: true,
+        authenticated: null,
+        configuration: 'unknown',
+        selectable: true,
+        state: 'ready',
+        version,
+        diagnostic: `${spec.name} ${version} is installed.`,
+        supportTier: spec.supportTier,
+        checkedAt,
+      };
+    }
+    return {
+      id: spec.id,
+      name: spec.name,
+      installed: true,
+      authenticated: false,
+      configuration: 'required',
+      selectable: false,
+      state: 'error',
+      version,
+      diagnostic: `${spec.name} authentication check failed: ${message}`,
+      supportTier: spec.supportTier,
+      checkedAt,
+    };
+  }
+
+  if (authResult.timedOut) {
+    return {
+      id: spec.id,
+      name: spec.name,
+      installed: true,
+      authenticated: false,
+      configuration: 'required',
+      selectable: false,
+      state: 'timeout',
+      version,
+      diagnostic: `${spec.name} did not answer \`login status\` within ${timeoutMs} ms.`,
+      supportTier: spec.supportTier,
+      checkedAt,
+    };
+  }
+
+  // If the auth command returned ENOENT, treat as not requiring auth
+  if (authResult.errorCode === 'ENOENT') {
+    return {
+      id: spec.id,
+      name: spec.name,
+      installed: true,
+      authenticated: null,
+      configuration: 'unknown',
+      selectable: true,
+      state: 'ready',
+      version,
+      diagnostic: `${spec.name} ${version} is installed.`,
+      supportTier: spec.supportTier,
+      checkedAt,
+    };
+  }
+
+  const authOutput = probeOutput(authResult);
+  const explicitlyUnauthenticated = /\bnot logged in\b|\bnot authenticated\b|\bunauthenticated\b/i.test(authOutput);
+  const positivelyAuthenticated = /\blogged in\b|\bauthenticated\b/i.test(authOutput);
+  const authenticated = authResult.exitCode === 0 && !explicitlyUnauthenticated && positivelyAuthenticated;
+
   return {
     id: spec.id,
     name: spec.name,
     installed: true,
-    authenticated: null,
-    configuration: 'unknown',
-    selectable: true,
-    state: 'ready',
+    authenticated,
+    configuration: authenticated ? 'ready' : 'required',
+    selectable: authenticated,
+    state: authenticated ? 'ready' : 'configuration-required',
     version,
-    diagnostic: `${spec.name} ${version} is installed. Provider and authentication readiness will be verified when it launches.`,
+    diagnostic: authenticated
+      ? authOutput || `${spec.name} ${version} is installed and authenticated.`
+      : authOutput || `${spec.name} is installed but not signed in.`,
     supportTier: spec.supportTier,
     checkedAt,
   };

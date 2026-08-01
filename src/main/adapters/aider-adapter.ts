@@ -30,7 +30,7 @@ import type {
   AgentSessionOptions,
   AgentInfo,
   EventEmitters,
-} from '../agent-adapter';
+} from '../agent-adapter.ts';
 
 // ─── Internal Types (Aider-specific) ──────────────────────────────────────────
 
@@ -108,7 +108,7 @@ function parseAiderOutput(
         if (content) {
           emitters.emitEvent({
             id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            type: state.currentCodeBlock.language === 'shell' || state.currentCodeBlock.language === 'bash' ? 'code' : 'response',
+            type: 'code',
             content,
             metadata: { language: state.currentCodeBlock.language || 'text' },
             timestamp,
@@ -134,7 +134,7 @@ function parseAiderOutput(
         if (content) {
           emitters.emitEvent({
             id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            type: 'files',
+            type: 'code',
             content: JSON.stringify({ path: state.currentDiff.path, diff: content }),
             metadata: { type: 'diff' },
             timestamp,
@@ -154,7 +154,7 @@ function parseAiderOutput(
       if (state.currentDiff && state.currentDiff.content.trim()) {
         emitters.emitEvent({
           id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          type: 'files',
+          type: 'code',
           content: JSON.stringify({ path: state.currentDiff.path, diff: state.currentDiff.content.trim() }),
           metadata: { type: 'diff' },
           timestamp,
@@ -179,7 +179,7 @@ function parseAiderOutput(
         if (state.currentDiff && state.currentDiff.content.trim()) {
           emitters.emitEvent({
             id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            type: 'files',
+            type: 'code',
             content: JSON.stringify({ path: state.currentDiff.path, diff: state.currentDiff.content.trim() }),
             metadata: { type: 'diff' },
             timestamp,
@@ -266,7 +266,7 @@ function parseAiderOutput(
     if (content) {
       emitters.emitEvent({
         id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        type: 'files',
+        type: 'code',
         content: JSON.stringify({ path: state.currentDiff.path, diff: content }),
         metadata: { type: 'diff' },
         timestamp,
@@ -283,9 +283,11 @@ function parseAiderOutput(
 export class AiderAdapter implements AgentAdapter {
   static sessions = new Map<string, AiderSessionState>();
 
-  constructor(
-    private emitters: EventEmitters
-  ) {}
+  constructor(emitters: EventEmitters) {
+
+    this.emitters = emitters;
+
+  }
 
   // ─── Detection ───────────────────────────────────────────────────────────────
 
@@ -443,6 +445,13 @@ export class AiderAdapter implements AgentAdapter {
 
     // Parse into unified events
     parseAiderOutput(clean, state, sessionId, this.emitters);
+  }
+
+
+  /** Public parseOutput for tests — parses raw output into events/approvals. */
+  parseOutput(state: AiderSessionState, input: string): void {
+    const clean = input.replace(/\x1B\[[0-?]*[ -\/]*[@-~]/g, '');
+    parseAiderOutput(clean, state, state.id, this.emitters);
   }
 }
 

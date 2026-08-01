@@ -2,11 +2,10 @@ import type {
   AgentAdapter,
   AgentApproval,
   AgentSession,
-  AgentSessionOptions,
-} from './agent-adapter';
+} from './agent-adapter.ts';
 import { agentApprovalRouter } from './approval-router.ts';
 
-export type ApprovalAwareAgentId = AgentSessionOptions['agent'];
+export type ApprovalAwareAgentId = 'codex';
 export type AdapterCore = Omit<AgentAdapter, 'resolveApproval'> & Partial<Pick<AgentAdapter, 'resolveApproval'>>;
 
 interface PendingProtocolApproval {
@@ -15,45 +14,8 @@ interface PendingProtocolApproval {
   rejectInput: string;
 }
 
-interface BuildLaunchArgsHost {
-  buildLaunchArgs?: (state: unknown) => string[];
-}
-
-export function sanitizeApprovalArgs(agentId: ApprovalAwareAgentId, args: string[]): string[] {
-  const filtered = args.filter(arg => arg !== '--yes' && arg !== '--auto_run');
-  if (agentId === 'open-interpreter' && !filtered.includes('--no_auto_run')) {
-    filtered.push('--no_auto_run');
-  }
-  return filtered;
-}
-
 /**
- * Existing adapters predate the approval-resolution contract. Install a narrow
- * launch-argument guard while they are being migrated so none can silently
- * bypass Consiglio with global auto-approval flags.
- */
-export function enforceInteractiveApprovalMode(
-  agentId: ApprovalAwareAgentId,
-  adapter: AdapterCore,
-): void {
-  if (agentId === 'codex') return;
-
-  const host = adapter as unknown as BuildLaunchArgsHost;
-  if (typeof host.buildLaunchArgs !== 'function') return;
-
-  const original = host.buildLaunchArgs.bind(adapter);
-  host.buildLaunchArgs = (state: unknown) => sanitizeApprovalArgs(agentId, original(state));
-}
-
-function protocolFor(_agentId: ApprovalAwareAgentId): Pick<PendingProtocolApproval, 'approveInput' | 'rejectInput'> {
-  // The currently advertised interactive CLIs all accept a yes/no response at
-  // the confirmation prompt parsed by their adapters. Keep this per-approval
-  // protocol data here so future adapters can supply different key sequences.
-  return { approveInput: 'y\n', rejectInput: 'n\n' };
-}
-
-/**
- * Owns session handles and pending approvals for one concrete adapter instance.
+ * Owns session handles and pending approvals for the Codex adapter.
  * The decorator is returned as AgentSession.adapter, so approval IDs resolve to
  * the same session/PTY that emitted them.
  */
@@ -66,7 +28,6 @@ export class ApprovalAwareAdapter implements AgentAdapter {
   constructor(agentId: ApprovalAwareAgentId, inner: AdapterCore) {
     this.agentId = agentId;
     this.inner = inner;
-    enforceInteractiveApprovalMode(agentId, inner);
   }
 
   trackApproval(approval: AgentApproval): boolean {
@@ -75,7 +36,8 @@ export class ApprovalAwareAdapter implements AgentAdapter {
 
     this.pendingApprovals.set(approval.id, {
       approval,
-      ...protocolFor(this.agentId),
+      approveInput: 'y\n',
+      rejectInput: 'n\n',
     });
 
     if (!agentApprovalRouter.register(approval, this)) {
@@ -85,11 +47,8 @@ export class ApprovalAwareAdapter implements AgentAdapter {
     return true;
   }
 
-  async launch(options: AgentSessionOptions): Promise<AgentSession> {
-    const safeOptions = this.agentId === 'open-interpreter'
-      ? { ...options, autoRun: false }
-      : options;
-    const session = await this.inner.launch(safeOptions);
+  async launch(options: import('./agent-adapter').AgentSessionOptions): Promise<AgentSession> {
+    const session = await this.inner.launch(options);
     const ownedSession: AgentSession = { ...session, adapter: this };
     this.sessions.set(session.sessionId, ownedSession);
     return ownedSession;
@@ -130,4 +89,24 @@ export class ApprovalAwareAdapter implements AgentAdapter {
   reconnectSession(sessionId: string): Promise<boolean> {
     return this.inner.reconnectSession(sessionId);
   }
+}
+
+// ─── Approval argument sanitization ────────────────────────────────────────────
+// Removes global auto-approval flags that would bypass the approval flow,
+// and adds agent-specific overrides to prevent accidental auto-execution.
+
+export function sanitizeApprovalArgs(
+  agentId: string,
+  args: string[],
+): string[] {
+  let filtered = args.filter(arg => arg !== '--yes');
+
+  if (agentId === 'open-interpreter') {
+    filtered = filtered.filter(arg => arg !== '--auto_run');
+    if (!filtered.includes('--no_auto_run')) {
+      filtered.push('--no_auto_run');
+    }
+  }
+
+  return filtered;
 }

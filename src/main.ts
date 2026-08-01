@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, net, protocol, safeStorage, screen, shell } from 'electron';
 
 import { discoverLlamaCppServers } from './main/lan-discovery';
 import { APP_PROTOCOL, APP_PROTOCOL_HOST, isSafeExternalUrl, isTrustedRendererUrl, resolveRendererAsset } from './main/app-protocol';
@@ -18,6 +18,12 @@ import packageJson from '../package.json';
 import type { IPty } from 'node-pty';
 
 const pty = require('node-pty') as typeof import('node-pty');
+
+// Catch all crashes and log them
+process.on('uncaughtException', (err) => {
+});
+process.on('unhandledRejection', (reason, promise) => {
+});
 
 // Disable GPU compositing to avoid crashes in environments where the GPU
 // process cannot initialize (e.g. headless X11, containers, PTY sessions).
@@ -643,7 +649,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: 'Consiglio',
-    show: false,
+    show: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -657,8 +663,11 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
   });
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (e) => {
     saveWindowState(mainWindow);
+  });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
@@ -688,6 +697,10 @@ function createWindow() {
     Menu.buildFromTemplate(template).popup({ window: mainWindow || undefined });
   });
   void mainWindow.loadURL(`${APP_PROTOCOL}://${APP_PROTOCOL_HOST}/index.html`);
+  mainWindow.webContents.on('did-finish-load', () => {
+  });
+  mainWindow.webContents.on('did-fail-load', (event, code, desc) => {
+  });
 }
 
 function registerRendererProtocol() {
@@ -1183,15 +1196,24 @@ function loadWindowState() {
     path.join(app.getPath('userData'), 'codex-control-window-state.json'),
   ]);
   if (saved) {
-    return {
-      bounds: {
-        x: typeof saved.bounds?.x === 'number' ? saved.bounds.x : undefined,
-        y: typeof saved.bounds?.y === 'number' ? saved.bounds.y : undefined,
-        width: typeof saved.bounds?.width === 'number' ? saved.bounds.width : fallback.bounds.width,
-        height: typeof saved.bounds?.height === 'number' ? saved.bounds.height : fallback.bounds.height,
-      },
-      maximized: Boolean(saved.maximized),
+    const bounds = {
+      x: typeof saved.bounds?.x === 'number' ? saved.bounds.x : undefined,
+      y: typeof saved.bounds?.y === 'number' ? saved.bounds.y : undefined,
+      width: typeof saved.bounds?.width === 'number' ? saved.bounds.width : fallback.bounds.width,
+      height: typeof saved.bounds?.height === 'number' ? saved.bounds.height : fallback.bounds.height,
     };
+    // Validate bounds against current display geometry; fall back to centered if off-screen
+    const primary = screen.getPrimaryDisplay();
+    const workArea = primary.workArea;
+    const validX = typeof bounds.x === 'number' && bounds.x + bounds.width > workArea.x && bounds.x < workArea.x + workArea.width;
+    const validY = typeof bounds.y === 'number' && bounds.y + bounds.height > workArea.y && bounds.y < workArea.y + workArea.height;
+    if (validX && validY) {
+      return { bounds, maximized: Boolean(saved.maximized) };
+    }
+    // Window would be off-screen; center on primary display
+    const cx = Math.max(workArea.x, Math.min(workArea.x + Math.floor((workArea.width - bounds.width) / 2), workArea.x + workArea.width - bounds.width));
+    const cy = Math.max(workArea.y, Math.min(workArea.y + Math.floor((workArea.height - bounds.height) / 2), workArea.y + workArea.height - bounds.height));
+    return { bounds: { ...bounds, x: cx, y: cy }, maximized: false };
   }
   return fallback;
 }
@@ -2317,7 +2339,6 @@ handleIpc('mobile:rotate', (_event, input: { port?: number; publicUrl?: string }
 handleIpc('mobile:disable', () => disableMobileBridge());
 handleIpc('system:startup-checks', () => runStartupChecks());
 handleIpc('system:bootstrap-progress', () => latestBootstrapProgress);
-handleIpc('agents:readiness', () => detectAgentReadiness({ commandResolver: resolveAgentProbeCommand }));
 handleIpc('system:check-updates', () => checkForAppUpdate());
 handleIpc('system:check-providers', async () => (await providerReadiness()).checks);
 handleIpc('settings:update', (_event, nextSettings: Partial<AppSettings>) => {

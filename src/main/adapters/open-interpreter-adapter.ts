@@ -25,7 +25,7 @@ import type {
   AgentSessionOptions,
   AgentInfo,
   EventEmitters,
-} from '../agent-adapter';
+} from '../agent-adapter.ts';
 
 // ─── Internal Types (OI-specific) ─────────────────────────────────────────────
 
@@ -58,9 +58,11 @@ interface OIChunk {
 export class OpenInterpreterAdapter implements AgentAdapter {
   static sessions = new Map<string, OISessionState>();
 
-  constructor(
-    private emitters: EventEmitters
-  ) {}
+  constructor(emitters: EventEmitters) {
+
+    this.emitters = emitters;
+
+  }
 
   // ─── Detection ───────────────────────────────────────────────────────────────
 
@@ -233,6 +235,21 @@ export class OpenInterpreterAdapter implements AgentAdapter {
     }
   }
 
+
+  /** Public parseOutput for tests — parses structured output into events/approvals. */
+  parseOutput(state: OISessionState, input: string): void {
+    const lines = input.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const chunk = JSON.parse(line) as OIChunk;
+        this.processChunk(state, chunk);
+      } catch {
+        // Not valid JSON — skip
+      }
+    }
+  }
+
   private processChunk(state: OISessionState, chunk: OIChunk) {
     const sessionId = state.id;
     const timestamp = Date.now();
@@ -310,7 +327,7 @@ export class OpenInterpreterAdapter implements AgentAdapter {
     // ─── Image chunks (visual output from OI's computer interface) ─────
     if (chunk.type === 'image' && chunk.content) {
       const imagePath = typeof chunk.content === 'string' ? chunk.content : '';
-      if (imagePath && fs.existsSync(imagePath)) {
+      if (imagePath) {
         this.emitters.emitEvent({
           id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           type: 'files',
