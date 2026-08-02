@@ -11,6 +11,7 @@
 #include "backend/agentdetector.h"
 #include "backend/sessionmanager.h"
 #include "backend/approvalrouter.h"
+#include "backend/appdatabase.h"
 #include "models/eventmodel.h"
 
 class Sidebar;
@@ -54,6 +55,7 @@ private slots:
     void onSessionSelected(const QString &sessionId);
     void onSessionStoppedFromList(const QString &sessionId);
     void onCommandExecuted(const QString &command, const QString &workingDir);
+    void onProjectSelected(const QString &projectId, const QString &projectName);
 
 private:
     void setupUI();
@@ -67,6 +69,8 @@ private:
     bool startSession(const QString &provider, const QString &workspace,
                       const QString &sandboxMode);
     void refreshSessionList();
+    void refreshProjectList();
+    void loadTimelineEvents(const QString &sessionId = {});
     void addTimelineEvent(const EventModel::EventItem &event);
     void sendCommandToActiveSession(const QString &command, const QString &workingDir);
     void updateStatusBarSessionState();
@@ -79,6 +83,7 @@ private:
     QSystemTrayIcon *m_tray = nullptr;
     QMenu *m_trayMenu = nullptr;
 
+    AppDatabase m_database;
     Settings m_settings;
     AgentDetector m_agentDetector;
     SessionManager m_sessionManager;
@@ -86,5 +91,7 @@ private:
     StartupWizard *m_wizard = nullptr;
 
     QString m_activeSessionId;
+    QString m_viewedSessionId;
+    QString m_selectedProjectId;
     int m_lastPanelIndex = 0;
 };

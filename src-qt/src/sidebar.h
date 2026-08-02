@@ -11,7 +11,7 @@ public:
         Sessions,
         Timeline,
         Files,
-        Discussions,
+        Projects,
         Secrets,
         Mobile
     };

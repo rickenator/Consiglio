@@ -17,6 +17,12 @@ QString tomlString(QString value) {
     return '"' + value + '"';
 }
 
+QString tomlStringArray(const QStringList &values) {
+    QStringList escaped;
+    for (const auto &value : values) escaped << tomlString(value);
+    return '[' + escaped.join(',') + ']';
+}
+
 QString normalizedOpenAiBaseUrl(QString baseUrl) {
     while (baseUrl.endsWith('/')) baseUrl.chop(1);
     if (!baseUrl.endsWith("/v1")) baseUrl += "/v1";
@@ -28,6 +34,13 @@ QString validatedSandboxMode(const QVariantMap &options) {
     if (requested == "read-only" || requested == "workspace-write" ||
         requested == "danger-full-access") return requested;
     return "workspace-write";
+}
+
+QString normalizedUserName(const QVariantMap &options) {
+    QString name = options.value("userName", "Dude").toString().trimmed();
+    name.replace(QRegularExpression("[\\r\\n\\t]+"), " ");
+    if (name.isEmpty()) name = "Dude";
+    return name.left(80);
 }
 }
 
@@ -49,7 +62,9 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
     state.record.status = "running";
     state.record.repository = repository;
     state.record.branch = branch;
+    state.record.projectId = options.value("projectId").toString();
     state.record.permissionMode = validatedSandboxMode(options);
+    state.record.preferredName = normalizedUserName(options);
     state.record.startedAt = QDateTime::currentMSecsSinceEpoch();
     state.record.lastActivity = state.record.startedAt;
     state.workingDir = !repository.isEmpty() && QDir(repository).exists()
@@ -118,6 +133,23 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
     } else {
         state.program = "echo";
         state.providerArgs << "Session started";
+    }
+
+    if (state.structuredCodex) {
+        const QString identityInstruction = QString(
+            "The user's preferred name is %1. Address the user as %1 when using a name, "
+            "and do not infer or substitute another name.").arg(state.record.preferredName);
+        state.providerArgs << "-c"
+                           << QString("developer_instructions=%1").arg(
+                                  tomlString(identityInstruction));
+        const QString historyMcpScript = options.value("historyMcpScript").toString();
+        const QString historyDatabasePath = options.value("historyDatabasePath").toString();
+        if (!historyMcpScript.isEmpty() && !historyDatabasePath.isEmpty()) {
+            state.providerArgs
+                << "-c" << "mcp_servers.consiglio_history.command=\"python3\""
+                << "-c" << QString("mcp_servers.consiglio_history.args=%1").arg(
+                    tomlStringArray({historyMcpScript, "--database", historyDatabasePath}));
+        }
     }
 
     // Codex is driven one structured turn at a time. There is deliberately no
@@ -316,7 +348,14 @@ bool SessionManager::sendCommand(const QString &sessionId, const QString &comman
     it.value().record.lastActivity = QDateTime::currentMSecsSinceEpoch();
     if (it.value().structuredCodex) return startCodexTurn(sessionId, command);
     if (!it.value().pty || !it.value().pty->isRunning()) return false;
-    it.value().pty->write((command + "\r").toUtf8());
+    QString effectiveCommand = command;
+    if (!it.value().identitySent) {
+        effectiveCommand = QString(
+            "My preferred name is %1. Address me by that name when appropriate. %2")
+            .arg(it.value().record.preferredName, command);
+        it.value().identitySent = true;
+    }
+    it.value().pty->write((effectiveCommand + "\r").toUtf8());
     return true;
 }
 

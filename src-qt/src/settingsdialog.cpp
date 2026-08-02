@@ -29,6 +29,11 @@ SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetect
     auto *generalPage = new QWidget();
     auto *generalLayout = new QFormLayout(generalPage);
 
+    auto *userNameEdit = new QLineEdit(settings->userName, generalPage);
+    userNameEdit->setObjectName("userNameEdit");
+    userNameEdit->setPlaceholderText(tr("Dude"));
+    generalLayout->addRow(tr("Your name:"), userNameEdit);
+
     auto *providerCombo = new QComboBox(generalPage);
     providerCombo->addItems({"codex", "ollama", "remote_llamacpp", "lan"});
     int idx = providerCombo->findText(settings->defaultProvider);
@@ -122,6 +127,7 @@ SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetect
     // ─── Buttons ──────────────────────────────────────────────────
     auto *buttonLayout = new QHBoxLayout();
     auto *saveBtn = new QPushButton(tr("Save"), this);
+    saveBtn->setObjectName("saveSettingsButton");
     saveBtn->setStyleSheet(R"(
         QPushButton {
             background: #238636;
@@ -144,9 +150,12 @@ SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetect
         QPushButton:hover { background: rgba(255,255,255,0.06); }
     )");
 
-    connect(saveBtn, &QPushButton::clicked, this, [this, settings, providerCombo, modelEdit,
+    connect(saveBtn, &QPushButton::clicked, this, [this, settings, userNameEdit,
+            providerCombo, modelEdit,
             ollamaUrl, ollamaModel, ollamaKey, llamaUrl, llamaModel, llamaKey,
             isolateCheck, searchCheck, multiAgentCheck]() {
+        settings->userName = userNameEdit->text().trimmed();
+        if (settings->userName.isEmpty()) settings->userName = "Dude";
         settings->defaultProvider = providerCombo->currentText();
         settings->defaultModel = modelEdit->text();
         settings->ollama.baseUrl = ollamaUrl->text();

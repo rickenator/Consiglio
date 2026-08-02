@@ -3,9 +3,79 @@
 #include <QFontDatabase>
 #include <QPalette>
 #include <QScreen>
+#include <QLocalSocket>
+#include <QRegularExpression>
 #include <QtGlobal>
+#include <QFileInfo>
+#include <QTextStream>
 #include "mainwindow.h"
 #include "uimetrics.h"
+
+static bool hasUsableX11Display(QString *reason) {
+    const QString display = qEnvironmentVariable("DISPLAY");
+    if (display.isEmpty()) {
+        if (reason) *reason = "DISPLAY is not set";
+        return false;
+    }
+
+    const QString socketSuffix = display.startsWith(':')
+        ? display.mid(1).section('.', 0, 0)
+        : QString();
+    bool ok = false;
+    const int displayNumber = socketSuffix.toInt(&ok);
+    if (!ok) {
+        if (reason) *reason = QString("DISPLAY has an unsupported value: %1").arg(display);
+        return false;
+    }
+
+    const QString socketPath = QString("/tmp/.X11-unix/X%1").arg(displayNumber);
+    if (!QFileInfo::exists(socketPath)) {
+        if (reason) *reason = QString("No X11 socket found at %1 for DISPLAY=%2")
+                                  .arg(socketPath, display);
+        return false;
+    }
+
+    QLocalSocket socket;
+    socket.connectToServer(QStringLiteral("X%1").arg(displayNumber), QIODevice::ReadOnly);
+    if (!socket.waitForConnected(250)) {
+        if (reason) *reason = QString("Cannot connect to the X11 socket for DISPLAY=%1").arg(display);
+        return false;
+    }
+
+    return true;
+}
+
+static bool hasUsableWaylandDisplay(QString *reason) {
+    const QString waylandDisplay = qEnvironmentVariable("WAYLAND_DISPLAY");
+    if (waylandDisplay.isEmpty()) {
+        if (reason) *reason = "WAYLAND_DISPLAY is not set";
+        return false;
+    }
+
+    const QString runtimeDir = qEnvironmentVariable("XDG_RUNTIME_DIR");
+    if (runtimeDir.isEmpty()) {
+        if (reason) *reason = "XDG_RUNTIME_DIR is not set";
+        return false;
+    }
+
+    const QString socketPath = QString("%1/%2").arg(runtimeDir, waylandDisplay);
+    if (!QFileInfo::exists(socketPath)) {
+        if (reason) *reason = QString("No Wayland socket found at %1").arg(socketPath);
+        return false;
+    }
+
+    return true;
+}
+
+static int failNoDisplay(const QString &details) {
+    QTextStream stderrStream(stderr);
+    stderrStream << "Consiglio cannot start a GUI session.\n"
+                 << details << "\n"
+                 << "Run this from a desktop session with X11 or Wayland, or use the\n"
+                 << "offscreen test mode with QT_QPA_PLATFORM=offscreen.\n";
+    stderrStream.flush();
+    return 1;
+}
 
 static void setDarkPalette(QApplication *app) {
     QPalette dark;
@@ -148,6 +218,17 @@ static void setDarkPalette(QApplication *app) {
 }
 
 int main(int argc, char *argv[]) {
+    const QString platform = qEnvironmentVariable("QT_QPA_PLATFORM");
+    const bool headlessRequested = platform == "offscreen" || platform == "minimal";
+    if (!headlessRequested) {
+    QString displayReason;
+    const bool displayLooksUsable = hasUsableX11Display(&displayReason)
+        || hasUsableWaylandDisplay(&displayReason);
+    if (!displayLooksUsable) {
+        return failNoDisplay(displayReason);
+    }
+    }
+
     QApplication app(argc, argv);
     app.setApplicationName("Consiglio");
     app.setApplicationVersion("0.2.0");

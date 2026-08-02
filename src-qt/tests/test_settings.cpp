@@ -1,14 +1,12 @@
 #include <QtTest/QtTest>
 #include "backend/settings.h"
-#include <QDir>
-#include <QSettings>
+#include "backend/appdatabase.h"
 #include <QTemporaryDir>
 
 class TestSettings : public QObject {
     Q_OBJECT
 
 private slots:
-    void initTestCase();
     void init();
     void cleanup();
     void testDefaultValues();
@@ -20,38 +18,31 @@ private slots:
 
 private:
     Settings *m_settings = nullptr;
+    AppDatabase *m_database = nullptr;
     QTemporaryDir m_settingsDir;
+    int m_databaseNumber = 0;
 };
 
-void TestSettings::initTestCase() {
-    QVERIFY(m_settingsDir.isValid());
-    QVERIFY(QDir(m_settingsDir.path()).mkpath("Aniviza"));
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
-                       m_settingsDir.path());
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
-                       m_settingsDir.path());
-    QSettings probe("Aniviza", "Consiglio");
-    QVERIFY2(probe.fileName().startsWith(m_settingsDir.path()),
-             qPrintable(probe.fileName()));
-}
-
 void TestSettings::init() {
-    // Clear the isolated test settings store before each test.
-    QSettings s("Aniviza", "Consiglio");
-    s.clear();
-    m_settings = new Settings(nullptr);
+    QVERIFY(m_settingsDir.isValid());
+    const QString path = QString("%1/settings-%2.sqlite")
+        .arg(m_settingsDir.path()).arg(++m_databaseNumber);
+    m_database = new AppDatabase(path);
+    QVERIFY2(m_database->isOpen(), qPrintable(m_database->lastError()));
+    m_settings = new Settings(nullptr, m_database);
 }
 
 void TestSettings::cleanup() {
     delete m_settings;
     m_settings = nullptr;
-    // Clear after each test too
-    QSettings s("Aniviza", "Consiglio");
-    s.clear();
+    delete m_database;
+    m_database = nullptr;
 }
 
 // Default values should be sensible defaults
 void TestSettings::testDefaultValues() {
+    QCOMPARE(m_settings->value().userName, QString("Dude"));
+    QCOMPARE(m_database->preference("userName").toString(), QString("Dude"));
     QCOMPARE(m_settings->value().defaultProvider, QString("codex"));
     QCOMPARE(m_settings->value().ollama.baseUrl, QString("http://localhost:11434"));
     QCOMPARE(m_settings->value().ollama.model, QString("qwen2.5:32b-instruct-q4_K_M"));
@@ -61,13 +52,15 @@ void TestSettings::testDefaultValues() {
 // Save and load roundtrip — uses a separate Settings instance to verify persistence
 void TestSettings::testSaveAndLoad() {
     AppSettings &s = m_settings->value();
+    s.userName = "Rick";
     s.defaultProvider = "ollama";
     s.ollama.baseUrl = "http://localhost:11435";
     s.ollama.model = "llama3:8b";
     s.save();
 
     // Create a fresh Settings instance — it loads from the same QSettings store
-    Settings freshSettings(nullptr);
+    Settings freshSettings(nullptr, m_database);
+    QCOMPARE(freshSettings.value().userName, QString("Rick"));
     QCOMPARE(freshSettings.value().defaultProvider, QString("ollama"));
     QCOMPARE(freshSettings.value().ollama.baseUrl, QString("http://localhost:11435"));
     QCOMPARE(freshSettings.value().ollama.model, QString("llama3:8b"));
@@ -81,7 +74,7 @@ void TestSettings::testOllamaConfig() {
     s.ollama.apiKey = "test-key-123";
     s.save();
 
-    Settings freshSettings(nullptr);
+    Settings freshSettings(nullptr, m_database);
     QCOMPARE(freshSettings.value().ollama.baseUrl, QString("http://192.168.1.100:11434"));
     QCOMPARE(freshSettings.value().ollama.model, QString("mistral:7b"));
     QCOMPARE(freshSettings.value().ollama.apiKey, QString("test-key-123"));
@@ -110,7 +103,7 @@ void TestSettings::testLanProviders() {
 
     s.save();
 
-    Settings freshSettings(nullptr);
+    Settings freshSettings(nullptr, m_database);
     QCOMPARE(freshSettings.value().lanProviders.size(), 2);
     QCOMPARE(freshSettings.value().lanProviders[0].id, QString("lan-1"));
     QCOMPARE(freshSettings.value().lanProviders[0].name, QString("Remote Ollama"));
@@ -127,7 +120,7 @@ void TestSettings::testLocalProviderBehavior() {
     s.localProviderBehavior.enableMultiAgent = true;
     s.save();
 
-    Settings freshSettings(nullptr);
+    Settings freshSettings(nullptr, m_database);
     QCOMPARE(freshSettings.value().localProviderBehavior.isolateProfile, false);
     QCOMPARE(freshSettings.value().localProviderBehavior.enableWebSearch, false);
     QCOMPARE(freshSettings.value().localProviderBehavior.enableMultiAgent, true);

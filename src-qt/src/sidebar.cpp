@@ -49,7 +49,7 @@ void Sidebar::setupUI() {
     addPanel("Sessions", PanelId::Sessions);
     addPanel("Timeline", PanelId::Timeline);
     addPanel("Files", PanelId::Files);
-    addPanel("Discussions", PanelId::Discussions);
+    addPanel("Projects", PanelId::Projects);
 
     addPanel("Secrets", PanelId::Secrets);
     addPanel("Mobile", PanelId::Mobile);

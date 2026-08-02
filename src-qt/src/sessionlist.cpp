@@ -75,12 +75,19 @@ void SessionList::setupUI() {
     // Connections
     connect(m_treeView, &QTreeView::doubleClicked, this, &SessionList::onSessionDoubleClicked);
     connect(m_stopBtn, &QPushButton::clicked, this, &SessionList::onStopSession);
+    connect(m_treeView->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, [this](const QModelIndex &current) {
+        m_stopBtn->setEnabled(current.isValid() &&
+            m_model->data(current, SessionModel::StatusRole).toString() == "running");
+    });
 }
 
 void SessionList::setSessions(const QList<SessionRecord> &sessions) {
     m_model->setSessions(sessions);
     m_emptyLabel->setVisible(sessions.isEmpty());
-    m_stopBtn->setEnabled(!sessions.isEmpty() && m_treeView->currentIndex().isValid());
+    const QModelIndex current = m_treeView->currentIndex();
+    m_stopBtn->setEnabled(current.isValid() &&
+        m_model->data(current, SessionModel::StatusRole).toString() == "running");
 }
 
 void SessionList::onSessionDoubleClicked(const QModelIndex &index) {
@@ -92,6 +99,7 @@ void SessionList::onSessionDoubleClicked(const QModelIndex &index) {
 void SessionList::onStopSession() {
     auto idx = m_treeView->currentIndex();
     if (idx.isValid()) {
+        if (m_model->data(idx, SessionModel::StatusRole).toString() != "running") return;
         auto sessionId = m_model->data(idx, SessionModel::IdRole).toString();
         emit sessionStopped(sessionId);
     }

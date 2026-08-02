@@ -228,9 +228,16 @@ void EventTimeline::addEvent(const EventModel::EventItem &event) {
     m_emptyLabel->setVisible(false);
 }
 
+void EventTimeline::setEvents(const QList<EventModel::EventItem> &events) {
+    m_textEdit->clear();
+    for (const auto &event : events) appendEvent(event);
+    m_emptyLabel->setVisible(events.isEmpty());
+}
+
 void EventTimeline::clearEvents() {
     m_textEdit->clear();
     m_emptyLabel->setVisible(true);
+    emit eventsCleared();
 }
 
 void EventTimeline::onSendCommand() {

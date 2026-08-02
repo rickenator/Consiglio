@@ -8,7 +8,7 @@ class QWidget;
 class SessionList;
 class EventTimeline;
 class FileBrowser;
-class DiscussionPanel;
+class ProjectPanel;
 class SecretsManager;
 class MobilePairing;
 
@@ -24,19 +24,18 @@ public:
     SessionList *sessionsPanel() const { return m_sessionsPanel; }
     EventTimeline *timelinePanel() const { return m_timelinePanel; }
     FileBrowser *filesPanel() const { return m_filesPanel; }
-    DiscussionPanel *discussionsPanel() const { return m_discussionsPanel; }
+    ProjectPanel *projectsPanel() const { return m_projectsPanel; }
 
 private:
     QStackedWidget *m_stack = nullptr;
     QWidget *createSessionsPanel();
     QWidget *createTimelinePanel();
     QWidget *createFilesPanel();
-    QWidget *createDiscussionsPanel();
     QWidget *createSecretsPanel();
     QWidget *createMobilePanel();
 
     SessionList *m_sessionsPanel = nullptr;
     EventTimeline *m_timelinePanel = nullptr;
     FileBrowser *m_filesPanel = nullptr;
-    DiscussionPanel *m_discussionsPanel = nullptr;
+    ProjectPanel *m_projectsPanel = nullptr;
 };

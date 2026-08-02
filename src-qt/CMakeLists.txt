@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(Consiglio VERSION 0.2.0 LANGUAGES CXX)
 
+configure_file(mcp/consiglio_history_mcp.py
+               ${CMAKE_CURRENT_BINARY_DIR}/consiglio_history_mcp.py COPYONLY)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -8,9 +11,11 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt5 REQUIRED COMPONENTS Core Widgets Network Concurrent Sql Test)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # ─── Backend Library (shared by app and tests) ──────────────────────────────
 set(BACKEND_SOURCES
+    src/backend/appdatabase.cpp
     src/backend/agentdetector.cpp
     src/backend/approvalrouter.cpp
     src/backend/ptyhandler.cpp
@@ -20,7 +25,7 @@ set(BACKEND_SOURCES
 
 add_library(ConsiglioBackend STATIC ${BACKEND_SOURCES})
 target_include_directories(ConsiglioBackend PUBLIC src)
-target_link_libraries(ConsiglioBackend PUBLIC Qt5::Core Qt5::Network)
+target_link_libraries(ConsiglioBackend PUBLIC Qt5::Core Qt5::Network Qt5::Sql)
 if(UNIX AND NOT ANDROID)
     target_link_libraries(ConsiglioBackend PUBLIC util)
 endif()
@@ -52,8 +57,8 @@ set(QT_SOURCES
     src/secretsmanager.h
     src/mobilepairing.cpp
     src/mobilepairing.h
-    src/discussionpanel.cpp
-    src/discussionpanel.h
+    src/projectpanel.cpp
+    src/projectpanel.h
     src/approvaldialog.cpp
     src/approvaldialog.h
     src/models/sessionmodel.cpp
@@ -117,5 +122,26 @@ target_link_libraries(test_eventtimeline PRIVATE
     Qt5::Core Qt5::Widgets Qt5::Test ConsiglioBackend)
 add_test(NAME EventTimelineTests COMMAND test_eventtimeline)
 
+add_executable(test_settingsdialog
+    tests/test_settingsdialog.cpp
+    src/settingsdialog.cpp
+    src/settingsdialog.h
+)
+target_include_directories(test_settingsdialog PRIVATE src)
+target_link_libraries(test_settingsdialog PRIVATE
+    Qt5::Core Qt5::Widgets Qt5::Network Qt5::Test ConsiglioBackend)
+add_test(NAME SettingsDialogTests COMMAND test_settingsdialog)
+
+add_executable(test_appdatabase tests/test_appdatabase.cpp)
+target_include_directories(test_appdatabase PRIVATE src)
+target_link_libraries(test_appdatabase PRIVATE
+    Qt5::Core Qt5::Sql Qt5::Test ConsiglioBackend)
+add_test(NAME AppDatabaseTests COMMAND test_appdatabase)
+
+add_test(NAME ConsiglioHistoryMcpTests
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_consiglio_history_mcp.py
+            ${CMAKE_CURRENT_BINARY_DIR}/consiglio_history_mcp.py)
+
 # Install
 install(TARGETS Consiglio BUNDLE DESTINATION .)
+install(PROGRAMS mcp/consiglio_history_mcp.py DESTINATION bin)

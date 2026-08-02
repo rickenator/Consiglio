@@ -2,7 +2,7 @@
 #include "sessionlist.h"
 #include "eventtimeline.h"
 #include "filebrowser.h"
-#include "discussionpanel.h"
+#include "projectpanel.h"
 #include "secretsmanager.h"
 #include "mobilepairing.h"
 #include <QWidget>
@@ -29,9 +29,9 @@ void PanelManager::createPanels(QWidget *mainWindow) {
     m_filesPanel = new FileBrowser(mainWindow);
     m_stack->addWidget(m_filesPanel);
 
-    // Discussions panel
-    m_discussionsPanel = new DiscussionPanel(mainWindow);
-    m_stack->addWidget(m_discussionsPanel);
+    // Durable project workspace/session hierarchy
+    m_projectsPanel = new ProjectPanel(mainWindow);
+    m_stack->addWidget(m_projectsPanel);
 
     // Secrets panel
     m_stack->addWidget(createSecretsPanel());

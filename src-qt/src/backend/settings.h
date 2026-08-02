@@ -5,6 +5,8 @@
 #include <QVariantMap>
 #include <QList>
 
+class AppDatabase;
+
 struct LanProviderConfig {
     QString id;
     QString name;
@@ -15,6 +17,7 @@ struct LanProviderConfig {
 };
 
 struct AppSettings {
+    QString userName = "Dude";
     QString defaultProvider = "codex"; // codex, ollama, remote_llamacpp, lan
     bool providerConfigured = false;
     struct {
@@ -35,6 +38,8 @@ struct AppSettings {
         bool enableMultiAgent = false;
     } localProviderBehavior;
 
+    AppDatabase *database = nullptr;
+
     bool hasRunSetup() const;
     void load();
     void save();
@@ -44,7 +49,8 @@ class Settings : public QObject {
     Q_OBJECT
 
 public:
-    explicit Settings(QObject *parent = nullptr);
+    explicit Settings(QObject *parent = nullptr, AppDatabase *database = nullptr);
+    ~Settings() override;
 
     const AppSettings &value() const;
     AppSettings &value();
@@ -59,4 +65,6 @@ signals:
 
 private:
     AppSettings m_value;
+    AppDatabase *m_database = nullptr;
+    bool m_ownsDatabase = false;
 };

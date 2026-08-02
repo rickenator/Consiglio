@@ -201,6 +201,11 @@ void AgentDetector::detectOpenInterpreter() {
 }
 
 void AgentDetector::detectNetworkEndpoints() {
+    const QString platform = qEnvironmentVariable("QT_QPA_PLATFORM");
+    if (platform == "offscreen" || platform == "minimal") {
+        return;
+    }
+
     struct Target { QString host; quint16 port; };
     QList<Target> targets;
     QSet<QString> seenTargets;

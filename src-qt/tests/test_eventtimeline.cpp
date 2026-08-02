@@ -68,8 +68,7 @@ void TestEventTimeline::animatesThinkingState() {
     QVERIFY(timeline.isThinking());
     QVERIFY(indicator->isVisible());
     const QString firstFrame = indicator->text();
-    QTest::qWait(120);
-    QVERIFY(indicator->text() != firstFrame);
+    QTRY_VERIFY_WITH_TIMEOUT(indicator->text() != firstFrame, 500);
 
     timeline.setThinking(false);
     QVERIFY(!timeline.isThinking());

@@ -17,7 +17,9 @@ struct SessionRecord {
     QString status;   // running, stopped, error
     QString repository;
     QString branch;
+    QString projectId;
     QString permissionMode;
+    QString preferredName;
     qint64 startedAt = 0;
     qint64 lastActivity = 0;
 };
@@ -63,6 +65,7 @@ private:
         QString stderrBuffer;
         QString codexThreadId;
         QSet<QString> processedItemIds;
+        bool identitySent = false;
     };
     QMap<QString, SessionState> m_sessions;
     ApprovalRouter m_approvalRouter;

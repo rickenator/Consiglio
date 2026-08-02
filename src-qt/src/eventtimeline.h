@@ -15,9 +15,11 @@ public:
 
 signals:
     void commandExecuted(const QString &command, const QString &workingDir);
+    void eventsCleared();
 
 public slots:
     void addEvent(const EventModel::EventItem &event);
+    void setEvents(const QList<EventModel::EventItem> &events);
     void clearEvents();
     void onSendCommand();
     void setThinking(bool thinking);

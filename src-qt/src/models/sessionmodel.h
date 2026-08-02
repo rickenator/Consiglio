@@ -12,6 +12,7 @@ public:
         StatusRole,
         RepositoryRole,
         BranchRole,
+        ProjectIdRole,
         StartedAtRole,
         LastActivityRole
     };

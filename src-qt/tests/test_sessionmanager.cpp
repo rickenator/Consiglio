@@ -129,11 +129,13 @@ void TestSessionManager::testCodexSessionDoesNotEmitTerminalUI() {
 void TestSessionManager::testCodexPermissionSelection() {
     QVariantMap options;
     options.insert("sandboxMode", "danger-full-access");
+    options.insert("userName", "Rick");
     const QString fullAccess = m_manager->startSession(
         "codex", QDir::currentPath(), {}, options);
     QCOMPARE(m_manager->listSessions().size(), 1);
     QCOMPARE(m_manager->listSessions().first().permissionMode,
              QString("danger-full-access"));
+    QCOMPARE(m_manager->listSessions().first().preferredName, QString("Rick"));
     QVERIFY(m_manager->stopSession(fullAccess));
 
     options.insert("sandboxMode", "not-a-real-mode");
