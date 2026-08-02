@@ -49,6 +49,8 @@ private slots:
     void onSessionStopped(const QString &sessionId);
     void onSessionError(const QString &sessionId, const QString &error);
     void onOutputReceived(const QString &sessionId, const QString &data);
+    void onAssistantMessageReceived(const QString &sessionId, const QString &message);
+    void onStructuredErrorReceived(const QString &sessionId, const QString &error);
     void onSessionSelected(const QString &sessionId);
     void onSessionStoppedFromList(const QString &sessionId);
     void onCommandExecuted(const QString &command, const QString &workingDir);
@@ -60,6 +62,7 @@ private:
     void setupTray();
     void loadSettings();
     void showStartupWizardIfNeeded();
+    bool scanAndSelectProvider();
     void refreshSessionList();
     void addTimelineEvent(const EventModel::EventItem &event);
     void sendCommandToActiveSession(const QString &command, const QString &workingDir);

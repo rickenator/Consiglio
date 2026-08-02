@@ -28,7 +28,6 @@ public:
 
 private:
     QStackedWidget *m_stack = nullptr;
-    QWidget *createWelcomePanel();
     QWidget *createSessionsPanel();
     QWidget *createTimelinePanel();
     QWidget *createFilesPanel();

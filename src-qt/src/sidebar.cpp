@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QApplication>
 #include <QStyle>
+#include "uimetrics.h"
 
 Sidebar::Sidebar(QWidget *parent)
     : QListWidget(parent)
@@ -13,19 +14,18 @@ Sidebar::Sidebar(QWidget *parent)
 }
 
 void Sidebar::setupUI() {
-    setFixedWidth(240);
+    setFixedWidth(UiMetrics::sidebarWidth());
     setStyleSheet(R"(
         QListWidget {
             background: #1a1a1a;
             border: none;
             color: #c9d1d9;
-            font-size: 14px;
             outline: none;
         }
         QListWidget::item {
-            padding: 10px 14px;
+            padding: 30px 42px;
             border-radius: 6px;
-            margin: 2px 8px;
+            margin: 6px 24px;
         }
         QListWidget::item:hover {
             background: rgba(255, 255, 255, 0.06);
@@ -36,25 +36,20 @@ void Sidebar::setupUI() {
         }
     )");
 
-    // Helper lambda to add panel item
+    setSpacing(8);
+
+    // Plain text navigation keeps the work areas visually calm and direct.
     auto addPanel = [this](const QString &label, PanelId id) {
-        auto *item = new QListWidgetItem(style()->standardIcon(QStyle::SP_FileDialogInfoView), label, this);
+        auto *item = new QListWidgetItem(label, this);
         item->setData(Qt::UserRole, static_cast<int>(id));
+        item->setSizeHint(QSize(0, UiMetrics::px(54)));
         return item;
     };
 
-    addPanel("Welcome", PanelId::Welcome);
     addPanel("Sessions", PanelId::Sessions);
     addPanel("Timeline", PanelId::Timeline);
     addPanel("Files", PanelId::Files);
     addPanel("Discussions", PanelId::Discussions);
-
-    // Separator as a disabled item
-    auto *sep = new QListWidgetItem(this);
-    sep->setFlags(Qt::NoItemFlags);
-    sep->setText("───");
-    sep->setTextAlignment(Qt::AlignCenter);
-    sep->setForeground(QBrush(QColor("#333")));
 
     addPanel("Secrets", PanelId::Secrets);
     addPanel("Mobile", PanelId::Mobile);
@@ -113,7 +108,7 @@ void Sidebar::onItemClicked(QListWidgetItem *item) {
 
 Sidebar::PanelId Sidebar::currentPanelId() const {
     auto *item = currentItem();
-    if (!item) return PanelId::Welcome;
+    if (!item) return PanelId::Sessions;
     return static_cast<PanelId>(item->data(Qt::UserRole).toInt());
 }
 

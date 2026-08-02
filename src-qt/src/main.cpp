@@ -2,7 +2,10 @@
 #include <QStyleFactory>
 #include <QFontDatabase>
 #include <QPalette>
+#include <QScreen>
+#include <QtGlobal>
 #include "mainwindow.h"
+#include "uimetrics.h"
 
 static void setDarkPalette(QApplication *app) {
     QPalette dark;
@@ -33,14 +36,12 @@ static void setDarkPalette(QApplication *app) {
     app->setPalette(dark);
     app->setStyleSheet(R"(
         * {
-            font-size: 14px;
             font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
         }
         QMenuBar {
             background: #161b22;
             color: #c9d1d9;
             border-bottom: 1px solid #30363d;
-            font-size: 14px;
         }
         QMenuBar::item:selected {
             background: #30363d;
@@ -49,7 +50,6 @@ static void setDarkPalette(QApplication *app) {
             background: #161b22;
             color: #c9d1d9;
             border: 1px solid #30363d;
-            font-size: 14px;
         }
         QMenu::item:selected {
             background: #30363d;
@@ -60,7 +60,6 @@ static void setDarkPalette(QApplication *app) {
             border: 1px solid #30363d;
             border-radius: 6px;
             padding: 8px 16px;
-            font-size: 14px;
         }
         QPushButton:hover {
             background: #30363d;
@@ -72,7 +71,6 @@ static void setDarkPalette(QApplication *app) {
             border: 1px solid #30363d;
             border-radius: 6px;
             padding: 8px 12px;
-            font-size: 14px;
         }
         QLineEdit:focus {
             border-color: #58a6ff;
@@ -83,7 +81,6 @@ static void setDarkPalette(QApplication *app) {
             border: 1px solid #30363d;
             border-radius: 6px;
             padding: 4px;
-            font-size: 14px;
         }
         QTreeView::item:hover {
             background: rgba(88, 166, 255, 0.08);
@@ -102,7 +99,6 @@ static void setDarkPalette(QApplication *app) {
             padding: 10px 20px;
             border-top-left-radius: 6px;
             border-top-right-radius: 6px;
-            font-size: 14px;
         }
         QTabBar::tab:selected {
             background: #0d1117;
@@ -113,20 +109,17 @@ static void setDarkPalette(QApplication *app) {
         }
         QLabel {
             color: #c9d1d9;
-            font-size: 14px;
         }
         QTextEdit {
             background: #0d1117;
             color: #c9d1d9;
             border: 1px solid #30363d;
             border-radius: 6px;
-            font-size: 14px;
         }
         QStatusBar {
             background: #161b22;
             color: #8b949e;
             border-top: 1px solid #30363d;
-            font-size: 13px;
         }
         QComboBox {
             background: #0d1117;
@@ -134,7 +127,6 @@ static void setDarkPalette(QApplication *app) {
             border: 1px solid #30363d;
             border-radius: 6px;
             padding: 6px 12px;
-            font-size: 14px;
         }
         QScrollBar:vertical {
             background: #0d1117;
@@ -166,12 +158,21 @@ int main(int argc, char *argv[]) {
     app.setStyle(QStyleFactory::create("Fusion"));
     setDarkPalette(&app);
 
-    // Larger base font — 14pt for readability
-    QFont font("Segoe UI", 14);
-    font.setStyleHint(QFont::SansSerif);
-    app.setFont(font);
+    // Derive the base UI scale from the actual display instead of assuming a
+    // 96-DPI, 1440x900 desktop. Qt reports logical DPI after the platform
+    // plugin has selected the target screen, so this also behaves correctly
+    // on HiDPI and fractional-scaled displays.
+    const QScreen *screen = app.primaryScreen();
+    app.setFont(UiMetrics::bodyFont());
 
     MainWindow window;
+    if (screen) {
+        const QRect available = screen->availableGeometry();
+        const int width = qMax(1280, qRound(available.width() * 0.84));
+        const int height = qMax(800, qRound(available.height() * 0.84));
+        window.resize(qMin(width, available.width()), qMin(height, available.height()));
+        window.move(available.center() - window.rect().center());
+    }
     window.show();
     return app.exec();
 }

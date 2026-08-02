@@ -36,7 +36,7 @@ void TestSettings::cleanup() {
 
 // Default values should be sensible defaults
 void TestSettings::testDefaultValues() {
-    QCOMPARE(m_settings->value().defaultProvider, QString("default"));
+    QCOMPARE(m_settings->value().defaultProvider, QString("codex"));
     QCOMPARE(m_settings->value().ollama.baseUrl, QString("http://localhost:11434"));
     QCOMPARE(m_settings->value().ollama.model, QString("qwen2.5:32b-instruct-q4_K_M"));
     QCOMPARE(m_settings->value().lanProviders.size(), 0);

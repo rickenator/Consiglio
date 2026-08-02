@@ -2,6 +2,7 @@
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QMessageBox>
+#include "uimetrics.h"
 
 SecretsManager::SecretsManager(QWidget *parent) : QWidget(parent) {
     setupUI();
@@ -9,12 +10,15 @@ SecretsManager::SecretsManager(QWidget *parent) : QWidget(parent) {
 
 void SecretsManager::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    mainLayout->setSpacing(UiMetrics::panelSpacing());
 
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Secrets Manager"), this);
-    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setFont(UiMetrics::titleFont());
+    titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     mainLayout->addLayout(headerLayout);

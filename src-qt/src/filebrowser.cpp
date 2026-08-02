@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QHeaderView>
+#include "uimetrics.h"
 
 FileBrowser::FileBrowser(QWidget *parent) : QWidget(parent) {
     setupUI();
@@ -9,12 +10,15 @@ FileBrowser::FileBrowser(QWidget *parent) : QWidget(parent) {
 
 void FileBrowser::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    mainLayout->setSpacing(UiMetrics::panelSpacing());
 
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Files"), this);
-    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setFont(UiMetrics::titleFont());
+    titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     mainLayout->addLayout(headerLayout);
@@ -27,8 +31,8 @@ void FileBrowser::setupUI() {
         QLineEdit {
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 4px;
-            padding: 8px;
+            border-radius: 12px;
+            padding: 20px;
             color: #c9d1d9;
         }
         QLineEdit:focus { border-color: #58a6ff; }
@@ -41,8 +45,8 @@ void FileBrowser::setupUI() {
             background: #21262d;
             border: 1px solid #30363d;
             color: #c9d1d9;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 20px 28px;
+            border-radius: 12px;
         }
         QPushButton:hover { background: #30363d; }
     )");
@@ -65,12 +69,12 @@ void FileBrowser::setupUI() {
         QTreeView {
             background: #0d1117;
             border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 4px;
+            border-radius: 14px;
+            padding: 16px;
         }
         QTreeView::item {
-            padding: 6px;
-            border-radius: 4px;
+            padding: 20px;
+            border-radius: 10px;
         }
         QTreeView::item:selected {
             background: rgba(88, 166, 255, 0.15);

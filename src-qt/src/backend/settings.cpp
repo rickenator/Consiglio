@@ -5,13 +5,18 @@
 #include <QJsonArray>
 
 bool AppSettings::hasRunSetup() const {
-    return !defaultProvider.isEmpty();
+    return providerConfigured;
 }
 
 void AppSettings::load() {
     QSettings settings("Aniviza", "Consiglio");
+    settings.sync();
     if (settings.contains("defaultProvider"))
         defaultProvider = settings.value("defaultProvider").toString();
+    if (defaultProvider.isEmpty() || defaultProvider == "default")
+        defaultProvider = "codex";
+    if (settings.contains("providerConfigured"))
+        providerConfigured = settings.value("providerConfigured").toBool();
     if (settings.contains("ollama/baseUrl"))
         ollama.baseUrl = settings.value("ollama/baseUrl").toString();
     if (settings.contains("ollama/model"))
@@ -56,6 +61,7 @@ void AppSettings::load() {
 void AppSettings::save() {
     QSettings settings("Aniviza", "Consiglio");
     settings.setValue("defaultProvider", defaultProvider);
+    settings.setValue("providerConfigured", providerConfigured);
     settings.setValue("ollama/baseUrl", ollama.baseUrl);
     settings.setValue("ollama/model", ollama.model);
     settings.setValue("ollama/apiKey", ollama.apiKey);
@@ -80,6 +86,7 @@ void AppSettings::save() {
         arr.append(obj);
     }
     settings.setValue("lanProviders", QJsonDocument(arr).toJson());
+    settings.sync();
 }
 
 Settings::Settings(QObject *parent) : QObject(parent) {

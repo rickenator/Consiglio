@@ -8,7 +8,6 @@ class Sidebar : public QListWidget {
 
 public:
     enum class PanelId {
-        Welcome,
         Sessions,
         Timeline,
         Files,

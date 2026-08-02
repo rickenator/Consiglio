@@ -5,6 +5,7 @@
 #include "eventtimeline.h"
 #include "startupwizard.h"
 #include "settingsdialog.h"
+#include "providerselectiondialog.h"
 #include "approvaldialog.h"
 #include <QMenuBar>
 #include <QMenu>
@@ -21,17 +22,24 @@
 #include <QFileDialog>
 #include <QDateTime>
 #include <QSettings>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QTimer>
+#include "uimetrics.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle("Consiglio");
-    setMinimumSize(1280, 800);
-    resize(1440, 900);
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const QSize available = screen ? screen->availableGeometry().size() : QSize(1440, 900);
+    setMinimumSize(qMin(UiMetrics::px(640), available.width()),
+                   qMin(UiMetrics::px(400), available.height()));
+    resize(qRound(available.width() * 0.84), qRound(available.height() * 0.84));
 
     setupUI();
     loadSettings();
-    showStartupWizardIfNeeded();
+    QTimer::singleShot(0, this, [this]() { showStartupWizardIfNeeded(); });
 }
 
 MainWindow::~MainWindow() {
@@ -84,6 +92,10 @@ void MainWindow::setupUI() {
             this, &MainWindow::onSessionError);
     connect(&m_sessionManager, &SessionManager::outputReceived,
             this, &MainWindow::onOutputReceived);
+    connect(&m_sessionManager, &SessionManager::assistantMessageReceived,
+            this, &MainWindow::onAssistantMessageReceived);
+    connect(&m_sessionManager, &SessionManager::structuredErrorReceived,
+            this, &MainWindow::onStructuredErrorReceived);
 
     // Panel signals → SessionManager actions
     connect(m_panelManager->sessionsPanel(), &SessionList::sessionSelected,
@@ -114,13 +126,13 @@ void MainWindow::setupUI() {
     if (!state.toByteArray().isEmpty()) {
         restoreState(state.toByteArray());
     }
-    int savedPanel = s.value("lastPanelIndex", 0).toInt();
+    int savedPanel = s.value("lastPanelIndex", static_cast<int>(Sidebar::PanelId::Sessions)).toInt();
     if (savedPanel >= 0 && savedPanel < m_content->count()) {
         m_content->setCurrentIndex(savedPanel);
     }
 
-    // Show welcome panel by default
-    m_sidebar->selectPanel(Sidebar::PanelId::Welcome);
+    // Open directly into the working session view.
+    m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
 }
 
 void MainWindow::setupMenuBar() {
@@ -183,11 +195,19 @@ void MainWindow::setupMenuBar() {
     });
     toolsMenu->addAction(mobileAction);
 
+    toolsMenu->addSeparator();
+    auto *scanProvidersAction = new QAction(tr("&Scan Providers…"), toolsMenu);
+    connect(scanProvidersAction, &QAction::triggered, this, [this]() {
+        scanAndSelectProvider();
+    });
+    toolsMenu->addAction(scanProvidersAction);
+
     // Settings menu
-    auto *settingsAction = new QAction(tr("&Settings"), menuBar->addMenu("&Settings"));
+    auto *settingsMenu = menuBar->addMenu("&Settings");
+    auto *settingsAction = new QAction(tr("&Open Settings"), settingsMenu);
     settingsAction->setShortcut(QKeySequence::Preferences);
     connect(settingsAction, &QAction::triggered, this, &MainWindow::onSettings);
-    menuBar->addAction(settingsAction);
+    settingsMenu->addAction(settingsAction);
 
     // Help menu
     auto *helpMenu = menuBar->addMenu("&Help");
@@ -201,8 +221,10 @@ void MainWindow::setupMenuBar() {
     });
     helpMenu->addAction(aboutAction);
 
-    auto *wizardAction = new QAction(tr("&Startup Wizard"), helpMenu);
-    connect(wizardAction, &QAction::triggered, this, &MainWindow::onStartupWizard);
+    auto *wizardAction = new QAction(tr("&Provider Setup"), helpMenu);
+    connect(wizardAction, &QAction::triggered, this, [this]() {
+        scanAndSelectProvider();
+    });
     helpMenu->addAction(wizardAction);
 }
 
@@ -246,9 +268,44 @@ void MainWindow::loadSettings() {
 }
 
 void MainWindow::showStartupWizardIfNeeded() {
-    if (!m_settings.hasRunSetup()) {
-        onStartupWizard();
+    if (!m_settings.hasRunSetup() || qEnvironmentVariableIntValue("CONSIGLIO_RESCAN_PROVIDERS") == 1) {
+        scanAndSelectProvider();
     }
+}
+
+bool MainWindow::scanAndSelectProvider() {
+    m_sessionStatusLabel->setText(tr("Scanning AI providers…"));
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    m_agentDetector.startDetection();
+    const QList<AgentInfo> providers = m_agentDetector.detectAll();
+    QApplication::restoreOverrideCursor();
+
+    ProviderSelectionDialog dialog(providers, m_settings.value().defaultProvider, this);
+    if (dialog.exec() != QDialog::Accepted) {
+        m_sessionStatusLabel->setText(tr("Ready"));
+        return false;
+    }
+
+    const QString provider = dialog.selectedProvider();
+    if (provider.isEmpty()) {
+        m_sessionStatusLabel->setText(tr("No provider available"));
+        return false;
+    }
+
+    m_settings.value().defaultProvider = provider;
+    const QString endpoint = dialog.selectedEndpoint();
+    const QString model = dialog.selectedModel();
+    if (provider == "ollama" && !endpoint.isEmpty()) {
+        m_settings.value().ollama.baseUrl = endpoint;
+        if (!model.isEmpty()) m_settings.value().ollama.model = model;
+    } else if (provider == "remote_llamacpp" && !endpoint.isEmpty()) {
+        m_settings.value().remoteLlamaCpp.baseUrl = endpoint;
+        if (!model.isEmpty()) m_settings.value().remoteLlamaCpp.model = model;
+    }
+    m_settings.value().providerConfigured = true;
+    m_settings.save();
+    m_sessionStatusLabel->setText(tr("Provider: %1").arg(provider));
+    return true;
 }
 
 void MainWindow::refreshSessionList() {
@@ -282,6 +339,11 @@ void MainWindow::updateStatusBarSessionState() {
 }
 
 void MainWindow::onNewSession() {
+    if (!m_settings.hasRunSetup() && !scanAndSelectProvider()) {
+        return;
+    }
+    const QString provider = m_settings.value().defaultProvider;
+
     // Show file dialog to select repository/workspace directory
     auto repoDir = QFileDialog::getExistingDirectory(this, tr("Select Workspace Directory"),
                                                       QDir::homePath(),
@@ -290,21 +352,15 @@ void MainWindow::onNewSession() {
         return;
     }
 
-    // Read provider from settings
-    QString provider = m_settings.value().defaultProvider;
-    if (provider == "default" || provider.isEmpty()) {
-        provider = "ollama";  // fallback
-    }
-
     // Build options map
     QVariantMap options;
     if (provider == "ollama") {
         options["model"] = m_settings.value().ollama.model;
-    } else if (provider == "llama-cpp") {
-        options["host"] = m_settings.value().remoteLlamaCpp.baseUrl.isEmpty()
-                              ? "127.0.0.1"
-                              : m_settings.value().remoteLlamaCpp.baseUrl;
+        options["baseUrl"] = m_settings.value().ollama.baseUrl;
+    } else if (provider == "llama-cpp" || provider == "remote_llamacpp") {
+        options["baseUrl"] = m_settings.value().remoteLlamaCpp.baseUrl;
         options["model"] = m_settings.value().remoteLlamaCpp.model;
+        options["apiKey"] = m_settings.value().remoteLlamaCpp.apiKey;
     }
 
     // Start the session
@@ -435,6 +491,25 @@ void MainWindow::onOutputReceived(const QString &sessionId, const QString &data)
     EventModel::EventItem evt;
     evt.type = EventModel::CommandOutput;
     evt.content = data.trimmed();
+    evt.sessionId = sessionId;
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
+}
+
+void MainWindow::onAssistantMessageReceived(const QString &sessionId, const QString &message) {
+    if (message.isEmpty()) return;
+    EventModel::EventItem evt;
+    evt.type = EventModel::AssistantMessage;
+    evt.content = message;
+    evt.sessionId = sessionId;
+    evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+    addTimelineEvent(evt);
+}
+
+void MainWindow::onStructuredErrorReceived(const QString &sessionId, const QString &error) {
+    EventModel::EventItem evt;
+    evt.type = EventModel::Error;
+    evt.content = error;
     evt.sessionId = sessionId;
     evt.timestamp = QDateTime::currentMSecsSinceEpoch();
     addTimelineEvent(evt);

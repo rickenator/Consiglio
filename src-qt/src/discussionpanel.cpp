@@ -1,6 +1,7 @@
 #include "discussionpanel.h"
 #include <QDateTime>
 #include <QScrollBar>
+#include "uimetrics.h"
 
 DiscussionPanel::DiscussionPanel(QWidget *parent) : QWidget(parent) {
     setupUI();
@@ -8,12 +9,15 @@ DiscussionPanel::DiscussionPanel(QWidget *parent) : QWidget(parent) {
 
 void DiscussionPanel::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    mainLayout->setSpacing(UiMetrics::panelSpacing());
 
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Discussions"), this);
-    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setFont(UiMetrics::titleFont());
+    titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     mainLayout->addLayout(headerLayout);
@@ -24,13 +28,13 @@ void DiscussionPanel::setupUI() {
         QListWidget {
             background: #0d1117;
             border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 8px;
+            border-radius: 14px;
+            padding: 20px;
         }
         QListWidget::item {
-            padding: 10px;
-            border-radius: 6px;
-            margin: 2px 0;
+            padding: 24px;
+            border-radius: 12px;
+            margin: 8px 0;
         }
         QListWidget::item:selected {
             background: rgba(88, 166, 255, 0.15);
@@ -42,14 +46,14 @@ void DiscussionPanel::setupUI() {
     // Input area
     auto *inputLayout = new QHBoxLayout();
     m_inputEdit = new QTextEdit(this);
-    m_inputEdit->setMaximumHeight(100);
+    m_inputEdit->setMaximumHeight(UiMetrics::px(150));
     m_inputEdit->setPlaceholderText(tr("Type a message..."));
     m_inputEdit->setStyleSheet(R"(
         QTextEdit {
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 4px;
-            padding: 8px;
+            border-radius: 12px;
+            padding: 20px;
             color: #c9d1d9;
         }
         QTextEdit:focus { border-color: #58a6ff; }
@@ -61,8 +65,8 @@ void DiscussionPanel::setupUI() {
         QPushButton {
             background: #238636;
             color: white;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 20px 32px;
+            border-radius: 12px;
             font-weight: bold;
         }
         QPushButton:hover { background: #2ea043; }
@@ -74,7 +78,8 @@ void DiscussionPanel::setupUI() {
     // Empty state label
     m_emptyLabel = new QLabel(tr("No messages yet. Start a discussion."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 14px; padding: 20px;");
+    m_emptyLabel->setFont(UiMetrics::secondaryFont());
+    m_emptyLabel->setStyleSheet("color: #8b949e;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections
@@ -91,7 +96,7 @@ void DiscussionPanel::setupUI() {
         // Auto-resize based on content
         auto doc = m_inputEdit->document();
         auto height = doc->size().height() + 20;
-        m_inputEdit->setFixedHeight(qMin(static_cast<int>(height), 150));
+        m_inputEdit->setFixedHeight(qMin(static_cast<int>(height), UiMetrics::px(150)));
     });
 }
 

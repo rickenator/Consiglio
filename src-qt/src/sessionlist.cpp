@@ -2,6 +2,7 @@
 #include <QHeaderView>
 #include <QDateTime>
 #include <QMessageBox>
+#include "uimetrics.h"
 
 SessionList::SessionList(QWidget *parent) : QWidget(parent) {
     setupUI();
@@ -9,12 +10,15 @@ SessionList::SessionList(QWidget *parent) : QWidget(parent) {
 
 void SessionList::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    mainLayout->setSpacing(UiMetrics::panelSpacing());
 
     // Header with title and stop button
     auto *headerLayout = new QHBoxLayout();
-    auto *titleLabel = new QLabel(tr("Sessions"), this);
-    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
+    auto *titleLabel = new QLabel(tr("Your sessions"), this);
+    titleLabel->setFont(UiMetrics::titleFont());
+    titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
 
@@ -23,8 +27,8 @@ void SessionList::setupUI() {
         QPushButton {
             background: #da3633;
             color: white;
-            padding: 6px 12px;
-            border-radius: 4px;
+            padding: 18px 28px;
+            border-radius: 12px;
         }
         QPushButton:hover { background: #f85149; }
         QPushButton:disabled { background: #484f58; color: #8b949e; }
@@ -43,12 +47,12 @@ void SessionList::setupUI() {
         QTreeView {
             background: #0d1117;
             border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 4px;
+            border-radius: 14px;
+            padding: 16px;
         }
         QTreeView::item {
-            padding: 8px;
-            border-radius: 4px;
+            padding: 24px;
+            border-radius: 10px;
         }
         QTreeView::item:selected {
             background: rgba(88, 166, 255, 0.15);
@@ -64,7 +68,8 @@ void SessionList::setupUI() {
     // Empty state label
     m_emptyLabel = new QLabel(tr("No sessions yet. Start a session to see it here."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 14px; padding: 20px;");
+    m_emptyLabel->setFont(UiMetrics::secondaryFont());
+    m_emptyLabel->setStyleSheet("color: #8b949e;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections

@@ -5,18 +5,23 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QGroupBox>
+#include <QApplication>
+#include <QScreen>
+#include "uimetrics.h"
 
 ConsiglioCmdApproval::ConsiglioCmdApproval(const ApprovalRequest &request, QWidget *parent)
     : QWidget(parent, Qt::Dialog | Qt::WindowStaysOnTopHint)
 {
     setWindowTitle(tr("Command Approval Required"));
-    setMinimumSize(500, 300);
+    const QSize available = QApplication::primaryScreen()->availableGeometry().size();
+    setMinimumSize(qMin(UiMetrics::px(500), available.width()),
+                   qMin(UiMetrics::px(300), available.height()));
 
     auto *mainLayout = new QVBoxLayout(this);
 
     // Warning label
     auto *warning = new QLabel(tr("⚠ The agent is requesting permission to run a command"), this);
-    warning->setStyleSheet("color: #f0883e; font-weight: bold; font-size: 14px;");
+    warning->setStyleSheet("color: #f0883e; font-weight: bold;");
     mainLayout->addWidget(warning);
 
     // Command details group
@@ -43,7 +48,7 @@ ConsiglioCmdApproval::ConsiglioCmdApproval(const ApprovalRequest &request, QWidg
         detailsLayout->addWidget(pathsLabel);
         auto *pathsText = new QTextEdit(detailsGroup);
         pathsText->setReadOnly(true);
-        pathsText->setMaximumHeight(80);
+        pathsText->setMaximumHeight(UiMetrics::px(80));
         pathsText->setPlainText(request.affectedPaths.join("\n"));
         detailsLayout->addWidget(pathsText);
     }

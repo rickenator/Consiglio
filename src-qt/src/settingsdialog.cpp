@@ -9,12 +9,17 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QComboBox>
+#include <QApplication>
+#include <QScreen>
+#include "uimetrics.h"
 
 SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetector, QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Settings"));
-    setMinimumSize(600, 500);
+    const QSize available = QApplication::primaryScreen()->availableGeometry().size();
+    setMinimumSize(qMin(UiMetrics::px(600), available.width()),
+                   qMin(UiMetrics::px(500), available.height()));
 
     auto *mainLayout = new QVBoxLayout(this);
 
@@ -25,7 +30,7 @@ SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetect
     auto *generalLayout = new QFormLayout(generalPage);
 
     auto *providerCombo = new QComboBox(generalPage);
-    providerCombo->addItems({"default", "ollama", "remote_llamacpp", "lan"});
+    providerCombo->addItems({"codex", "ollama", "remote_llamacpp", "lan"});
     int idx = providerCombo->findText(settings->defaultProvider);
     if (idx >= 0) providerCombo->setCurrentIndex(idx);
     generalLayout->addRow(tr("Default Provider:"), providerCombo);
@@ -82,7 +87,8 @@ SettingsDialog::SettingsDialog(AppSettings *settings, AgentDetector *agentDetect
             auto *name = new QLabel(a.name, lanPage);
             name->setStyleSheet("font-weight: bold;");
             auto *status = new QLabel(a.diagnostic, lanPage);
-            status->setStyleSheet("color: #8b949e; font-size: 13px;");
+            status->setFont(UiMetrics::secondaryFont());
+            status->setStyleSheet("color: #8b949e;");
             row->addWidget(name);
             row->addStretch();
             row->addWidget(status);

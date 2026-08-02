@@ -7,17 +7,23 @@
 #include <QGroupBox>
 #include <QProgressBar>
 #include <QMessageBox>
+#include <QApplication>
+#include <QScreen>
+#include "uimetrics.h"
 
 StartupWizard::StartupWizard(AgentDetector *agentDetector, AppSettings *settings, QWidget *parent)
     : QDialog(parent, Qt::Dialog | Qt::WindowStaysOnTopHint)
 {
-    setWindowTitle(tr("Welcome to Consiglio"));
-    setMinimumSize(550, 450);
+    setWindowTitle(tr("Set up Consiglio"));
+    const QSize available = QApplication::primaryScreen()->availableGeometry().size();
+    setMinimumSize(qMin(UiMetrics::px(550), available.width()),
+                   qMin(UiMetrics::px(450), available.height()));
 
     auto *mainLayout = new QVBoxLayout(this);
 
     // Header
-    auto *header = new QLabel(tr("<h2>Welcome to Consiglio</h2>"), this);
+    auto *header = new QLabel(tr("Set up Consiglio"), this);
+    header->setFont(UiMetrics::titleFont());
     header->setStyleSheet("color: #58a6ff;");
     mainLayout->addWidget(header);
 
@@ -32,7 +38,7 @@ StartupWizard::StartupWizard(AgentDetector *agentDetector, AppSettings *settings
     mainLayout->addWidget(progressLabel);
 
     auto *progressBar = new QProgressBar(this);
-    progressBar->setMaximumHeight(6);
+    progressBar->setMaximumHeight(UiMetrics::px(6));
     progressBar->setRange(0, 0); // indeterminate
     mainLayout->addWidget(progressBar);
 
@@ -41,7 +47,7 @@ StartupWizard::StartupWizard(AgentDetector *agentDetector, AppSettings *settings
     auto *resultsLayout = new QVBoxLayout(resultsGroup);
 
     auto *agentList = new QListWidget(resultsGroup);
-    agentList->setMinimumHeight(150);
+    agentList->setMinimumHeight(UiMetrics::px(150));
     resultsLayout->addWidget(agentList);
     mainLayout->addWidget(resultsGroup);
     mainLayout->addStretch();
@@ -90,7 +96,8 @@ StartupWizard::StartupWizard(AgentDetector *agentDetector, AppSettings *settings
                 item->setData(Qt::UserRole, a.diagnostic);
 
                 auto *detailLabel = new QLabel(a.diagnostic, agentList);
-                detailLabel->setStyleSheet("color: #8b949e; font-size: 13px;");
+                detailLabel->setFont(UiMetrics::secondaryFont());
+                detailLabel->setStyleSheet("color: #8b949e;");
                 agentList->setItemWidget(item, detailLabel);
             }
 
@@ -109,7 +116,8 @@ StartupWizard::StartupWizard(AgentDetector *agentDetector, AppSettings *settings
 
     connect(continueBtn, &QPushButton::clicked, this, [this, settings]() {
         if (!settings->hasRunSetup()) {
-            settings->defaultProvider = "ollama";
+            settings->defaultProvider = "codex";
+            settings->providerConfigured = true;
             settings->save();
         }
         accept();

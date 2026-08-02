@@ -15,7 +15,8 @@ struct LanProviderConfig {
 };
 
 struct AppSettings {
-    QString defaultProvider = "default"; // default, ollama, remote_llamacpp, lan
+    QString defaultProvider = "codex"; // codex, ollama, remote_llamacpp, lan
+    bool providerConfigured = false;
     struct {
         QString baseUrl = "http://localhost:11434";
         QString model = "qwen2.5:32b-instruct-q4_K_M";

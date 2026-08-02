@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <QDir>
 #include "backend/sessionmanager.h"
 
 class TestSessionManager : public QObject {
@@ -14,6 +15,7 @@ private slots:
     void testSendCommand();
     void testMultipleSessions();
     void testSendCommand_nonExistent();
+    void testCodexSessionDoesNotEmitTerminalUI();
 
 private:
     SessionManager *m_manager;
@@ -109,6 +111,18 @@ void TestSessionManager::testMultipleSessions() {
     QVERIFY(m_manager->hasSession(id3));
 
     m_manager->stopAllSessions();
+}
+
+void TestSessionManager::testCodexSessionDoesNotEmitTerminalUI() {
+    QSignalSpy outputSpy(m_manager, &SessionManager::outputReceived);
+    QSignalSpy assistantSpy(m_manager, &SessionManager::assistantMessageReceived);
+
+    const QString sessionId = m_manager->startSession("codex", QDir::currentPath());
+    QVERIFY(m_manager->hasSession(sessionId));
+    QTest::qWait(300);
+    QCOMPARE(outputSpy.count(), 0);
+    QCOMPARE(assistantSpy.count(), 0);
+    QVERIFY(m_manager->stopSession(sessionId));
 }
 
 QTEST_MAIN(TestSessionManager)

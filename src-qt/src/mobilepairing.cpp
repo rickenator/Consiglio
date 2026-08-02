@@ -4,6 +4,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include "uimetrics.h"
 
 MobilePairing::MobilePairing(QWidget *parent) : QWidget(parent) {
     setupUI();
@@ -11,12 +12,15 @@ MobilePairing::MobilePairing(QWidget *parent) : QWidget(parent) {
 
 void MobilePairing::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    mainLayout->setSpacing(UiMetrics::panelSpacing());
 
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Mobile Pairing"), this);
-    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setFont(UiMetrics::titleFont());
+    titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     mainLayout->addLayout(headerLayout);
@@ -26,8 +30,9 @@ void MobilePairing::setupUI() {
     auto *qrLayout = new QVBoxLayout(qrGroup);
 
     m_qrLabel = new QLabel(this);
-    m_qrLabel->setMinimumSize(200, 200);
-    m_qrLabel->setMaximumSize(200, 200);
+    const int qrSize = UiMetrics::qrCodeSize();
+    const int cellSize = qMax(1, qrSize / 10);
+    m_qrLabel->setFixedSize(qrSize, qrSize);
     m_qrLabel->setAlignment(Qt::AlignCenter);
     m_qrLabel->setStyleSheet(R"(
         QLabel {
@@ -38,7 +43,7 @@ void MobilePairing::setupUI() {
     )");
 
     // Generate a placeholder QR-like pattern
-    QPixmap qrPixmap(200, 200);
+    QPixmap qrPixmap(qrSize, qrSize);
     qrPixmap.fill(Qt::white);
     QPainter painter(&qrPixmap);
     painter.setPen(Qt::black);
@@ -46,24 +51,25 @@ void MobilePairing::setupUI() {
     for (int i = 0; i < 10; ++i) {
         for (int j = 0; j < 10; ++j) {
             if (QRandomGenerator::global()->bounded(2)) {
-                painter.fillRect(QRect(i * 20, j * 20, 20, 20), Qt::black);
+                painter.fillRect(QRect(i * cellSize, j * cellSize, cellSize, cellSize), Qt::black);
             }
         }
     }
     // Draw corner markers
-    painter.fillRect(QRect(0, 0, 50, 50), Qt::black);
-    painter.fillRect(QRect(150, 0, 50, 50), Qt::black);
-    painter.fillRect(QRect(0, 150, 50, 50), Qt::black);
-    painter.fillRect(QRect(20, 20, 10, 10), Qt::white);
-    painter.fillRect(QRect(170, 20, 10, 10), Qt::white);
-    painter.fillRect(QRect(20, 170, 10, 10), Qt::white);
+    painter.fillRect(QRect(0, 0, cellSize * 3, cellSize * 3), Qt::black);
+    painter.fillRect(QRect(cellSize * 7, 0, cellSize * 3, cellSize * 3), Qt::black);
+    painter.fillRect(QRect(0, cellSize * 7, cellSize * 3, cellSize * 3), Qt::black);
+    painter.fillRect(QRect(cellSize, cellSize, cellSize, cellSize), Qt::white);
+    painter.fillRect(QRect(cellSize * 8, cellSize, cellSize, cellSize), Qt::white);
+    painter.fillRect(QRect(cellSize, cellSize * 8, cellSize, cellSize), Qt::white);
 
     m_qrLabel->setPixmap(qrPixmap);
     qrLayout->addWidget(m_qrLabel);
 
     auto *qrHint = new QLabel(tr("Open the mobile app and scan this QR code"), this);
     qrHint->setAlignment(Qt::AlignCenter);
-    qrHint->setStyleSheet("color: #8b949e; font-size: 12px;");
+    qrHint->setFont(UiMetrics::secondaryFont());
+    qrHint->setStyleSheet("color: #8b949e;");
     qrLayout->addWidget(qrHint);
 
     mainLayout->addWidget(qrGroup);
@@ -83,8 +89,7 @@ void MobilePairing::setupUI() {
             border-radius: 4px;
             padding: 8px;
             color: #c9d1d9;
-            font-size: 16px;
-            letter-spacing: 4px;
+            letter-spacing: 0.3em;
         }
         QLineEdit:focus { border-color: #58a6ff; }
     )");
@@ -113,7 +118,6 @@ void MobilePairing::setupUI() {
             padding: 10px 24px;
             border-radius: 4px;
             font-weight: bold;
-            font-size: 14px;
         }
         QPushButton:hover { background: #2ea043; }
     )");
@@ -123,7 +127,8 @@ void MobilePairing::setupUI() {
 
     // Status label
     m_statusLabel = new QLabel(tr("Status: Not paired"), this);
-    m_statusLabel->setStyleSheet("color: #8b949e; font-size: 13px;");
+    m_statusLabel->setFont(UiMetrics::secondaryFont());
+    m_statusLabel->setStyleSheet("color: #8b949e;");
     mainLayout->addWidget(m_statusLabel);
     mainLayout->addStretch();
 
@@ -144,7 +149,7 @@ void MobilePairing::setupUI() {
             // Simulate connection
             QTimer::singleShot(1000, this, [this]() {
                 m_statusLabel->setText(tr("Status: Paired! ✓"));
-                m_statusLabel->setStyleSheet("color: #3fb950; font-size: 13px;");
+                m_statusLabel->setStyleSheet("color: #3fb950;");
             });
         } else {
             QMessageBox::warning(this, tr("Error"), tr("Please enter a valid 6-digit code."));

@@ -12,6 +12,9 @@ struct AgentInfo {
     bool authenticated = false;
     QString version;
     QString diagnostic; // human-readable status message
+    QString provider;   // session provider when id uniquely identifies an endpoint
+    QString endpoint;
+    QString model;
 };
 
 class AgentDetector : public QObject {
@@ -38,6 +41,7 @@ private:
     void detectOllama();
     void detectLlamaCpp();
     void detectOpenInterpreter();
+    void detectNetworkEndpoints();
     QString findExecutable(const QString &name) const;
     QString getVersion(const QString &path) const;
 };

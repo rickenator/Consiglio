@@ -6,7 +6,10 @@
 #include <QMap>
 #include <QVariant>
 #include <QProcess>
+#include <QProcessEnvironment>
+#include <QSet>
 #include "backend/approvalrouter.h"
+#include "backend/ptyhandler.h"
 
 struct SessionRecord {
     QString id;
@@ -23,6 +26,7 @@ class SessionManager : public QObject {
 
 public:
     explicit SessionManager(QObject *parent = nullptr);
+    ~SessionManager() override;
 
     QList<SessionRecord> listSessions() const;
     QString startSession(const QString &provider, const QString &repository = {},
@@ -37,6 +41,8 @@ signals:
     void sessionStopped(const QString &sessionId);
     void sessionError(const QString &sessionId, const QString &error);
     void outputReceived(const QString &sessionId, const QString &data);
+    void assistantMessageReceived(const QString &sessionId, const QString &message);
+    void structuredErrorReceived(const QString &sessionId, const QString &error);
     void approvalRequested(const ApprovalRequest &request);
 
 public slots:
@@ -45,8 +51,17 @@ public slots:
 private:
     struct SessionState {
         SessionRecord record;
+        PtyHandler *pty = nullptr;
         QProcess *process = nullptr;
         QString workingDir;
+        QString program;
+        QStringList providerArgs;
+        QProcessEnvironment environment;
+        bool structuredCodex = false;
+        QString jsonBuffer;
+        QString stderrBuffer;
+        QString codexThreadId;
+        QSet<QString> processedItemIds;
     };
     QMap<QString, SessionState> m_sessions;
     ApprovalRouter m_approvalRouter;
@@ -56,4 +71,6 @@ private:
     void onProcessOutput();
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onProcessError(QProcess::ProcessError error);
+    bool startCodexTurn(const QString &sessionId, const QString &prompt);
+    void consumeCodexOutput(const QString &sessionId, const QByteArray &data, bool flush = false);
 };

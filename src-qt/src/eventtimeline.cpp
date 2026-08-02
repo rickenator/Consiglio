@@ -1,5 +1,6 @@
 #include "eventtimeline.h"
 #include <QLineEdit>
+#include "uimetrics.h"
 #include <QDateTime>
 #include <QScrollBar>
 #include <QLineEdit>
@@ -10,12 +11,15 @@ EventTimeline::EventTimeline(QWidget *parent) : QWidget(parent) {
 
 void EventTimeline::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    mainLayout->setSpacing(UiMetrics::panelSpacing());
 
     // Header
     auto *headerLayout = new QHBoxLayout();
     auto *titleLabel = new QLabel(tr("Timeline"), this);
-    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #58a6ff;");
+    titleLabel->setFont(UiMetrics::titleFont());
+    titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
 
@@ -25,8 +29,8 @@ void EventTimeline::setupUI() {
             background: transparent;
             border: 1px solid #30363d;
             color: #c9d1d9;
-            padding: 6px 12px;
-            border-radius: 4px;
+            padding: 18px 28px;
+            border-radius: 12px;
         }
         QPushButton:hover { background: rgba(255,255,255,0.06); }
     )");
@@ -40,10 +44,9 @@ void EventTimeline::setupUI() {
         QTextEdit {
             background: #0d1117;
             border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 8px;
+            border-radius: 14px;
+            padding: 24px;
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
-            font-size: 14px;
         }
     )");
 
@@ -57,8 +60,8 @@ void EventTimeline::setupUI() {
         QLineEdit {
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 4px;
-            padding: 8px;
+            border-radius: 12px;
+            padding: 20px;
             color: #c9d1d9;
         }
         QLineEdit:focus { border-color: #58a6ff; }
@@ -70,8 +73,8 @@ void EventTimeline::setupUI() {
         QPushButton {
             background: #238636;
             color: white;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 20px 32px;
+            border-radius: 12px;
             font-weight: bold;
         }
         QPushButton:hover { background: #2ea043; }
@@ -83,7 +86,8 @@ void EventTimeline::setupUI() {
     // Empty state label
     m_emptyLabel = new QLabel(tr("No events yet. Start a session to see activity here."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: #8b949e; font-size: 14px; padding: 20px;");
+    m_emptyLabel->setFont(UiMetrics::secondaryFont());
+    m_emptyLabel->setStyleSheet("color: #8b949e;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections
@@ -113,31 +117,33 @@ void EventTimeline::onSendCommand() {
 void EventTimeline::appendEvent(const EventModel::EventItem &event) {
     QString html;
     auto ts = formatTimestamp(event.timestamp);
+    QString safeContent = event.content.toHtmlEscaped();
+    safeContent.replace("\n", "<br>");
 
     switch (event.type) {
         case EventModel::SystemEvent:
             html = QString("<div style='color: #8b949e; margin: 4px 0;'><b>[SYSTEM]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(event.content).arg(ts);
+                       .arg(safeContent).arg(ts);
             break;
         case EventModel::UserMessage:
             html = QString("<div style='margin: 6px 0;'><b style='color: #58a6ff;'>[YOU]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(event.content).arg(ts);
+                       .arg(safeContent).arg(ts);
             break;
         case EventModel::AssistantMessage:
             html = QString("<div style='margin: 6px 0;'><b style='color: #3fb950;'>[AGENT]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(event.content).arg(ts);
+                       .arg(safeContent).arg(ts);
             break;
         case EventModel::CommandOutput:
-            html = QString("<pre style='background: #161b22; padding: 8px; border-radius: 4px; margin: 4px 0; color: #c9d1d9; font-size: 14px;'>%1</pre><span style='color: #484f58;'>%2</span>")
-                       .arg(event.content).arg(ts);
+            html = QString("<pre style='background: #161b22; padding: 1em; border-radius: 0.5em; margin: 0.5em 0; color: #c9d1d9;'>%1</pre><span style='color: #768390;'>%2</span>")
+                       .arg(event.content.toHtmlEscaped()).arg(ts);
             break;
         case EventModel::Error:
             html = QString("<div style='margin: 6px 0;'><b style='color: #f85149;'>[ERROR]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(event.content).arg(ts);
+                       .arg(safeContent).arg(ts);
             break;
         case EventModel::ApprovalRequest:
             html = QString("<div style='margin: 6px 0;'><b style='color: #d29922;'>[APPROVAL]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(event.content).arg(ts);
+                       .arg(safeContent).arg(ts);
             break;
     }
 
