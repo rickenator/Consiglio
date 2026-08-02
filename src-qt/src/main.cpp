@@ -4,7 +4,6 @@
 #include <QPalette>
 #include <QScreen>
 #include <QLocalSocket>
-#include <QRegularExpression>
 #include <QtGlobal>
 #include <QFileInfo>
 #include <QTextStream>
@@ -69,12 +68,18 @@ static bool hasUsableWaylandDisplay(QString *reason) {
 
 static int failNoDisplay(const QString &details) {
     QTextStream stderrStream(stderr);
-    stderrStream << "Consiglio cannot start a GUI session.\n"
-                 << details << "\n"
-                 << "Run this from a desktop session with X11 or Wayland, or use the\n"
-                 << "offscreen test mode with QT_QPA_PLATFORM=offscreen.\n";
+    stderrStream << "Consiglio could not find a desktop display.\n"
+                 << details << "\n";
     stderrStream.flush();
     return 1;
+}
+
+static void announceOffscreenFallback(const QString &details) {
+    QTextStream stderrStream(stderr);
+    stderrStream << "Consiglio did not find a usable desktop session, so it is\n"
+                 << "starting in offscreen mode instead.\n"
+                 << details << "\n";
+    stderrStream.flush();
 }
 
 static void setDarkPalette(QApplication *app) {
@@ -220,12 +225,15 @@ static void setDarkPalette(QApplication *app) {
 int main(int argc, char *argv[]) {
     const QString platform = qEnvironmentVariable("QT_QPA_PLATFORM");
     const bool headlessRequested = platform == "offscreen" || platform == "minimal";
-    if (!headlessRequested) {
+    if (!headlessRequested && platform.isEmpty()) {
     QString displayReason;
     const bool displayLooksUsable = hasUsableX11Display(&displayReason)
         || hasUsableWaylandDisplay(&displayReason);
     if (!displayLooksUsable) {
-        return failNoDisplay(displayReason);
+        announceOffscreenFallback(
+            "Use QT_QPA_PLATFORM=offscreen for a headless smoke run, or launch "
+            "from your desktop session for the full GUI.");
+        qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     }
 
