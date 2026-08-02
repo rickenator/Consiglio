@@ -216,4 +216,17 @@ contextBridge.exposeInMainWorld('codexApi', {
     // Agent readiness
     getAvailableAgents: () =>
       ipcRenderer.invoke('agents:readiness'),
+    startDiscussion: (options: unknown) => ipcRenderer.invoke('discussion:start', options),
+    sendDiscussionMessage: (sessionId: string, content: string) => ipcRenderer.invoke('discussion:send-message', { sessionId, content }),
+    stopDiscussion: (sessionId: string) => ipcRenderer.invoke('discussion:stop', sessionId),
+    onDiscussionMessage: (callback: (data: { sessionId: string; message: DiscussionMessage }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: DiscussionMessage }) => callback(data);
+      ipcRenderer.on('discussion:message', handler);
+      return () => ipcRenderer.removeListener('discussion:message', handler);
+    },
+    onDiscussionError: (callback: (data: { sessionId: string; error: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; error: string }) => callback(data);
+      ipcRenderer.on('discussion:error', handler);
+      return () => ipcRenderer.removeListener('discussion:error', handler);
+    },
 });

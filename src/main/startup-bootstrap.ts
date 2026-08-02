@@ -9,6 +9,7 @@ export type BootstrapPhase =
   | 'discovering-local'
   | 'configuring-local'
   | 'installing-codex'
+  | 'installing-open-interpreter'
   | 'refreshing'
   | 'complete';
 
@@ -22,7 +23,7 @@ export interface BootstrapProgress {
 }
 
 export interface AgentInstallResult {
-  id: 'codex';
+  id: AgentReadiness['id'];
   attempted: boolean;
   installed: boolean;
   executable?: string;

@@ -180,6 +180,7 @@ function parseCopilotOutput(
 // ─── CopilotAdapter Implementation ────────────────────────────────────────────
 
 export class CopilotAdapter implements AgentAdapter {
+  private emitters: any;
   static sessions = new Map<string, CopilotSessionState>();
 
   constructor(emitters: EventEmitters) {

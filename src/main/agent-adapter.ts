@@ -6,6 +6,7 @@
  */
 
 import type { IPty } from 'node-pty';
+import type { AgentId } from './agent-readiness.ts';
 
 // ─── Unified Event Types ──────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ export interface AgentSession {
 export interface AgentSessionOptions {
   repository: string;
   branch?: string;
-  agent: 'codex';
+  agent: AgentId;
   model?: string;
   baseUrl?: string;
   apiKey?: string;
@@ -60,7 +61,7 @@ export interface AgentSessionOptions {
 // ─── Agent Detection ──────────────────────────────────────────────────────────
 
 export interface AgentInfo {
-  id: 'codex';
+  id: AgentId;
   name: string;
   installed: boolean;
   authenticated: boolean;

@@ -35,7 +35,7 @@ export const AGENT_READINESS_CHANNEL = 'agents:readiness';
 export const AGENT_APPROVAL_RESOLVE_CHANNEL = 'agents:resolve-approval';
 export const AGENT_APPROVAL_PENDING_CHANNEL = 'agents:pending-approvals';
 
-type AgentId = 'codex';
+type AgentId = import('../agent-readiness.ts').AgentId;
 
 function assertTrustedRenderer(event: import('electron').IpcMainInvokeEvent): void {
   const senderUrl = event.senderFrame?.url || event.sender.getURL();

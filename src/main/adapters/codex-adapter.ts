@@ -76,6 +76,7 @@ interface SessionState {
 // ─── CodexAdapter Implementation ──────────────────────────────────────────────
 
 export class CodexAdapter implements AgentAdapter {
+  private emitters: { emitEvent: (event: AgentEvent) => void; emitApproval: (approval: AgentApproval) => void; emitTerminalOutput: (sessionId: string, data: string) => void };
   // Session storage (kept here for now; will move to main.ts later)
   static sessions = new Map<string, SessionState>();
 
@@ -559,4 +560,3 @@ function terminalFailureDetail(buffer: string) {
   const uniqueLines = lines.filter((line, index) => lines.indexOf(line) === index);
   return uniqueLines.slice(-4).join(' ').slice(0, 600);
 }
-

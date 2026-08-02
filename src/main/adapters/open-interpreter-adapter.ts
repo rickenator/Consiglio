@@ -56,6 +56,7 @@ interface OIChunk {
 // ─── OpenInterpreterAdapter Implementation ────────────────────────────────────
 
 export class OpenInterpreterAdapter implements AgentAdapter {
+  private emitters: any;
   static sessions = new Map<string, OISessionState>();
 
   constructor(emitters: EventEmitters) {

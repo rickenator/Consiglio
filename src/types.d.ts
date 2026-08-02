@@ -1,6 +1,7 @@
 type CodexProvider = 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
+type AgentId = 'codex' | 'open-interpreter' | 'aider' | 'claude-code' | 'gemini' | 'copilot' | 'amazon-q';
 
-type BootstrapPhase = 'idle' | 'discovering-local' | 'configuring-local' | 'installing-codex' | 'refreshing' | 'complete';
+type BootstrapPhase = 'idle' | 'discovering-local' | 'configuring-local' | 'installing-codex' | 'installing-open-interpreter' | 'refreshing' | 'complete';
 
 interface BootstrapProgress {
   phase: BootstrapPhase;
@@ -12,7 +13,7 @@ interface BootstrapProgress {
 }
 
 interface AgentInstallResult {
-  id: 'codex';
+  id: import('./main/agent-readiness').AgentId;
   attempted: boolean;
   installed: boolean;
   executable?: string;
@@ -20,7 +21,7 @@ interface AgentInstallResult {
 }
 
 interface AgentReadiness {
-  id: 'codex';
+  id: AgentId;
   name: string;
   installed: boolean;
   authenticated: boolean | null;
@@ -59,6 +60,7 @@ interface CodexSettings {
   localProviderBehavior: {
     isolateProfile: boolean;
     enableWebSearch: boolean;
+    enableMultiAgent: boolean;
   };
 }
 
@@ -251,6 +253,25 @@ interface CodexAPI {
 
   // Agent readiness
   getAvailableAgents: () => Promise<AgentReadiness[]>;
+  reconnectSession: (sessionId: string) => Promise<boolean>;
+  addSessionAttachments: (sessionId: string) => Promise<TaskAttachment[]>;
+  listSecrets: () => Promise<SecretsStatus>;
+  upsertSecret: (input: SecretInput) => Promise<SecretsStatus>;
+  removeSecret: (id: string) => Promise<SecretsStatus>;
+  getMobileBridgeStatus: () => Promise<MobileBridgeStatus>;
+  startDiscussion: (options: { repository: string; agents: Array<{ id: AgentId }>; maxTurns?: number; moderatorStrategy?: string; synthesisAgent?: AgentId }) => Promise<{ sessionId: string; agents: string[]; history: DiscussionMessage[] }>;
+  sendDiscussionMessage: (sessionId: string, content: string) => Promise<DiscussionMessage[]>;
+  stopDiscussion: (sessionId: string) => Promise<boolean>;
+  onDiscussionMessage: (callback: (data: { sessionId: string; message: DiscussionMessage }) => void) => () => void;
+  onDiscussionError: (callback: (data: { sessionId: string; error: string }) => void) => () => void;
+}
+
+interface DiscussionMessage {
+  id: string;
+  role: 'user' | 'agent' | 'synthesis';
+  agentId?: string;
+  content: string;
+  timestamp: number;
 }
 
 interface SessionRecord {
