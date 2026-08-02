@@ -1,5 +1,4 @@
 #include "mainwindow.h"
-#include "sidebar.h"
 #include "panelmanager.h"
 #include "sessionlist.h"
 #include "eventtimeline.h"
@@ -44,6 +43,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupUI();
     loadSettings();
+    
+    // Center on primary screen after UI is set up and shown
+    QTimer::singleShot(100, this, [this, screen]() {
+        if (screen) {
+            const QRect geo = screen->availableGeometry();
+            move(geo.x() + (geo.width() - width()) / 2,
+                 geo.y() + (geo.height() - height()) / 2);
+        }
+    });
     m_database.markRunningSessionsInterrupted(QDateTime::currentMSecsSinceEpoch());
     refreshProjectList();
     refreshSessionList();
@@ -55,7 +63,6 @@ MainWindow::~MainWindow() {
     // Save window state
     m_database.setPreference("windowGeometry", saveGeometry());
     m_database.setPreference("windowState", saveState());
-    m_database.setPreference("lastPanelIndex", m_lastPanelIndex);
 
     m_sessionManager.stopAllSessions();
 }
@@ -66,29 +73,18 @@ SessionManager &MainWindow::sessionManager() { return m_sessionManager; }
 ApprovalRouter &MainWindow::approvalRouter() { return m_approvalRouter; }
 
 void MainWindow::setupUI() {
-    // Central widget with sidebar + content
+    // Central widget with stacked panels
     auto *central = new QWidget(this);
-    auto *layout = new QHBoxLayout(central);
+    auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_sidebar = new Sidebar(this);
-    layout->addWidget(m_sidebar, 0);
-
     m_content = new QStackedWidget(this);
-    layout->addWidget(m_content, 1);
+    layout->addWidget(m_content);
 
-    // Panel manager creates all panels
+    // Panel manager creates only the essential panels
     m_panelManager = new PanelManager(m_content, this);
     m_panelManager->createPanels(this);
-
-    // Sidebar navigation
-    connect(m_sidebar, &Sidebar::panelChanged, m_content, [this](Sidebar::PanelId id) {
-        m_content->setCurrentIndex(static_cast<int>(id));
-        m_lastPanelIndex = static_cast<int>(id);
-    });
-    connect(m_sidebar, &Sidebar::newSessionRequested, this, &MainWindow::onNewSession);
-    connect(m_sidebar, &Sidebar::settingsRequested, this, &MainWindow::onSettings);
 
     // ─── Backend → Frontend wiring ──────────────────────────────────────
     // SessionManager signals → panel updates
@@ -152,19 +148,13 @@ void MainWindow::setupUI() {
     if (!state.toByteArray().isEmpty()) {
         restoreState(state.toByteArray());
     }
-    int savedPanel = m_database.preference(
-        "lastPanelIndex", static_cast<int>(Sidebar::PanelId::Sessions)).toInt();
-    if (savedPanel >= 0 && savedPanel < m_content->count()) {
-        m_content->setCurrentIndex(savedPanel);
-    }
+    // Default to Sessions panel
+    m_content->setCurrentIndex(0);
 
     QTimer::singleShot(0, this, [this]() {
         if (isMinimized()) showNormal();
         show();
     });
-
-    // Open directly into the working session view.
-    m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
 }
 
 static QRect clampRectToScreen(const QRect &rect, const QRect &available) {
@@ -200,45 +190,26 @@ void MainWindow::setupMenuBar() {
     auto *sessionsAction = new QAction(tr("&Sessions"), viewMenu);
     sessionsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
     connect(sessionsAction, &QAction::triggered, this, [this]() {
-        m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
+        m_content->setCurrentIndex(0);
     });
     viewMenu->addAction(sessionsAction);
 
     auto *timelineAction = new QAction(tr("&Timeline"), viewMenu);
     timelineAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
     connect(timelineAction, &QAction::triggered, this, [this]() {
-        m_sidebar->selectPanel(Sidebar::PanelId::Timeline);
+        m_content->setCurrentIndex(1);
     });
     viewMenu->addAction(timelineAction);
 
-    auto *filesAction = new QAction(tr("&Files"), viewMenu);
-    filesAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_3));
-    connect(filesAction, &QAction::triggered, this, [this]() {
-        m_sidebar->selectPanel(Sidebar::PanelId::Files);
-    });
-    viewMenu->addAction(filesAction);
-
     auto *projectsAction = new QAction(tr("&Projects"), viewMenu);
-    projectsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_4));
+    projectsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_3));
     connect(projectsAction, &QAction::triggered, this, [this]() {
-        m_sidebar->selectPanel(Sidebar::PanelId::Projects);
+        m_content->setCurrentIndex(2);
     });
     viewMenu->addAction(projectsAction);
 
     // Tools menu
     auto *toolsMenu = menuBar->addMenu("&Tools");
-    auto *secretsAction = new QAction(tr("&Secrets Manager"), toolsMenu);
-    connect(secretsAction, &QAction::triggered, this, [this]() {
-        m_sidebar->selectPanel(Sidebar::PanelId::Secrets);
-    });
-    toolsMenu->addAction(secretsAction);
-
-    auto *mobileAction = new QAction(tr("&Mobile Pairing"), toolsMenu);
-    connect(mobileAction, &QAction::triggered, this, [this]() {
-        m_sidebar->selectPanel(Sidebar::PanelId::Mobile);
-    });
-    toolsMenu->addAction(mobileAction);
-
     toolsMenu->addSeparator();
     auto *scanProvidersAction = new QAction(tr("&Scan Providers…"), toolsMenu);
     connect(scanProvidersAction, &QAction::triggered, this, [this]() {
@@ -476,7 +447,6 @@ bool MainWindow::startSession(const QString &provider, const QString &repoDir,
     m_selectedProjectId = projectId;
 
     // Switch to timeline panel
-    m_sidebar->selectPanel(Sidebar::PanelId::Timeline);
 
     // Update UI
     refreshSessionList();
@@ -669,7 +639,6 @@ void MainWindow::onSessionSelected(const QString &sessionId) {
     if (m_activeSessionId.isEmpty()) m_sessionStatusLabel->setText(tr("Recorded session"));
 
     // Switch to timeline to show the session activity
-    m_sidebar->selectPanel(Sidebar::PanelId::Timeline);
 
     EventModel::EventItem evt;
     evt.type = EventModel::SystemEvent;
@@ -742,8 +711,7 @@ void MainWindow::onProjectSelected(const QString &projectId, const QString &) {
     if (projectSessions.isEmpty()) {
         m_activeSessionId.clear();
         m_panelManager->timelinePanel()->setThinking(false);
-        m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
-        return;
+            return;
     }
 
     onSessionSelected(projectSessions.first().id);
@@ -756,5 +724,4 @@ void MainWindow::onClearProjectFilterRequested() {
     refreshSessionList();
     refreshProjectList();
     m_panelManager->timelinePanel()->setThinking(false);
-    m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
 }

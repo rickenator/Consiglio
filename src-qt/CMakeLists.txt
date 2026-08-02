@@ -35,8 +35,6 @@ set(QT_SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
-    src/sidebar.cpp
-    src/sidebar.h
     src/panelmanager.cpp
     src/panelmanager.h
     src/startupwizard.cpp
@@ -51,12 +49,6 @@ set(QT_SOURCES
     src/sessionlist.h
     src/eventtimeline.cpp
     src/eventtimeline.h
-    src/filebrowser.cpp
-    src/filebrowser.h
-    src/secretsmanager.cpp
-    src/secretsmanager.h
-    src/mobilepairing.cpp
-    src/mobilepairing.h
     src/projectpanel.cpp
     src/projectpanel.h
     src/approvaldialog.cpp

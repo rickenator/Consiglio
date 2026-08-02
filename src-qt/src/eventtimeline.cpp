@@ -127,20 +127,6 @@ void EventTimeline::setupUI() {
     titleLabel->setFont(UiMetrics::titleFont());
     titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
-    headerLayout->addStretch();
-
-    auto *clearBtn = new QPushButton(tr("Clear"), this);
-    clearBtn->setStyleSheet(R"(
-        QPushButton {
-            background: transparent;
-            border: 1px solid #30363d;
-            color: #c9d1d9;
-            padding: 18px 28px;
-            border-radius: 12px;
-        }
-        QPushButton:hover { background: rgba(255,255,255,0.06); }
-    )");
-    headerLayout->addWidget(clearBtn);
     mainLayout->addLayout(headerLayout);
 
     // Text edit for events
@@ -161,7 +147,7 @@ void EventTimeline::setupUI() {
     // Command input area
     auto *inputLayout = new QHBoxLayout();
     m_commandInput = new QLineEdit(this);
-    m_commandInput->setPlaceholderText(tr("Enter command to execute..."));
+    m_commandInput->setPlaceholderText(tr("Type a message or command…"));
     m_commandInput->setStyleSheet(R"(
         QLineEdit {
             background: #161b22;
@@ -199,14 +185,13 @@ void EventTimeline::setupUI() {
     mainLayout->addLayout(inputLayout);
 
     // Empty state label
-    m_emptyLabel = new QLabel(tr("No events yet. Start a session to see activity here."), this);
+    m_emptyLabel = new QLabel(tr("No events yet. Select a session to view its timeline."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
     m_emptyLabel->setFont(UiMetrics::secondaryFont());
     m_emptyLabel->setStyleSheet("color: #8b949e;");
     mainLayout->addWidget(m_emptyLabel);
 
     // Connections
-    connect(clearBtn, &QPushButton::clicked, this, &EventTimeline::clearEvents);
     connect(m_sendBtn, &QPushButton::clicked, this, &EventTimeline::onSendCommand);
     connect(m_commandInput, &QLineEdit::returnPressed, this, &EventTimeline::onSendCommand);
 

@@ -26,8 +26,6 @@ private:
     void setupUI();
     SessionModel *m_model = nullptr;
     QTreeView *m_treeView = nullptr;
-    QLabel *m_contextLabel = nullptr;
-    QPushButton *m_clearFilterBtn = nullptr;
     QPushButton *m_stopBtn = nullptr;
     QLabel *m_emptyLabel = nullptr;
 };

@@ -2,7 +2,6 @@
 
 #include <QMainWindow>
 #include <QStackedWidget>
-#include <QListWidget>
 #include <QLabel>
 #include <QToolBar>
 #include <QStatusBar>
@@ -14,7 +13,6 @@
 #include "backend/appdatabase.h"
 #include "models/eventmodel.h"
 
-class Sidebar;
 class PanelManager;
 class StartupWizard;
 
@@ -77,7 +75,6 @@ private:
     void sendCommandToActiveSession(const QString &command, const QString &workingDir);
     void updateStatusBarSessionState();
 
-    Sidebar *m_sidebar = nullptr;
     QStackedWidget *m_content = nullptr;
     PanelManager *m_panelManager = nullptr;
     QLabel *m_approvalBadge = nullptr;
@@ -97,5 +94,4 @@ private:
     QString m_selectedProjectId;
     QString m_selectedProjectName;
     QString m_selectedProjectWorkspace;
-    int m_lastPanelIndex = 0;
 };

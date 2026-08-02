@@ -16,41 +16,19 @@ void SessionList::setupUI() {
 
     // Header with title and stop button
     auto *headerLayout = new QHBoxLayout();
-    auto *titleLabel = new QLabel(tr("Your sessions"), this);
+    auto *titleLabel = new QLabel(tr("Recent Conversations"), this);
     titleLabel->setFont(UiMetrics::titleFont());
     titleLabel->setStyleSheet("color: #f0f6fc;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
-
-    m_contextLabel = new QLabel(tr("All projects"), this);
-    m_contextLabel->setFont(UiMetrics::secondaryFont());
-    m_contextLabel->setStyleSheet("color: #8b949e;");
-    headerLayout->addWidget(m_contextLabel);
-
-    m_clearFilterBtn = new QPushButton(tr("Show all"), this);
-    m_clearFilterBtn->setStyleSheet(R"(
-        QPushButton {
-            background: transparent;
-            color: #8b949e;
-            border: 1px solid #30363d;
-            padding: 12px 18px;
-            border-radius: 10px;
-        }
-        QPushButton:hover {
-            color: #f0f6fc;
-            border-color: #58a6ff;
-        }
-    )");
-    m_clearFilterBtn->setVisible(false);
-    headerLayout->addWidget(m_clearFilterBtn);
 
     m_stopBtn = new QPushButton(tr("Stop Selected"), this);
     m_stopBtn->setStyleSheet(R"(
         QPushButton {
             background: #da3633;
             color: white;
-            padding: 18px 28px;
-            border-radius: 12px;
+            padding: 12px 20px;
+            border-radius: 10px;
         }
         QPushButton:hover { background: #f85149; }
         QPushButton:disabled { background: #484f58; color: #8b949e; }
@@ -88,7 +66,7 @@ void SessionList::setupUI() {
     mainLayout->addWidget(m_treeView);
 
     // Empty state label
-    m_emptyLabel = new QLabel(tr("No sessions yet. Start a session to see it here."), this);
+    m_emptyLabel = new QLabel(tr("No conversations yet. Use File → New Session to start one."), this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
     m_emptyLabel->setFont(UiMetrics::secondaryFont());
     m_emptyLabel->setStyleSheet("color: #8b949e;");
@@ -97,9 +75,6 @@ void SessionList::setupUI() {
     // Connections
     connect(m_treeView, &QTreeView::doubleClicked, this, &SessionList::onSessionDoubleClicked);
     connect(m_stopBtn, &QPushButton::clicked, this, &SessionList::onStopSession);
-    connect(m_clearFilterBtn, &QPushButton::clicked, this, [this]() {
-        emit clearProjectFilterRequested();
-    });
     connect(m_treeView->selectionModel(), &QItemSelectionModel::currentChanged,
             this, [this](const QModelIndex &current) {
         m_stopBtn->setEnabled(current.isValid() &&
@@ -107,19 +82,8 @@ void SessionList::setupUI() {
     });
 }
 
-void SessionList::setProjectContext(const QString &projectName, const QString &workspace) {
-    const bool filtered = !projectName.isEmpty() || !workspace.isEmpty();
-    if (!filtered) {
-        m_contextLabel->setText(tr("All projects"));
-        m_clearFilterBtn->setVisible(false);
-        return;
-    }
-
-    const QString label = workspace.isEmpty()
-        ? projectName
-        : tr("%1 · %2").arg(projectName.isEmpty() ? tr("Project") : projectName, workspace);
-    m_contextLabel->setText(label);
-    m_clearFilterBtn->setVisible(true);
+void SessionList::setProjectContext(const QString &, const QString &) {
+    // Project context UI removed with sidebar - filtering handled via menu
 }
 
 void SessionList::setSessions(const QList<SessionRecord> &sessions) {

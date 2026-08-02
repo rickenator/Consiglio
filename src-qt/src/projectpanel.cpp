@@ -16,7 +16,7 @@ ProjectPanel::ProjectPanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(title);
 
     auto *description = new QLabel(
-        tr("Each workspace is a project. Open one to see all of its sessions and timelines."),
+        tr("Projects organize your work by workspace. Each project contains multiple sessions."),
         this);
     description->setWordWrap(true);
     description->setFont(UiMetrics::secondaryFont());
