@@ -35,7 +35,7 @@ static bool hasUsableX11Display(QString *reason) {
     }
 
     QLocalSocket socket;
-    socket.connectToServer(QStringLiteral("X%1").arg(displayNumber), QIODevice::ReadOnly);
+    socket.connectToServer(socketPath, QIODevice::ReadOnly);
     if (!socket.waitForConnected(250)) {
         if (reason) *reason = QString("Cannot connect to the X11 socket for DISPLAY=%1").arg(display);
         return false;

@@ -20,6 +20,7 @@ struct SessionRecord {
     QString projectId;
     QString permissionMode;
     QString preferredName;
+    QString codexThreadId;
     qint64 startedAt = 0;
     qint64 lastActivity = 0;
 };
@@ -35,7 +36,7 @@ public:
     QString startSession(const QString &provider, const QString &repository = {},
                          const QString &branch = {}, const QVariantMap &options = {});
     bool stopSession(const QString &sessionId);
-    bool reconnectSession(const QString &sessionId);
+    bool reconnectSession(const SessionRecord &record);
     bool hasSession(const QString &sessionId) const;
     bool sendCommand(const QString &sessionId, const QString &command);
 
@@ -46,6 +47,7 @@ signals:
     void outputReceived(const QString &sessionId, const QString &data);
     void assistantMessageReceived(const QString &sessionId, const QString &message);
     void structuredErrorReceived(const QString &sessionId, const QString &error);
+    void codexThreadIdReceived(const QString &sessionId, const QString &threadId);
     void approvalRequested(const ApprovalRequest &request);
 
 public slots:

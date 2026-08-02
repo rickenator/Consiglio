@@ -52,6 +52,7 @@ private slots:
     void onOutputReceived(const QString &sessionId, const QString &data);
     void onAssistantMessageReceived(const QString &sessionId, const QString &message);
     void onStructuredErrorReceived(const QString &sessionId, const QString &error);
+    void onCodexThreadIdReceived(const QString &sessionId, const QString &threadId);
     void onSessionSelected(const QString &sessionId);
     void onSessionStoppedFromList(const QString &sessionId);
     void onClearProjectFilterRequested();

@@ -37,6 +37,7 @@ public:
                           qint64 lastActivity);
     QList<SessionRecord> sessions(const QString &projectId = {}) const;
     bool markRunningSessionsInterrupted(qint64 timestamp);
+    bool setSessionCodexThreadId(const QString &sessionId, const QString &threadId);
 
     QString ensureProject(const QString &workspace, const QString &name = {});
     QList<ProjectRecord> projects() const;

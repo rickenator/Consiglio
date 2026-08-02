@@ -280,6 +280,7 @@ void SessionManager::consumeCodexOutput(const QString &sessionId,
         const QString type = event.value("type").toString();
         if (type == "thread.started") {
             it.value().codexThreadId = event.value("thread_id").toString();
+            emit codexThreadIdReceived(sessionId, it.value().codexThreadId);
             continue;
         }
 
@@ -329,8 +330,41 @@ bool SessionManager::stopSession(const QString &sessionId) {
     return true;
 }
 
-bool SessionManager::reconnectSession(const QString &sessionId) {
-    return m_sessions.contains(sessionId);
+bool SessionManager::reconnectSession(const SessionRecord &record) {
+    if (m_sessions.contains(record.id)) return true;
+
+    // Only structured Codex sessions with a thread ID can be reconnected.
+    if (record.provider != "codex" || record.codexThreadId.isEmpty()) return false;
+
+    SessionState state;
+    state.record = record;
+    state.record.status = "running";
+    state.structuredCodex = true;
+    state.workingDir = !record.repository.isEmpty() && QDir(record.repository).exists()
+        ? record.repository : QDir::currentPath();
+    state.environment = QProcessEnvironment::systemEnvironment();
+    state.environment.remove("CODEX_PERMISSION_PROFILE");
+    state.environment.remove("CODEX_SANDBOX_NETWORK_DISABLED");
+    state.environment.remove("CODEX_THREAD_ID");
+    state.environment.remove("CODEX_CI");
+
+    state.program = "codex";
+    state.providerArgs << "-c"
+                       << QString("sandbox_mode=%1").arg(tomlString(record.permissionMode));
+
+    const QString identityInstruction = QString(
+        "The user's preferred name is %1. Address the user as %1 when using a name, "
+        "and do not infer or substitute another name.").arg(record.preferredName);
+    state.providerArgs << "-c"
+                       << QString("developer_instructions=%1").arg(
+                              tomlString(identityInstruction));
+
+    // Restore the thread ID so subsequent commands use `codex exec resume`.
+    state.codexThreadId = record.codexThreadId;
+
+    m_sessions.insert(record.id, state);
+    emit sessionStarted(record.id, state.record);
+    return true;
 }
 
 bool SessionManager::hasSession(const QString &sessionId) const {

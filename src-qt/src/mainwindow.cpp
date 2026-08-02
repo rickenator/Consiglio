@@ -104,6 +104,8 @@ void MainWindow::setupUI() {
             this, &MainWindow::onAssistantMessageReceived);
     connect(&m_sessionManager, &SessionManager::structuredErrorReceived,
             this, &MainWindow::onStructuredErrorReceived);
+    connect(&m_sessionManager, &SessionManager::codexThreadIdReceived,
+            this, &MainWindow::onCodexThreadIdReceived);
 
     // Panel signals → SessionManager actions
     connect(m_panelManager->sessionsPanel(), &SessionList::sessionSelected,
@@ -159,12 +161,6 @@ void MainWindow::setupUI() {
     QTimer::singleShot(0, this, [this]() {
         if (isMinimized()) showNormal();
         show();
-        raise();
-        activateWindow();
-        if (windowHandle()) {
-            windowHandle()->raise();
-            windowHandle()->requestActivate();
-        }
     });
 
     // Open directly into the working session view.
@@ -610,6 +606,10 @@ void MainWindow::onSessionError(const QString &sessionId, const QString &error) 
     addTimelineEvent(evt);
 }
 
+void MainWindow::onCodexThreadIdReceived(const QString &sessionId, const QString &threadId) {
+    m_database.setSessionCodexThreadId(sessionId, threadId);
+}
+
 void MainWindow::onOutputReceived(const QString &sessionId, const QString &data) {
     if (data.isEmpty()) return;
     if (sessionId == m_activeSessionId) {
@@ -652,6 +652,17 @@ void MainWindow::onStructuredErrorReceived(const QString &sessionId, const QStri
 
 void MainWindow::onSessionSelected(const QString &sessionId) {
     m_panelManager->timelinePanel()->setThinking(false);
+
+    // Try to reconnect if the session isn't currently active.
+    if (!m_sessionManager.hasSession(sessionId)) {
+        const auto allSessions = m_database.sessions();
+        for (const auto &record : allSessions) {
+            if (record.id == sessionId && m_sessionManager.reconnectSession(record)) {
+                break;
+            }
+        }
+    }
+
     m_activeSessionId = m_sessionManager.hasSession(sessionId) ? sessionId : QString();
     loadTimelineEvents(sessionId);
     updateStatusBarSessionState();

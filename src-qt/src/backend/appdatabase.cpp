@@ -206,7 +206,7 @@ QList<SessionRecord> AppDatabase::sessions(const QString &projectId) const {
     QList<SessionRecord> records;
     QSqlQuery query(m_db);
     QString sql = "SELECT id, provider, status, repository, branch, project_id, permission_mode, "
-                  "preferred_name, started_at, last_activity FROM sessions";
+                  "preferred_name, codex_thread_id, started_at, last_activity FROM sessions";
     if (!projectId.isEmpty()) sql += " WHERE project_id = ?";
     sql += " ORDER BY last_activity DESC";
     query.prepare(sql);
@@ -222,8 +222,9 @@ QList<SessionRecord> AppDatabase::sessions(const QString &projectId) const {
         record.projectId = query.value(5).toString();
         record.permissionMode = query.value(6).toString();
         record.preferredName = query.value(7).toString();
-        record.startedAt = query.value(8).toLongLong();
-        record.lastActivity = query.value(9).toLongLong();
+        record.codexThreadId = query.value(8).toString();
+        record.startedAt = query.value(9).toLongLong();
+        record.lastActivity = query.value(10).toLongLong();
         records.append(record);
     }
     return records;
@@ -277,6 +278,14 @@ bool AppDatabase::markRunningSessionsInterrupted(qint64 timestamp) {
     query.prepare("UPDATE sessions SET status = 'interrupted', last_activity = ? "
                   "WHERE status = 'running'");
     query.addBindValue(timestamp);
+    return query.exec();
+}
+
+bool AppDatabase::setSessionCodexThreadId(const QString &sessionId, const QString &threadId) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE sessions SET codex_thread_id = ? WHERE id = ?");
+    query.addBindValue(threadId);
+    query.addBindValue(sessionId);
     return query.exec();
 }
 
