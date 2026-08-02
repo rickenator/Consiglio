@@ -128,22 +128,7 @@ void MainWindow::setupUI() {
     setupStatusBar();
     setupTray();
 
-    // Restore window state if available
-    auto geom = m_database.preference("windowGeometry");
-    if (!geom.toByteArray().isEmpty()) {
-        restoreGeometry(geom.toByteArray());
-        const QScreen *screen = QGuiApplication::screenAt(frameGeometry().center());
-        const QRect available = screen ? screen->availableGeometry()
-                                       : (QGuiApplication::primaryScreen()
-                                              ? QGuiApplication::primaryScreen()->availableGeometry()
-                                              : QRect());
-        if (available.isValid()) {
-            const QRect clamped = clampRectToScreen(frameGeometry(), available);
-            if (clamped != frameGeometry()) {
-                setGeometry(clamped);
-            }
-        }
-    }
+    // Restore window state if available (but not geometry to avoid fullscreen issues)
     auto state = m_database.preference("windowState");
     if (!state.toByteArray().isEmpty()) {
         restoreState(state.toByteArray());

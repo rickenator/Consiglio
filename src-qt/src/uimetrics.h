@@ -30,18 +30,7 @@ inline int panelMargin() { return px(28); }
 inline int panelSpacing() { return px(14); }
 inline int controlPadding() { return px(10); }
 inline int cornerRadius() { return px(7); }
-inline int sidebarWidth() {
-    const QScreen *screen = QApplication::primaryScreen();
-    if (!screen) return px(240);
-    return qMax(px(120), qMin(px(360), qRound(screen->availableGeometry().width() * 0.28)));
-}
 
-inline int qrCodeSize() {
-    const QScreen *screen = QApplication::primaryScreen();
-    if (!screen) return px(300);
-    const int shortEdge = qMin(screen->availableGeometry().width(), screen->availableGeometry().height());
-    return qMin(px(300), qRound(shortEdge * 0.5));
-}
 
 inline QFont bodyFont() {
     QFont font("Segoe UI");
