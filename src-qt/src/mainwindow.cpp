@@ -475,6 +475,7 @@ void MainWindow::onSessionStarted(const QString &sessionId, const SessionRecord 
 
 void MainWindow::onSessionStopped(const QString &sessionId) {
     if (m_activeSessionId == sessionId) {
+        m_panelManager->timelinePanel()->setThinking(false);
         m_activeSessionId.clear();
     }
     refreshSessionList();
@@ -492,6 +493,7 @@ void MainWindow::onSessionStopped(const QString &sessionId) {
 
 void MainWindow::onSessionError(const QString &sessionId, const QString &error) {
     if (m_activeSessionId == sessionId) {
+        m_panelManager->timelinePanel()->setThinking(false);
         m_activeSessionId.clear();
     }
     refreshSessionList();
@@ -507,6 +509,9 @@ void MainWindow::onSessionError(const QString &sessionId, const QString &error) 
 
 void MainWindow::onOutputReceived(const QString &sessionId, const QString &data) {
     if (data.isEmpty()) return;
+    if (sessionId == m_activeSessionId) {
+        m_panelManager->timelinePanel()->setThinking(false);
+    }
 
     // Add as command output event to timeline
     EventModel::EventItem evt;
@@ -519,6 +524,9 @@ void MainWindow::onOutputReceived(const QString &sessionId, const QString &data)
 
 void MainWindow::onAssistantMessageReceived(const QString &sessionId, const QString &message) {
     if (message.isEmpty()) return;
+    if (sessionId == m_activeSessionId) {
+        m_panelManager->timelinePanel()->setThinking(false);
+    }
     EventModel::EventItem evt;
     evt.type = EventModel::AssistantMessage;
     evt.content = message;
@@ -528,6 +536,9 @@ void MainWindow::onAssistantMessageReceived(const QString &sessionId, const QStr
 }
 
 void MainWindow::onStructuredErrorReceived(const QString &sessionId, const QString &error) {
+    if (sessionId == m_activeSessionId) {
+        m_panelManager->timelinePanel()->setThinking(false);
+    }
     EventModel::EventItem evt;
     evt.type = EventModel::Error;
     evt.content = error;
@@ -537,6 +548,7 @@ void MainWindow::onStructuredErrorReceived(const QString &sessionId, const QStri
 }
 
 void MainWindow::onSessionSelected(const QString &sessionId) {
+    m_panelManager->timelinePanel()->setThinking(false);
     m_activeSessionId = sessionId;
     updateStatusBarSessionState();
 
@@ -581,5 +593,13 @@ void MainWindow::onCommandExecuted(const QString &command, const QString &workin
 
 void MainWindow::sendCommandToActiveSession(const QString &command, const QString &workingDir) {
     Q_UNUSED(workingDir);
-    m_sessionManager.sendCommand(m_activeSessionId, command);
+    const bool sent = m_sessionManager.sendCommand(m_activeSessionId, command);
+    m_panelManager->timelinePanel()->setThinking(sent);
+    if (!sent) {
+        EventModel::EventItem evt;
+        evt.type = EventModel::Error;
+        evt.content = tr("The active session could not accept that message.");
+        evt.timestamp = QDateTime::currentMSecsSinceEpoch();
+        addTimelineEvent(evt);
+    }
 }

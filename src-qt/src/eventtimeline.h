@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QTimer>
 #include "models/eventmodel.h"
 
 class EventTimeline : public QWidget {
@@ -19,6 +20,10 @@ public slots:
     void addEvent(const EventModel::EventItem &event);
     void clearEvents();
     void onSendCommand();
+    void setThinking(bool thinking);
+
+public:
+    bool isThinking() const;
 
 private:
     void setupUI();
@@ -29,4 +34,8 @@ private:
     QLineEdit *m_commandInput = nullptr;
     QPushButton *m_sendBtn = nullptr;
     QLabel *m_emptyLabel = nullptr;
+    QLabel *m_thinkingIndicator = nullptr;
+    QTimer *m_thinkingTimer = nullptr;
+    int m_thinkingFrame = 0;
+    bool m_thinking = false;
 };

@@ -174,6 +174,15 @@ void EventTimeline::setupUI() {
     )");
     inputLayout->addWidget(m_commandInput);
 
+    m_thinkingIndicator = new QLabel(this);
+    m_thinkingIndicator->setObjectName("thinkingIndicator");
+    m_thinkingIndicator->setFont(UiMetrics::secondaryFont());
+    m_thinkingIndicator->setStyleSheet(
+        "color: #58a6ff; padding: 0 0.55em; font-weight: 600;");
+    m_thinkingIndicator->setAccessibleName(tr("Agent is thinking"));
+    m_thinkingIndicator->setVisible(false);
+    inputLayout->addWidget(m_thinkingIndicator);
+
     m_sendBtn = new QPushButton(tr("Send"), this);
     m_sendBtn->setStyleSheet(R"(
         QPushButton {
@@ -200,6 +209,18 @@ void EventTimeline::setupUI() {
     connect(clearBtn, &QPushButton::clicked, this, &EventTimeline::clearEvents);
     connect(m_sendBtn, &QPushButton::clicked, this, &EventTimeline::onSendCommand);
     connect(m_commandInput, &QLineEdit::returnPressed, this, &EventTimeline::onSendCommand);
+
+    m_thinkingTimer = new QTimer(this);
+    m_thinkingTimer->setInterval(90);
+    connect(m_thinkingTimer, &QTimer::timeout, this, [this]() {
+        static const QStringList frames = {
+            QStringLiteral("◐"), QStringLiteral("◓"),
+            QStringLiteral("◑"), QStringLiteral("◒")
+        };
+        m_thinkingIndicator->setText(
+            tr("%1 Thinking").arg(frames.at(m_thinkingFrame % frames.size())));
+        ++m_thinkingFrame;
+    });
 }
 
 void EventTimeline::addEvent(const EventModel::EventItem &event) {
@@ -213,11 +234,31 @@ void EventTimeline::clearEvents() {
 }
 
 void EventTimeline::onSendCommand() {
+    if (m_thinking) return;
     auto cmd = m_commandInput->text().trimmed();
     if (!cmd.isEmpty()) {
         emit commandExecuted(cmd, {});
         m_commandInput->clear();
     }
+}
+
+void EventTimeline::setThinking(bool thinking) {
+    if (m_thinking == thinking) return;
+    m_thinking = thinking;
+    m_sendBtn->setEnabled(!thinking);
+    m_thinkingIndicator->setVisible(thinking);
+    if (thinking) {
+        m_thinkingFrame = 1;
+        m_thinkingIndicator->setText(tr("◐ Thinking"));
+        m_thinkingTimer->start();
+    } else {
+        m_thinkingTimer->stop();
+        m_thinkingIndicator->clear();
+    }
+}
+
+bool EventTimeline::isThinking() const {
+    return m_thinking;
 }
 
 void EventTimeline::appendEvent(const EventModel::EventItem &event) {

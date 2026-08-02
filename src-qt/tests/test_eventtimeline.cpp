@@ -9,6 +9,7 @@ class TestEventTimeline : public QObject {
 
 private slots:
     void rendersAgentMarkdownAndMath();
+    void animatesThinkingState();
 };
 
 void TestEventTimeline::rendersAgentMarkdownAndMath() {
@@ -53,6 +54,26 @@ du = \Delta_M F[u] \, dt
     QVERIFY(!plainText.contains("\\Delta"));
     QVERIFY(html.contains("font-weight:700") || html.contains("font-weight:600"));
     QVERIFY(html.contains("<table"));
+}
+
+void TestEventTimeline::animatesThinkingState() {
+    EventTimeline timeline;
+    timeline.show();
+    auto *indicator = timeline.findChild<QLabel *>("thinkingIndicator");
+    QVERIFY(indicator);
+    QVERIFY(!timeline.isThinking());
+    QVERIFY(indicator->isHidden());
+
+    timeline.setThinking(true);
+    QVERIFY(timeline.isThinking());
+    QVERIFY(indicator->isVisible());
+    const QString firstFrame = indicator->text();
+    QTest::qWait(120);
+    QVERIFY(indicator->text() != firstFrame);
+
+    timeline.setThinking(false);
+    QVERIFY(!timeline.isThinking());
+    QVERIFY(indicator->isHidden());
 }
 
 QTEST_MAIN(TestEventTimeline)
