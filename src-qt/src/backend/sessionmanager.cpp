@@ -22,6 +22,13 @@ QString normalizedOpenAiBaseUrl(QString baseUrl) {
     if (!baseUrl.endsWith("/v1")) baseUrl += "/v1";
     return baseUrl;
 }
+
+QString validatedSandboxMode(const QVariantMap &options) {
+    const QString requested = options.value("sandboxMode", "workspace-write").toString();
+    if (requested == "read-only" || requested == "workspace-write" ||
+        requested == "danger-full-access") return requested;
+    return "workspace-write";
+}
 }
 
 SessionManager::SessionManager(QObject *parent) : QObject(parent) {}
@@ -42,11 +49,18 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
     state.record.status = "running";
     state.record.repository = repository;
     state.record.branch = branch;
+    state.record.permissionMode = validatedSandboxMode(options);
     state.record.startedAt = QDateTime::currentMSecsSinceEpoch();
     state.record.lastActivity = state.record.startedAt;
     state.workingDir = !repository.isEmpty() && QDir(repository).exists()
         ? repository : QDir::currentPath();
     state.environment = QProcessEnvironment::systemEnvironment();
+    // These describe the process that launched Consiglio; they must not
+    // silently override the permission selected for a new child session.
+    state.environment.remove("CODEX_PERMISSION_PROFILE");
+    state.environment.remove("CODEX_SANDBOX_NETWORK_DISABLED");
+    state.environment.remove("CODEX_THREAD_ID");
+    state.environment.remove("CODEX_CI");
 
     if (provider == "ollama") {
         state.program = "ollama";
@@ -67,6 +81,9 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
     } else if (provider == "codex") {
         state.program = "codex";
         state.structuredCodex = true;
+        state.providerArgs << "-c"
+                           << QString("sandbox_mode=%1").arg(
+                                  tomlString(state.record.permissionMode));
     } else if (provider == "remote_llamacpp") {
         state.program = "codex";
         state.structuredCodex = true;
@@ -84,6 +101,8 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
         state.environment.insert("CODEX_OSS_BASE_URL", baseUrl);
         state.environment.insert("CODEX_HOME", codexHome);
         state.providerArgs
+            << "-c" << QString("sandbox_mode=%1").arg(
+                           tomlString(state.record.permissionMode))
             << "-c" << "features.multi_agent=false"
             << "-c" << "model_supports_reasoning_summaries=false"
             << "-c" << "model_reasoning_summary=\"none\""

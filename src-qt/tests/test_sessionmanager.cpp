@@ -16,6 +16,7 @@ private slots:
     void testMultipleSessions();
     void testSendCommand_nonExistent();
     void testCodexSessionDoesNotEmitTerminalUI();
+    void testCodexPermissionSelection();
 
 private:
     SessionManager *m_manager;
@@ -123,6 +124,24 @@ void TestSessionManager::testCodexSessionDoesNotEmitTerminalUI() {
     QCOMPARE(outputSpy.count(), 0);
     QCOMPARE(assistantSpy.count(), 0);
     QVERIFY(m_manager->stopSession(sessionId));
+}
+
+void TestSessionManager::testCodexPermissionSelection() {
+    QVariantMap options;
+    options.insert("sandboxMode", "danger-full-access");
+    const QString fullAccess = m_manager->startSession(
+        "codex", QDir::currentPath(), {}, options);
+    QCOMPARE(m_manager->listSessions().size(), 1);
+    QCOMPARE(m_manager->listSessions().first().permissionMode,
+             QString("danger-full-access"));
+    QVERIFY(m_manager->stopSession(fullAccess));
+
+    options.insert("sandboxMode", "not-a-real-mode");
+    const QString fallback = m_manager->startSession(
+        "codex", QDir::currentPath(), {}, options);
+    QCOMPARE(m_manager->listSessions().first().permissionMode,
+             QString("workspace-write"));
+    QVERIFY(m_manager->stopSession(fallback));
 }
 
 QTEST_MAIN(TestSessionManager)

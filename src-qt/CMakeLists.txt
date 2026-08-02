@@ -40,6 +40,8 @@ set(QT_SOURCES
     src/settingsdialog.h
     src/providerselectiondialog.cpp
     src/providerselectiondialog.h
+    src/newsessiondialog.cpp
+    src/newsessiondialog.h
     src/sessionlist.cpp
     src/sessionlist.h
     src/eventtimeline.cpp
@@ -94,6 +96,26 @@ add_test(NAME PtyHandlerTests COMMAND test_ptyhandler)
 add_executable(test_agentdetector tests/test_agentdetector.cpp)
 target_link_libraries(test_agentdetector PRIVATE Qt5::Core Qt5::Test ConsiglioBackend)
 add_test(NAME AgentDetectorTests COMMAND test_agentdetector)
+
+add_executable(test_providerselectiondialog
+    tests/test_providerselectiondialog.cpp
+    src/providerselectiondialog.cpp
+    src/providerselectiondialog.h
+)
+target_include_directories(test_providerselectiondialog PRIVATE src)
+target_link_libraries(test_providerselectiondialog PRIVATE
+    Qt5::Core Qt5::Widgets Qt5::Network Qt5::Test ConsiglioBackend)
+add_test(NAME ProviderSelectionDialogTests COMMAND test_providerselectiondialog)
+
+add_executable(test_eventtimeline
+    tests/test_eventtimeline.cpp
+    src/eventtimeline.cpp
+    src/eventtimeline.h
+)
+target_include_directories(test_eventtimeline PRIVATE src)
+target_link_libraries(test_eventtimeline PRIVATE
+    Qt5::Core Qt5::Widgets Qt5::Test ConsiglioBackend)
+add_test(NAME EventTimelineTests COMMAND test_eventtimeline)
 
 # Install
 install(TARGETS Consiglio BUNDLE DESTINATION .)

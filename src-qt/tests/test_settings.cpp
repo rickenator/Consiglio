@@ -1,11 +1,14 @@
 #include <QtTest/QtTest>
 #include "backend/settings.h"
+#include <QDir>
 #include <QSettings>
+#include <QTemporaryDir>
 
 class TestSettings : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void init();
     void cleanup();
     void testDefaultValues();
@@ -17,10 +20,23 @@ private slots:
 
 private:
     Settings *m_settings = nullptr;
+    QTemporaryDir m_settingsDir;
 };
 
+void TestSettings::initTestCase() {
+    QVERIFY(m_settingsDir.isValid());
+    QVERIFY(QDir(m_settingsDir.path()).mkpath("Aniviza"));
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       m_settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                       m_settingsDir.path());
+    QSettings probe("Aniviza", "Consiglio");
+    QVERIFY2(probe.fileName().startsWith(m_settingsDir.path()),
+             qPrintable(probe.fileName()));
+}
+
 void TestSettings::init() {
-    // Clear the real settings store before each test to ensure isolation
+    // Clear the isolated test settings store before each test.
     QSettings s("Aniviza", "Consiglio");
     s.clear();
     m_settings = new Settings(nullptr);

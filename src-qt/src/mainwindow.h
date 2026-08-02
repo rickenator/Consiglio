@@ -63,6 +63,9 @@ private:
     void loadSettings();
     void showStartupWizardIfNeeded();
     bool scanAndSelectProvider();
+    bool startConfiguredSession();
+    bool startSession(const QString &provider, const QString &workspace,
+                      const QString &sandboxMode);
     void refreshSessionList();
     void addTimelineEvent(const EventModel::EventItem &event);
     void sendCommandToActiveSession(const QString &command, const QString &workingDir);

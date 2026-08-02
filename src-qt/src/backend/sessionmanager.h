@@ -17,6 +17,7 @@ struct SessionRecord {
     QString status;   // running, stopped, error
     QString repository;
     QString branch;
+    QString permissionMode;
     qint64 startedAt = 0;
     qint64 lastActivity = 0;
 };

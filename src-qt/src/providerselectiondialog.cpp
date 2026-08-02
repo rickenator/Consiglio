@@ -4,8 +4,15 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QDialogButtonBox>
+#include <QComboBox>
+#include <QDir>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScreen>
 #include <QVBoxLayout>
@@ -25,6 +32,7 @@ bool isSelectable(const AgentInfo &provider) {
 
 ProviderSelectionDialog::ProviderSelectionDialog(const QList<AgentInfo> &providers,
                                                  const QString &preferredProvider,
+                                                 const QString &initialDirectory,
                                                  QWidget *parent)
     : QDialog(parent)
 {
@@ -32,8 +40,8 @@ ProviderSelectionDialog::ProviderSelectionDialog(const QList<AgentInfo> &provide
     setModal(true);
 
     const QSize available = QApplication::primaryScreen()->availableGeometry().size();
-    resize(qMin(UiMetrics::px(700), available.width()),
-           qMin(UiMetrics::px(560), available.height()));
+    resize(qMin(UiMetrics::px(760), available.width()),
+           qMin(UiMetrics::px(760), available.height()));
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
@@ -59,6 +67,28 @@ ProviderSelectionDialog::ProviderSelectionDialog(const QList<AgentInfo> &provide
     m_providerList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_providerList->setSpacing(UiMetrics::px(6));
     layout->addWidget(m_providerList, 1);
+
+    auto *form = new QFormLayout();
+    form->setSpacing(UiMetrics::panelSpacing());
+    auto *workspaceRow = new QHBoxLayout();
+    m_workspaceEdit = new QLineEdit(QDir::cleanPath(initialDirectory), this);
+    auto *browseButton = new QPushButton(tr("Browse…"), this);
+    workspaceRow->addWidget(m_workspaceEdit, 1);
+    workspaceRow->addWidget(browseButton);
+    form->addRow(tr("Workspace"), workspaceRow);
+
+    m_permissionCombo = new QComboBox(this);
+    m_permissionCombo->addItem(tr("Read only"), "read-only");
+    m_permissionCombo->addItem(tr("Workspace access (Recommended)"), "workspace-write");
+    m_permissionCombo->addItem(tr("Full machine access"), "danger-full-access");
+    m_permissionCombo->setCurrentIndex(1);
+    form->addRow(tr("Permissions"), m_permissionCombo);
+    layout->addLayout(form);
+
+    m_permissionDescription = new QLabel(this);
+    m_permissionDescription->setWordWrap(true);
+    m_permissionDescription->setFont(UiMetrics::secondaryFont());
+    layout->addWidget(m_permissionDescription);
 
     QListWidgetItem *firstSelectable = nullptr;
     QListWidgetItem *preferredItem = nullptr;
@@ -94,14 +124,26 @@ ProviderSelectionDialog::ProviderSelectionDialog(const QList<AgentInfo> &provide
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
     m_continueButton = buttons->addButton(tr("Start session"), QDialogButtonBox::AcceptRole);
     m_continueButton->setEnabled(firstSelectable != nullptr);
-    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::accepted, this,
+            &ProviderSelectionDialog::validateAndAccept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_providerList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
-        if (item && item->flags().testFlag(Qt::ItemIsEnabled)) accept();
+        if (item && item->flags().testFlag(Qt::ItemIsEnabled)) validateAndAccept();
     });
+    connect(browseButton, &QPushButton::clicked, this, [this]() {
+        const QString directory = QFileDialog::getExistingDirectory(
+            this, tr("Select Workspace Directory"), m_workspaceEdit->text(),
+            QFileDialog::ShowDirsOnly);
+        if (!directory.isEmpty()) m_workspaceEdit->setText(directory);
+    });
+    connect(m_providerList, &QListWidget::currentItemChanged, this,
+            [this]() { updatePermissionDescription(); });
+    connect(m_permissionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this]() { updatePermissionDescription(); });
     layout->addWidget(buttons);
 
     m_providerList->setCurrentItem(preferredItem ? preferredItem : firstSelectable);
+    updatePermissionDescription();
 }
 
 QString ProviderSelectionDialog::selectedProvider() const {
@@ -117,4 +159,60 @@ QString ProviderSelectionDialog::selectedEndpoint() const {
 QString ProviderSelectionDialog::selectedModel() const {
     const auto *item = m_providerList->currentItem();
     return item ? item->data(Qt::UserRole + 3).toString() : QString();
+}
+
+QString ProviderSelectionDialog::selectedWorkspace() const {
+    return QDir::cleanPath(m_workspaceEdit->text().trimmed());
+}
+
+QString ProviderSelectionDialog::selectedSandboxMode() const {
+    if (!m_permissionCombo->isEnabled()) return "provider-managed";
+    return m_permissionCombo->currentData().toString();
+}
+
+void ProviderSelectionDialog::updatePermissionDescription() {
+    const QString provider = selectedProvider();
+    const bool supportsPermissions =
+        provider == "codex" || provider == "remote_llamacpp";
+    m_permissionCombo->setEnabled(supportsPermissions);
+    if (!supportsPermissions) {
+        m_permissionDescription->setText(
+            tr("This provider manages its own process permissions."));
+        m_permissionDescription->setStyleSheet("color: #8b949e;");
+        return;
+    }
+
+    const QString mode = selectedSandboxMode();
+    if (mode == "read-only") {
+        m_permissionDescription->setText(
+            tr("The agent can inspect the workspace but cannot edit files."));
+        m_permissionDescription->setStyleSheet("color: #8b949e;");
+    } else if (mode == "workspace-write") {
+        m_permissionDescription->setText(
+            tr("The agent can edit the selected workspace and run local commands inside it."));
+        m_permissionDescription->setStyleSheet("color: #3fb950;");
+    } else {
+        m_permissionDescription->setText(
+            tr("Warning: removes the Codex filesystem and network sandbox for this session."));
+        m_permissionDescription->setStyleSheet("color: #f85149; font-weight: bold;");
+    }
+}
+
+void ProviderSelectionDialog::validateAndAccept() {
+    if (selectedProvider().isEmpty()) return;
+    if (!QDir(selectedWorkspace()).exists()) {
+        QMessageBox::warning(this, tr("Workspace not found"),
+                             tr("Choose an existing workspace directory."));
+        return;
+    }
+    if (selectedSandboxMode() == "danger-full-access") {
+        const auto result = QMessageBox::warning(
+            this, tr("Grant full machine access?"),
+            tr("This removes the Codex filesystem and network sandbox for this session. "
+               "The agent can modify anything your user account can access.\n\n"
+               "Only continue if you trust the task and workspace."),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (result != QMessageBox::Yes) return;
+    }
+    accept();
 }

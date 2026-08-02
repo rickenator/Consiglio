@@ -6,6 +6,7 @@
 #include "startupwizard.h"
 #include "settingsdialog.h"
 #include "providerselectiondialog.h"
+#include "newsessiondialog.h"
 #include "approvaldialog.h"
 #include <QMenuBar>
 #include <QMenu>
@@ -280,7 +281,11 @@ bool MainWindow::scanAndSelectProvider() {
     const QList<AgentInfo> providers = m_agentDetector.detectAll();
     QApplication::restoreOverrideCursor();
 
-    ProviderSelectionDialog dialog(providers, m_settings.value().defaultProvider, this);
+    ::QSettings uiSettings;
+    const QString initialWorkspace = uiSettings.value(
+        "lastWorkspace", QDir::homePath()).toString();
+    ProviderSelectionDialog dialog(providers, m_settings.value().defaultProvider,
+                                   initialWorkspace, this);
     if (dialog.exec() != QDialog::Accepted) {
         m_sessionStatusLabel->setText(tr("Ready"));
         return false;
@@ -305,7 +310,8 @@ bool MainWindow::scanAndSelectProvider() {
     m_settings.value().providerConfigured = true;
     m_settings.save();
     m_sessionStatusLabel->setText(tr("Provider: %1").arg(provider));
-    return true;
+    return startSession(provider, dialog.selectedWorkspace(),
+                        dialog.selectedSandboxMode());
 }
 
 void MainWindow::refreshSessionList() {
@@ -339,21 +345,31 @@ void MainWindow::updateStatusBarSessionState() {
 }
 
 void MainWindow::onNewSession() {
-    if (!m_settings.hasRunSetup() && !scanAndSelectProvider()) {
+    if (!m_settings.hasRunSetup()) {
+        scanAndSelectProvider();
         return;
     }
+    startConfiguredSession();
+}
+
+bool MainWindow::startConfiguredSession() {
     const QString provider = m_settings.value().defaultProvider;
 
-    // Show file dialog to select repository/workspace directory
-    auto repoDir = QFileDialog::getExistingDirectory(this, tr("Select Workspace Directory"),
-                                                      QDir::homePath(),
-                                                      QFileDialog::ShowDirsOnly);
-    if (repoDir.isEmpty()) {
-        return;
-    }
+    ::QSettings uiSettings;
+    const QString initialWorkspace = uiSettings.value(
+        "lastWorkspace", QDir::homePath()).toString();
+    NewSessionDialog dialog(provider, initialWorkspace, this);
+    if (dialog.exec() != QDialog::Accepted) return false;
+    return startSession(provider, dialog.workspace(), dialog.sandboxMode());
+}
+
+bool MainWindow::startSession(const QString &provider, const QString &repoDir,
+                              const QString &sandboxMode) {
+    if (provider.isEmpty() || !QDir(repoDir).exists()) return false;
 
     // Build options map
     QVariantMap options;
+    options["sandboxMode"] = sandboxMode;
     if (provider == "ollama") {
         options["model"] = m_settings.value().ollama.model;
         options["baseUrl"] = m_settings.value().ollama.baseUrl;
@@ -365,7 +381,11 @@ void MainWindow::onNewSession() {
 
     // Start the session
     auto sessionId = m_sessionManager.startSession(provider, repoDir, "", options);
+    if (sessionId.isEmpty()) return false;
     m_activeSessionId = sessionId;
+
+    ::QSettings uiSettings;
+    uiSettings.setValue("lastWorkspace", repoDir);
 
     // Switch to timeline panel
     m_sidebar->selectPanel(Sidebar::PanelId::Timeline);
@@ -377,10 +397,11 @@ void MainWindow::onNewSession() {
     // Add system event to timeline
     EventModel::EventItem evt;
     evt.type = EventModel::SystemEvent;
-    evt.content = QString("Session started with provider '%1' in %2")
-                      .arg(provider, repoDir);
+    evt.content = QString("Session started with provider '%1' in %2 — permissions: %3")
+                      .arg(provider, repoDir, sandboxMode);
     evt.timestamp = QDateTime::currentMSecsSinceEpoch();
     addTimelineEvent(evt);
+    return true;
 }
 
 void MainWindow::onSettings() {
