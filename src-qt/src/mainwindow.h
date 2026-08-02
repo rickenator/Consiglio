@@ -54,6 +54,7 @@ private slots:
     void onStructuredErrorReceived(const QString &sessionId, const QString &error);
     void onSessionSelected(const QString &sessionId);
     void onSessionStoppedFromList(const QString &sessionId);
+    void onClearProjectFilterRequested();
     void onCommandExecuted(const QString &command, const QString &workingDir);
     void onProjectSelected(const QString &projectId, const QString &projectName);
 
@@ -93,5 +94,7 @@ private:
     QString m_activeSessionId;
     QString m_viewedSessionId;
     QString m_selectedProjectId;
+    QString m_selectedProjectName;
+    QString m_selectedProjectWorkspace;
     int m_lastPanelIndex = 0;
 };

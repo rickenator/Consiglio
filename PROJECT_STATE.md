@@ -1,6 +1,6 @@
 # Consiglio Project State
 
-Last updated: 2026-08-01 18:18 PDT
+Last updated: 2026-08-02 10:26 PDT
 
 This is the durable restart point for active Consiglio work. Update it after each
 material implementation, verification, commit, or newly discovered blocker.
@@ -18,6 +18,8 @@ material implementation, verification, commit, or newly discovered blocker.
 - Feature code is pushed to `github.com/rickenator/Consiglio` on `update-1`.
 - The SQLite/Projects/preferred-name/history-MCP work described below is
   currently verified locally but uncommitted and unpushed.
+- The desktop launcher stays GUI-only; if no X11 or Wayland session is present
+  it exits with a direct message instead of falling back to a fake desktop.
 
 ## Current behavior
 
@@ -46,6 +48,8 @@ material implementation, verification, commit, or newly discovered blocker.
   `/home/rick/.local/share/Aniviza/Consiglio/consiglio.sqlite`.
 - Existing QSettings values migrate into SQLite once. Sessions left marked
   running after an app crash are changed to `interrupted` at next startup.
+- Selecting a project opens its most recent session immediately rather than
+  leaving the filtered list as the only visible state.
 - Conversation content is indexed with SQLite FTS5 and exposed through the
   read-only `consiglio_history` MCP server. Its tools list projects/sessions,
   retrieve chronological conversations, and search retained history.
@@ -78,6 +82,8 @@ material implementation, verification, commit, or newly discovered blocker.
   - PID `1007124`: `src-qt/build/Consiglio`
   - visible X11 window title: `Consiglio`
   - log: `/tmp/consiglio-qt-live.log`
+  - window restore is clamped back onto the active screen and the app is
+    raised on startup to avoid hidden/off-screen launches
 
 ## Files in the active change
 

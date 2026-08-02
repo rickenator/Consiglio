@@ -26,8 +26,11 @@
 #include <QDateTime>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QWindow>
 #include <QTimer>
 #include "uimetrics.h"
+
+static QRect clampRectToScreen(const QRect &rect, const QRect &available);
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_database(), m_settings(nullptr, &m_database)
@@ -107,6 +110,8 @@ void MainWindow::setupUI() {
             this, &MainWindow::onSessionSelected);
     connect(m_panelManager->sessionsPanel(), &SessionList::sessionStopped,
             this, &MainWindow::onSessionStoppedFromList);
+    connect(m_panelManager->sessionsPanel(), &SessionList::clearProjectFilterRequested,
+            this, &MainWindow::onClearProjectFilterRequested);
     connect(m_panelManager->timelinePanel(), &EventTimeline::commandExecuted,
             this, &MainWindow::onCommandExecuted);
     connect(m_panelManager->timelinePanel(), &EventTimeline::eventsCleared,
@@ -129,6 +134,17 @@ void MainWindow::setupUI() {
     auto geom = m_database.preference("windowGeometry");
     if (!geom.toByteArray().isEmpty()) {
         restoreGeometry(geom.toByteArray());
+        const QScreen *screen = QGuiApplication::screenAt(frameGeometry().center());
+        const QRect available = screen ? screen->availableGeometry()
+                                       : (QGuiApplication::primaryScreen()
+                                              ? QGuiApplication::primaryScreen()->availableGeometry()
+                                              : QRect());
+        if (available.isValid()) {
+            const QRect clamped = clampRectToScreen(frameGeometry(), available);
+            if (clamped != frameGeometry()) {
+                setGeometry(clamped);
+            }
+        }
     }
     auto state = m_database.preference("windowState");
     if (!state.toByteArray().isEmpty()) {
@@ -140,8 +156,31 @@ void MainWindow::setupUI() {
         m_content->setCurrentIndex(savedPanel);
     }
 
+    QTimer::singleShot(0, this, [this]() {
+        if (isMinimized()) showNormal();
+        show();
+        raise();
+        activateWindow();
+        if (windowHandle()) {
+            windowHandle()->raise();
+            windowHandle()->requestActivate();
+        }
+    });
+
     // Open directly into the working session view.
     m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
+}
+
+static QRect clampRectToScreen(const QRect &rect, const QRect &available) {
+    if (rect.intersects(available)) {
+        return rect;
+    }
+
+    const QSize size = rect.size().boundedTo(available.size());
+    const QPoint topLeft(
+        available.left() + qMax(0, (available.width() - size.width()) / 2),
+        available.top() + qMax(0, (available.height() - size.height()) / 2));
+    return QRect(topLeft, size);
 }
 
 void MainWindow::setupMenuBar() {
@@ -348,6 +387,7 @@ void MainWindow::refreshSessionList() {
         }
     }
     m_panelManager->sessionsPanel()->setSessions(sessions);
+    m_panelManager->sessionsPanel()->setProjectContext(m_selectedProjectName, m_selectedProjectWorkspace);
 }
 
 void MainWindow::refreshProjectList() {
@@ -676,8 +716,34 @@ void MainWindow::sendCommandToActiveSession(const QString &command, const QStrin
 
 void MainWindow::onProjectSelected(const QString &projectId, const QString &) {
     m_selectedProjectId = projectId;
-    m_activeSessionId.clear();
-    m_panelManager->timelinePanel()->setThinking(false);
+    const auto projects = m_database.projects();
+    m_selectedProjectName.clear();
+    m_selectedProjectWorkspace.clear();
+    for (const auto &project : projects) {
+        if (project.id == projectId) {
+            m_selectedProjectName = project.name;
+            m_selectedProjectWorkspace = project.workspace;
+            break;
+        }
+    }
     refreshSessionList();
+    const auto projectSessions = m_database.sessions(projectId);
+    if (projectSessions.isEmpty()) {
+        m_activeSessionId.clear();
+        m_panelManager->timelinePanel()->setThinking(false);
+        m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
+        return;
+    }
+
+    onSessionSelected(projectSessions.first().id);
+}
+
+void MainWindow::onClearProjectFilterRequested() {
+    m_selectedProjectId.clear();
+    m_selectedProjectName.clear();
+    m_selectedProjectWorkspace.clear();
+    refreshSessionList();
+    refreshProjectList();
+    m_panelManager->timelinePanel()->setThinking(false);
     m_sidebar->selectPanel(Sidebar::PanelId::Sessions);
 }
