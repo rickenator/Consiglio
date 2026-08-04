@@ -197,7 +197,7 @@ jobs:
         run: sha256sum Consiglio-* > SHA256SUMS.txt
 
       - name: Attest release provenance
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
           subject-checksums: release-artifacts/SHA256SUMS.txt
 
