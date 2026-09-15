@@ -17,14 +17,14 @@
     "@capacitor/barcode-scanner": "^3.1.1-dev-20260708T144848.0",
     "@capacitor/core": "8.4.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@capacitor/android": "8.4.1",
     "@capacitor/cli": "8.4.1",
     "@capacitor/ios": "8.4.1",
     "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.0.3",
     "patch-package": "^8.0.1",
     "typescript": "^7.0.2",
