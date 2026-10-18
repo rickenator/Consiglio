@@ -2396,7 +2396,11 @@ handleIpc('mobile:rotate', (_event, input: { port?: number; publicUrl?: string }
 handleIpc('mobile:disable', () => disableMobileBridge());
 handleIpc('system:startup-checks', () => runStartupChecks());
 handleIpc('system:bootstrap-progress', () => latestBootstrapProgress);
-handleIpc('agents:readiness', () => detectAgentReadiness({ commandResolver: resolveAgentProbeCommand }));
+// NOTE: 'agents:readiness' is owned by src/main/adapters/index.ts
+// (registerAgentHandlers), which also enforces the trusted-renderer check.
+// Registering it here as well makes Electron throw at startup
+// ("Attempted to register a second handler for 'agents:readiness'") and the
+// app never reaches a window.
 handleIpc('system:check-updates', () => checkForAppUpdate());
 handleIpc('system:check-providers', async () => (await providerReadiness()).checks);
 handleIpc('settings:update', (_event, nextSettings: Partial<AppSettings>) => {
