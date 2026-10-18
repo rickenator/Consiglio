@@ -76,7 +76,7 @@ interface SessionState {
 // ─── CodexAdapter Implementation ──────────────────────────────────────────────
 
 export class CodexAdapter implements AgentAdapter {
-  private emitters: { emitEvent: (event: AgentEvent) => void; emitApproval: (approval: AgentApproval) => void; emitTerminalOutput: (sessionId: string, data: string) => void };
+  private emitters: { emitEvent: (event: AgentEvent) => void; emitApproval: (approval: AgentApproval) => void; emitTerminalOutput: (sessionId: string, data: string) => void; emitThreadId?: (sessionId: string, threadId: string) => void };
   // Session storage (kept here for now; will move to main.ts later)
   static sessions = new Map<string, SessionState>();
 
@@ -84,6 +84,7 @@ export class CodexAdapter implements AgentAdapter {
       emitEvent: (event: AgentEvent) => void;
       emitApproval: (approval: AgentApproval) => void;
       emitTerminalOutput: (sessionId: string, data: string) => void;
+      emitThreadId?: (sessionId: string, threadId: string) => void;
     }) {
 
     this.emitters = emitters;
@@ -107,56 +108,21 @@ export class CodexAdapter implements AgentAdapter {
   // ─── Session Lifecycle ─────────────────────────────────────────────────────
 
   async launch(options: AgentSessionOptions): Promise<AgentSession> {
-    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // The caller (main.ts) owns the session id so that reconnect reuses the
+    // stored record's id; minting a new one here orphaned the record and the
+    // renderer's subscriptions.
+    const sessionId = options.sessionId || `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const state = this.createSessionState(sessionId, options);
-    
+
+    // Creating a session must NOT run the agent. `codex exec` with no prompt
+    // exits immediately ("No prompt provided…"), so spawning here painted a
+    // failure into every brand-new task before the user typed anything.
+    // The PTY is spawned lazily by sendPrompt(), which always has a prompt.
     CodexAdapter.sessions.set(sessionId, state);
-    
-    // Spawn the PTY
-    const terminal = pty.spawn(state.codexCommand.executable, [
-      ...state.codexCommand.prefixArgs,
-      ...this.buildLaunchArgs(state),
-    ], {
-      name: 'xterm-256color',
-      cols: 120,
-      rows: 36,
-      cwd: state.repository,
-      env: state.env,
-    });
-
-    state.pty = terminal;
-
-    // Handle PTY output
-    terminal.onData((data: string) => this.handleTerminalOutput(sessionId, data));
-    
-    // Handle PTY exit
-    terminal.onExit(({ exitCode }: { exitCode: number }) => {
-      state.pty = null;
-      if (state.jsonRemainder.trim()) {
-        this.consumeExecEvents(state, `${state.jsonRemainder}\n`);
-        state.jsonRemainder = '';
-      }
-      if (state.retryFreshAfterExit && state.activePrompt) {
-        state.retryFreshAfterExit = false;
-        this.launchPromptProcess(state, state.activePrompt);
-        return;
-      }
-      if (exitCode !== 0 && !state.lastStructuredError) {
-        const detail = terminalFailureDetail(state.terminalBuffer);
-        this.emitters.emitEvent({
-          id: `evt_${Date.now()}`,
-          type: 'error',
-          content: detail || `Codex stopped with code ${exitCode}. Check the provider settings and try again.`,
-          timestamp: Date.now(),
-          session_id: sessionId,
-        });
-      }
-      state.activePrompt = undefined;
-    });
 
     return {
       sessionId,
-      pty: terminal,
+      pty: null,
       repository: state.repository,
       branch: state.branch,
       adapter: this,
@@ -205,12 +171,9 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     const repository = path.resolve(options.repository);
-    const env = { ...process.env };
-    
-    // Apply secrets (simplified — full logic in main.ts)
-    applySecretsToEnvironment(env, options.provider as Provider || 'default');
+    const env = options.env ? { ...options.env } : { ...process.env };
 
-    return {
+    const state: SessionState = {
       id: sessionId,
       pty: null,
       repository,
@@ -218,10 +181,10 @@ export class CodexAdapter implements AgentAdapter {
       provider: options.provider as Provider || 'default',
       status: 'running',
       terminalBuffer: '',
-      args: this.buildProviderArgs(options),
+      args: [],
       env,
       codexCommand,
-      codexThreadId: options.codexThreadId as string | undefined,
+      codexThreadId: options.codexThreadId,
       jsonRemainder: '',
       lastStructuredError: undefined,
       processedItemIds: new Set(),
@@ -230,36 +193,23 @@ export class CodexAdapter implements AgentAdapter {
       protocolRetryUsed: false,
       responseBuffer: '',
     };
+    state.args = this.buildProviderArgs(state, options);
+    return state;
   }
 
-  private buildLaunchArgs(state: SessionState): string[] {
-    const threadId = state.codexThreadId ? [
-      'exec', 'resume', '--json', '--skip-git-repo-check',
-      ...state.args, state.codexThreadId
-    ] : [
-      'exec', '--json', '--skip-git-repo-check', ...state.args
-    ];
-    return threadId;
-  }
-
-  private buildProviderArgs(options: AgentSessionOptions): string[] {
+  /**
+   * Build the Codex CLI arguments (and provider environment) for a session.
+   * The resolved endpoint comes from options.providerConfig, which the caller
+   * computes from app settings / LAN discovery.
+   */
+  private buildProviderArgs(state: SessionState, options: AgentSessionOptions): string[] {
     const args: string[] = [];
-    const provider = options.provider as Provider || 'default';
+    const provider = state.provider;
+    const config = options.providerConfig || {};
     const isLocalOpenAiCompatibleProvider = provider === 'remote_llamacpp' || provider === 'lan';
 
     if (isLocalOpenAiCompatibleProvider) {
-      const behavior = options.localProviderBehavior as {
-        isolateProfile?: boolean;
-        enableWebSearch?: boolean;
-        enableMultiAgent?: boolean;
-      } || {};
-      
-      if (behavior.isolateProfile) {
-        const profileHome = path.join(getUserDataPath(), 'local-provider-profiles', options.repository);
-        fs.mkdirSync(profileHome, { recursive: true });
-        // Note: env.CODEX_HOME is set in main.ts, not here
-      }
-      
+      const behavior = options.localProviderBehavior || {};
       args.push(
         '-c', `features.multi_agent=${behavior.enableMultiAgent ?? false}`,
         '-c', 'model_supports_reasoning_summaries=false',
@@ -270,34 +220,32 @@ export class CodexAdapter implements AgentAdapter {
       }
     }
 
-    // Provider-specific args (simplified — full logic in main.ts)
-    if (provider === 'remote_llamacpp') {
-      const baseUrl = normalizeBaseUrl(options.baseUrl || '');
-      const model = options.model || '';
-      const apiKey = options.apiKey || 'llama.cpp';
-      
+    if (provider === 'remote_llamacpp' || provider === 'ollama' || provider === 'lan') {
+      const baseUrl = normalizeBaseUrl(config.baseUrl || '');
+      const isLan = provider === 'lan';
+      const model = config.model || (provider === 'ollama' ? 'qwen2.5:32b-instruct-q4_K_M' : '');
+      const apiKey = config.apiKey || 'llama.cpp';
+      const providerName = isLan ? 'lan' : provider;
+
+      state.env.OPENAI_BASE_URL = baseUrl;
+      state.env.OPENAI_API_BASE = baseUrl;
+      state.env.OPENAI_API_KEY = apiKey;
+      state.env.OPENAI_MODEL = model;
+      state.env.CODEX_OSS_BASE_URL = baseUrl;
+
       args.push(
         '-c', `model="${model}"`,
-        '-c', 'model_provider="remote_llamacpp"',
-        '-c', 'model_providers.remote_llamacpp.name="Remote llama.cpp"',
-        '-c', `model_providers.remote_llamacpp.base_url="${baseUrl}"`,
-        '-c', 'model_providers.remote_llamacpp.wire_api="responses"',
-        '-c', 'model_providers.remote_llamacpp.env_key="OPENAI_API_KEY"',
+        '-c', `model_provider="${providerName}"`,
+        '-c', `model_providers.${providerName}.name="${provider === 'ollama' ? 'Ollama' : provider === 'lan' ? 'lan' : 'Remote llama.cpp'}"`,
+        '-c', `model_providers.${providerName}.base_url="${baseUrl}"`,
+        '-c', `model_providers.${providerName}.wire_api="responses"`,
+        '-c', `model_providers.${providerName}.env_key="OPENAI_API_KEY"`,
       );
     }
 
-    if (provider === 'ollama') {
-      const ollamaModel = options.model || 'qwen2.5:32b-instruct-q4_K_M';
-      const ollamaBaseUrl = normalizeBaseUrl(options.baseUrl || 'http://localhost:11434');
-      
-      args.push(
-        '-c', `model="${ollamaModel}"`,
-        '-c', 'model_provider="ollama"',
-        '-c', 'model_providers.ollama.name="Ollama"',
-        '-c', `model_providers.ollama.base_url="${ollamaBaseUrl}"`,
-        '-c', 'model_providers.ollama.wire_api="responses"',
-        '-c', 'model_providers.ollama.env_key="OPENAI_API_KEY"',
-      );
+    if (provider === 'default' && options.defaultModel) {
+      state.env.OPENAI_MODEL = String(options.defaultModel);
+      args.push('-c', `model=${JSON.stringify(String(options.defaultModel))}`);
     }
 
     if (provider === 'gpt56') {
@@ -350,6 +298,9 @@ export class CodexAdapter implements AgentAdapter {
 
         if (event.type === 'thread.started' && event.thread_id) {
           state.codexThreadId = event.thread_id;
+          // Persist it: the Codex thread id is what lets a task resume after a
+          // restart. Keeping it only in adapter memory lost resumability.
+          this.emitters.emitThreadId?.(state.id, event.thread_id);
         }
 
         if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
