@@ -1948,3 +1948,278 @@ textarea:focus-visible {
 @keyframes provider-discovery-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ─── Top-bar menus ─────────────────────────────────────────────────────────── */
+
+.codex-menubar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 14px;
+  background: #0d1117;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  z-index: 60;
+}
+
+.codex-menubar-brand {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f0f6fc;
+}
+
+.codex-menubar-items { display: flex; gap: 4px; }
+.codex-menu { position: relative; }
+
+.codex-menu-button {
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.codex-menu-button:hover,
+.codex-menu-button.is-open {
+  background: rgba(88, 166, 255, 0.12);
+  border-color: rgba(88, 166, 255, 0.35);
+  color: #f0f6fc;
+}
+
+.codex-menu-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 340px;
+  max-width: min(620px, 88vw);
+  max-height: 70vh;
+  overflow: auto;
+  background: #161b22;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+  z-index: 70;
+}
+
+.codex-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 14px;
+  text-align: left;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #e6edf3;
+  cursor: pointer;
+}
+
+.codex-menu-item:hover:not(:disabled) { background: rgba(88, 166, 255, 0.16); }
+.codex-menu-item:disabled { color: #6e7681; cursor: default; }
+.codex-menu-check { width: 14px; color: #3fb950; }
+.codex-menu-label { flex: 1; }
+.codex-menu-shortcut { font-size: 12px; color: #8b949e; }
+
+.codex-menu-group {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b949e;
+  padding: 8px 10px 4px;
+}
+
+.codex-menu-separator { height: 1px; margin: 5px 6px; background: rgba(255, 255, 255, 0.09); }
+
+.codex-menubar-status {
+  margin-left: auto;
+  font-size: 13px;
+  color: #8b949e;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Task tabs ─────────────────────────────────────────────────────────────── */
+
+.codex-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #0b0f14;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  overflow-x: auto;
+}
+
+.codex-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.codex-tab.is-active {
+  background: rgba(88, 166, 255, 0.14);
+  border-color: rgba(88, 166, 255, 0.45);
+  color: #f0f6fc;
+}
+
+.codex-tab-label {
+  font-size: 14px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-tab-model {
+  font-size: 11px;
+  color: #8b949e;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-tab-close {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8b949e;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.codex-tab-close:hover { background: rgba(248, 81, 73, 0.18); color: #f85149; }
+.codex-tab-dot { width: 9px; height: 9px; border-radius: 50%; background: #8b949e; }
+.codex-tab-dot.is-running { background: #3fb950; }
+.codex-tab-dot.is-stopped { background: #d29922; }
+
+.codex-tab-new {
+  margin-left: 6px;
+  font-size: 13px;
+  padding: 7px 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: transparent;
+  color: #8b949e;
+  cursor: pointer;
+}
+
+.codex-tab-new:hover { color: #f0f6fc; border-color: rgba(88, 166, 255, 0.5); }
+
+/* ─── Hermes settings panel ─────────────────────────────────────────────────── */
+
+.codex-hermes-panel {
+  width: min(880px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: #161b22;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 22px;
+}
+
+.codex-hermes-path {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #8b949e;
+  margin-bottom: 14px;
+}
+
+.codex-hermes-path code { color: #f0f6fc; }
+.codex-hermes-groups { display: grid; gap: 18px; }
+
+.codex-hermes-group h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b949e;
+}
+
+.codex-hermes-row {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.codex-hermes-row-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.codex-hermes-label { font-size: 15px; font-weight: 600; color: #f0f6fc; }
+.codex-hermes-key { font-size: 12px; color: #8b949e; }
+
+.codex-hermes-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid rgba(210, 153, 34, 0.5);
+  border-radius: 999px;
+  color: #d29922;
+}
+
+.codex-hermes-help { font-size: 13px; color: #8b949e; margin: 6px 0 10px; }
+.codex-hermes-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.codex-hermes-current { font-size: 13px; color: #8b949e; margin-top: 8px; }
+.codex-hermes-footnote { font-size: 13px; color: #8b949e; margin-right: auto; }
+
+.codex-hermes-error {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(248, 81, 73, 0.5);
+  border-radius: 8px;
+  color: #f85149;
+  font-size: 13px;
+}
+
+/* ─── Hermes update dialog ──────────────────────────────────────────────────── */
+
+.codex-update-dialog {
+  width: min(620px, 92vw);
+  background: #161b22;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 22px;
+}
+
+.codex-update-versions { display: flex; gap: 22px; flex-wrap: wrap; margin: 14px 0; }
+
+.codex-update-label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b949e;
+}
+
+.codex-update-checkbox {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #e6edf3;
+}
+
+.codex-update-note { font-size: 13px; color: #d29922; margin-top: 10px; }

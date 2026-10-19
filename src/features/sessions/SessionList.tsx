@@ -1,38 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-interface Session {
-  id: string;
-  repository?: string;
-  branch?: string;
-  status: string;
-  updated_at: number;
-  provider?: 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
-  model?: string;
-}
-
-type Provider = 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
+type Provider = CodexProvider;
 
 type NewSessionOptions = {
   repository?: string;
   branch?: string;
   provider?: Provider;
-  remoteLlamaCpp?: { baseUrl?: string; model?: string; apiKey?: string };
-  ollama?: { baseUrl?: string; model?: string; apiKey?: string };
   selectedLanProviderId?: string;
-  defaultModel?: string;
-};
-
-type LanProviderConfig = {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  model: string;
-  apiKey: string;
 };
 
 interface Props {
-  sessions: Session[];
+  sessions: SessionRecord[];
   selected: string | null;
   onSelect: (id: string) => void;
   onStartSession: (options: NewSessionOptions) => void;
@@ -40,26 +18,22 @@ interface Props {
   onPickRepository: () => Promise<string | null>;
   onCopyPath: (path: string, label: string) => void;
   onOpenPath: (path: string, label: string) => void;
-  onTestRemote: (config: { baseUrl: string; model: string; apiKey: string }) => Promise<boolean>;
   onRequestNewSession: () => Promise<void>;
   onStopSession: (sessionId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
   settings: {
     defaultProvider: Provider;
-    ollama: { baseUrl: string; model: string; apiKey: string };
-    remoteLlamaCpp: { baseUrl: string; model: string; apiKey: string };
     lanProviders: LanProviderConfig[];
-    defaultModel?: string;
-    localProviderBehavior: {
-      isolateProfile: boolean;
-      enableWebSearch: boolean;
-      enableMultiAgent: boolean;
-    };
   };
   connectionLabel: string;
-  onSettingsChange: (settings: Props['settings']) => void;
 }
 
+/**
+ * Task rail.
+ *
+ * Selection opens a tab (the App owns tab state); the rail only lists what Hermes
+ * and the Codex backend have stored, with the backend name for each task.
+ */
 export default function SessionList({
   sessions,
   selected,
@@ -71,7 +45,6 @@ export default function SessionList({
   connectionLabel,
 }: Props) {
   const [showNewTask, setShowNewTask] = useState(false);
-  const [showOptions, setShowOptions] = useState(false);
   const [repository, setRepository] = useState('');
   const [branch, setBranch] = useState('');
   const [provider, setProvider] = useState<Provider>(settings.defaultProvider);
@@ -95,42 +68,36 @@ export default function SessionList({
     setProvider(settings.defaultProvider);
   }, [settings.defaultProvider]);
 
-  const startTask = async () => {
+  const startTask = () => {
     const workspace = repository.trim();
     onStartSession({
       repository: workspace || undefined,
       branch: branch.trim() || undefined,
       provider,
-      remoteLlamaCpp: provider === 'remote_llamacpp' ? settings.remoteLlamaCpp : undefined,
-      ollama: provider === 'ollama' ? settings.ollama : undefined,
-      selectedLanProviderId: provider === 'lan' ? settings.lanProviders[0]?.id : undefined,
-      defaultModel: provider === 'default' ? settings.defaultModel : undefined,
     });
     setRepository('');
     setBranch('');
-    setShowOptions(false);
     setShowNewTask(false);
   };
 
   return (
     <aside className="codex-sidebar codex-simple-sidebar">
       <div className="codex-sidebar-top">
-        <div className="codex-wordmark">Consiglio</div>
-        <button className="codex-new-task" onClick={() => void startTask()}>
+        <button className="codex-new-task" onClick={() => startTask()}>
           <span aria-hidden="true">+</span>
           New task
         </button>
         <button className="codex-open-workspace" onClick={() => setShowNewTask(true)}>
-          Open folder…
+          Choose a folder…
         </button>
       </div>
 
-      <div className="codex-session-heading">Recent</div>
-      <div className="codex-list" aria-label="Sessions">
+      <div className="codex-session-heading">Tasks</div>
+      <div className="codex-list" aria-label="Tasks">
         {sortedSessions.length === 0 && (
-          <div className="codex-sidebar-empty">Open a workspace to start.</div>
+          <div className="codex-sidebar-empty">No tasks yet. Start one to talk to Hermes.</div>
         )}
-        {sortedSessions.map((session) => {
+        {sortedSessions.map(session => {
           const label = sessionLabel(session.repository);
           return (
             <button
@@ -143,7 +110,7 @@ export default function SessionList({
               <span className="codex-simple-session-copy">
                 <span className="codex-simple-session-title">{label}</span>
                 <span className="codex-simple-session-meta">
-                  {session.branch || session.model || providerLabel(session.provider)} · {formatUpdatedAt(session.updated_at)}
+                  {backendLabel(session)} · {formatUpdatedAt(session.updated_at)}
                 </span>
               </span>
               {(session.status === 'completed' || session.status === 'stopped' || session.status === 'failed') && (
@@ -151,12 +118,12 @@ export default function SessionList({
                   role="button"
                   tabIndex={0}
                   className="codex-session-delete"
-                  title="Delete session"
-                  onClick={(event) => {
+                  title="Remove this task from Consiglio"
+                  onClick={event => {
                     event.stopPropagation();
                     void onDeleteSession(session.id);
                   }}
-                  onKeyDown={(event) => {
+                  onKeyDown={event => {
                     if (event.key === 'Enter') {
                       event.stopPropagation();
                       void onDeleteSession(session.id);
@@ -171,18 +138,18 @@ export default function SessionList({
         })}
       </div>
 
-      <div className="codex-sidebar-provider" title={connectionLabel || providerLabel(settings.defaultProvider)}>
+      <div className="codex-sidebar-provider" title={connectionLabel}>
         <span className="codex-session-dot is-running" aria-hidden="true" />
-        <span className="codex-sidebar-provider-label">{connectionLabel || providerLabel(settings.defaultProvider)}</span>
+        <span className="codex-sidebar-provider-label">{connectionLabel}</span>
       </div>
 
       {showNewTask && (
         <div className="codex-modal-backdrop" onMouseDown={() => setShowNewTask(false)}>
-          <section className="codex-new-task-dialog" onMouseDown={(event) => event.stopPropagation()} aria-label="New task">
+          <section className="codex-new-task-dialog" onMouseDown={event => event.stopPropagation()} aria-label="New task">
             <div className="codex-dialog-header">
               <div>
-                <h2>Open folder</h2>
-                <p>Optional: give the new task a specific workspace.</p>
+                <h2>New task</h2>
+                <p>Pick the folder Hermes should work in. The backend is remembered for the next task.</p>
               </div>
               <button className="codex-icon-button" onClick={() => setShowNewTask(false)} aria-label="Close">×</button>
             </div>
@@ -194,10 +161,10 @@ export default function SessionList({
                 ref={repositoryRef}
                 className="codex-input"
                 value={repository}
-                onChange={(event) => setRepository(event.target.value)}
+                onChange={event => setRepository(event.target.value)}
                 placeholder="Select a folder"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void startTask();
+                onKeyDown={event => {
+                  if (event.key === 'Enter') startTask();
                 }}
               />
               <button
@@ -211,28 +178,30 @@ export default function SessionList({
               </button>
             </div>
 
-            <button className="codex-options-toggle" onClick={() => setShowOptions((current) => !current)}>
-              {showOptions ? 'Hide options' : 'Options'}
-            </button>
-
-            {showOptions && (
-              <div className="codex-task-options">
-                <label className="codex-field-label" htmlFor="task-provider">Provider</label>
-                <select id="task-provider" className="codex-select" value={provider} onChange={(event) => setProvider(event.target.value as Provider)}>
-                  <option value="remote_llamacpp">Remote llama.cpp</option>
-                  <option value="default">Codex</option>
-                  <option value="ollama">Ollama</option>
-                  <option value="gpt56">GPT-5.6</option>
-                  {settings.lanProviders.length > 0 && <option value="lan">LAN provider</option>}
-                </select>
-                <label className="codex-field-label" htmlFor="task-branch">Branch override</label>
-                <input id="task-branch" className="codex-input" value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="Use current branch" />
-              </div>
-            )}
+            <div className="codex-task-options">
+              <label className="codex-field-label" htmlFor="task-provider">Backend</label>
+              <select
+                id="task-provider"
+                className="codex-select"
+                value={provider}
+                onChange={event => setProvider(event.target.value as Provider)}
+              >
+                <option value="hermes">Hermes Agent (models from your Hermes config)</option>
+                <option value="codex">Codex CLI</option>
+              </select>
+              <label className="codex-field-label" htmlFor="task-branch">Branch override</label>
+              <input
+                id="task-branch"
+                className="codex-input"
+                value={branch}
+                onChange={event => setBranch(event.target.value)}
+                placeholder="Use current branch"
+              />
+            </div>
 
             <div className="codex-dialog-actions">
               <button className="codex-button codex-button-secondary" onClick={() => setShowNewTask(false)}>Cancel</button>
-              <button className="codex-button codex-button-primary" onClick={() => void startTask()}>Start task</button>
+              <button className="codex-button codex-button-primary" onClick={startTask}>Start task</button>
             </div>
           </section>
         </div>
@@ -248,18 +217,18 @@ function sessionLabel(repository?: string) {
   return parts[parts.length - 1] || trimmed;
 }
 
-function providerLabel(provider?: Provider) {
-  if (provider === 'remote_llamacpp') return 'Remote llama.cpp';
-  if (provider === 'ollama') return 'Ollama';
-  if (provider === 'gpt56') return 'GPT-5.6';
-  if (provider === 'lan') return 'LAN provider';
-  return 'AI assistant';
+function backendLabel(session: SessionRecord) {
+  const isCodex = session.agent === 'codex' || session.provider === 'codex'
+    || session.provider === 'remote_llamacpp' || session.provider === 'lan' || session.provider === 'ollama';
+  const backend = isCodex ? 'Codex CLI' : 'Hermes';
+  const model = session.model ? session.model.split('/').pop() : '';
+  return [backend, model].filter(Boolean).join(' · ');
 }
 
 function formatUpdatedAt(updatedAt: number) {
   const minutes = Math.max(1, Math.round((Date.now() - updatedAt) / 60_000));
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
