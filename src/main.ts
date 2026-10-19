@@ -8,6 +8,16 @@ import { resolveCodexCommand, type ExecutableCommand } from './main/platform';
 import { detectAgentReadiness, type AgentId, type ResolvedProbeCommand } from './main/agent-readiness';
 import { configureManagedAgentEnvironment, installMissingAgentFrontends, type AgentInstallResult, type BootstrapProgress } from './main/startup-bootstrap';
 import { CodexAdapter, getAdapter } from './main/adapters';
+import { agentApprovalRouter } from './main/approval-router';
+import { isModelAware, type AgentModel } from './main/agent-adapter';
+import { resolveHermesCommand } from './main/hermes/hermes-command';
+import {
+  configFilePath,
+  readConfig,
+  unsetConfig,
+  writeConfig,
+} from './main/hermes/hermes-config';
+import { applyHermesUpdate, checkForHermesUpdate } from './main/hermes/hermes-update';
 import { DiscussionSession } from '@/main/discussion-session';
 import path from 'path';
 import fs from 'fs';
@@ -66,20 +76,29 @@ const agentEmitters = {
 };
 
 // ─── Active Agent Adapter Instance ─────────────────────────────────────────────
-// Created once; main.ts delegates session lifecycle to it.
-// For now only Codex is available; OI and others follow in Phase 3+.
+// Hermes is the default backend; the Codex CLI stays selectable. The cached
+// adapter is rebuilt when the configured agent changes.
 
 let activeAdapter: import('./main/agent-adapter').AgentAdapter | null = null;
+let activeAdapterAgent: import('./main/agent-adapter').AgentSessionOptions['agent'] | null = null;
 
-function getOrCreateAdapter(agent: 'codex' | 'open-interpreter'): import('./main/agent-adapter').AgentAdapter {
-  if (!activeAdapter) {
+type AgentChoice = import('./main/agent-adapter').AgentSessionOptions['agent'];
+
+function getOrCreateAdapter(agent: AgentChoice): import('./main/agent-adapter').AgentAdapter {
+  if (!activeAdapter || activeAdapterAgent !== agent) {
     activeAdapter = getAdapter(agent, agentEmitters);
+    activeAdapterAgent = agent;
   }
   return activeAdapter;
 }
 
+/** Hermes is the backend unless the task explicitly selects the Codex CLI. */
+function agentForProvider(provider: Provider): AgentChoice {
+  return provider === 'codex' ? 'codex' : 'hermes';
+}
+
 type SessionStatus = 'running' | 'stopped' | 'failed' | 'completed';
-type Provider = 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
+type Provider = 'hermes' | 'codex' | 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
 
 interface SessionState {
   id: string;
@@ -141,6 +160,8 @@ interface SessionRecord {
   repository: string;
   branch: string;
   provider?: Provider;
+  /** Which backend owns this session (hermes sessions are resumable by id). */
+  agent?: string;
   model?: string;
   baseUrl?: string;
   selectedLanProviderId?: string;
@@ -308,7 +329,7 @@ let mobileBridgeConfigPath = '';
 let windowStatePath = '';
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 let appSettings: AppSettings = {
-  defaultProvider: 'default',
+  defaultProvider: 'hermes',
   ollama: {
     baseUrl: 'http://localhost:11434',
     model: 'qwen2.5:32b-instruct-q4_K_M',
@@ -362,12 +383,24 @@ function emitBootstrapProgress(progress: BootstrapProgress) {
   mainWindow?.webContents.send('system:bootstrap-progress', progress);
 }
 
-function isProvider(value: unknown): value is Provider {
-  return value === 'default' || value === 'remote_llamacpp' || value === 'gpt56' || value === 'lan' || value === 'ollama';
+/**
+ * Normalise a stored provider selection.
+ *
+ * `default` and `gpt56` were the OpenAI/Codex-cloud defaults; both now resolve to
+ * Hermes, which owns model and provider configuration itself. The legacy
+ * endpoint providers (remote llama.cpp, LAN, Ollama) were Codex-backed sessions,
+ * so they resolve to the Codex CLI rather than silently becoming Hermes.
+ */
+function normalizeProvider(value: unknown, fallback: Provider = 'hermes'): Provider {
+  if (value === 'hermes' || value === 'codex') return value;
+  if (value === 'default' || value === 'gpt56' || value === undefined || value === null) return 'hermes';
+  if (value === 'remote_llamacpp' || value === 'lan' || value === 'ollama') return 'codex';
+  return isProvider(value) ? (value as Provider) : fallback;
 }
 
-function normalizeProvider(value: unknown, fallback: Provider = appSettings.defaultProvider): Provider {
-  return isProvider(value) ? value : fallback;
+function isProvider(value: unknown): value is Provider {
+  return value === 'hermes' || value === 'codex' || value === 'default' || value === 'remote_llamacpp'
+    || value === 'gpt56' || value === 'lan' || value === 'ollama';
 }
 
 
@@ -470,10 +503,12 @@ function resolveAgentProbeCommand(agentId: AgentId, env: NodeJS.ProcessEnv): Res
 }
 
 async function providerReadiness(): Promise<{ checks: HealthCheckItem[]; providerSetup: ProviderSetupStatus }> {
-  const [agents, ollama] = await Promise.all([
+  const [agents, ollama, hermesUpdate] = await Promise.all([
     detectAgentReadiness({ commandResolver: resolveAgentProbeCommand }),
     ollamaReadiness(),
+    Promise.resolve(checkForHermesUpdate()),
   ]);
+  const hermesAgent = agents.find(agent => agent.id === 'hermes');
   const codexAgent = agents.find(agent => agent.id === 'codex');
   const interpreterAgent = agents.find(agent => agent.id === 'open-interpreter');
   const codex = {
@@ -486,9 +521,27 @@ async function providerReadiness(): Promise<{ checks: HealthCheckItem[]; provide
   };
   const checks: HealthCheckItem[] = [
     {
+      id: 'hermes-agent',
+      label: 'Hermes Agent',
+      status: hermesAgent?.installed ? 'ok' : 'error',
+      message: hermesAgent?.installed
+        ? `Hermes ${hermesAgent.version || ''}`.trim() + ' is ready; models come from your Hermes configuration.'
+        : hermesAgent?.diagnostic || 'Hermes Agent was not detected.',
+      detail: resolveHermesCommand().displayPath,
+      checkedAt: hermesAgent?.checkedAt || Date.now(),
+    },
+    {
+      id: 'hermes-update',
+      label: 'Hermes updates',
+      status: hermesUpdate.state === 'available' ? 'warning' : 'ok',
+      message: hermesUpdate.summary,
+      detail: `channel ${hermesUpdate.channel}`,
+      checkedAt: hermesUpdate.checkedAt,
+    },
+    {
       id: 'codex-cli',
-      label: 'Codex CLI',
-      status: codex.installed ? 'ok' : 'error',
+      label: 'Codex CLI (optional backend)',
+      status: codex.installed ? 'ok' : 'warning',
       message: codex.installed ? codex.version || 'Codex CLI is installed.' : `Codex CLI is unavailable: ${codex.loginMessage}`,
       detail: codex.codexPath,
       checkedAt: codex.checkedAt,
@@ -606,12 +659,16 @@ async function performStartupChecks(): Promise<StartupStatus> {
     active: true, completed: 1, total, updatedAt: Date.now(),
   });
   const beforeInstall = await detectAgentReadiness({ commandResolver: resolveAgentProbeCommand });
-  const agentInstalls = await installMissingAgentFrontends({
-    readiness: beforeInstall,
-    userDataPath,
-    env: process.env,
-    onProgress: emitBootstrapProgress,
-  });
+  // Hermes is the default backend and owns its own install; Consiglio only
+  // installs agent front-ends when the Codex CLI backend has been chosen.
+  const agentInstalls: AgentInstallResult[] = appSettings.defaultProvider === 'codex'
+    ? await installMissingAgentFrontends({
+      readiness: beforeInstall,
+      userDataPath,
+      env: process.env,
+      onProgress: emitBootstrapProgress,
+    })
+    : [];
 
   emitBootstrapProgress({
     phase: 'refreshing', message: 'Refreshing agent and local-provider readiness…',
@@ -1404,24 +1461,41 @@ function getPendingApprovals(sessionId?: string) {
     .sort((left, right) => right.timestamp - left.timestamp);
 }
 
-function approveCommand(approvalId: string) {
-  const approval = approvals.get(approvalId);
-  if (!approval) return false;
-  approval.status = 'approved';
-  approvals.set(approvalId, approval);
+/**
+ * Decide a pending approval.
+ *
+ * Agents that own their own approval protocol (Hermes replies to an ACP request)
+ * resolve through the shared router; sessions created before that router existed
+ * still resolve from the local map.
+ */
+async function decideApproval(approvalId: string, approved: boolean, sessionId?: string): Promise<boolean> {
+  const routed = await agentApprovalRouter.resolve(approvalId, approved, sessionId);
+  if (routed.ok) {
+    const known = approvals.get(approvalId);
+    if (known) {
+      known.status = approved ? 'approved' : 'rejected';
+      approvals.set(approvalId, known);
+      saveStore();
+    }
+    mainWindow?.webContents.send('codex:approval-processed', { id: approvalId, approved });
+    return true;
+  }
+
+  const local = approvals.get(approvalId);
+  if (!local) return false;
+  local.status = approved ? 'approved' : 'rejected';
+  approvals.set(approvalId, local);
   saveStore();
-  mainWindow?.webContents.send('codex:approval-processed', { id: approvalId, approved: true });
+  mainWindow?.webContents.send('codex:approval-processed', { id: approvalId, approved });
   return true;
 }
 
+function approveCommand(approvalId: string) {
+  return decideApproval(approvalId, true);
+}
+
 function rejectCommand(approvalId: string) {
-  const approval = approvals.get(approvalId);
-  if (!approval) return false;
-  approval.status = 'rejected';
-  approvals.set(approvalId, approval);
-  saveStore();
-  mainWindow?.webContents.send('codex:approval-processed', { id: approvalId, approved: false });
-  return true;
+  return decideApproval(approvalId, false);
 }
 
 function getBranch(repository: string) {
@@ -1664,34 +1738,47 @@ function buildSessionEnvironment(provider: Provider, sessionId: string) {
 }
 
 async function startSession(options: SessionOptions) {
-  const provider = options.provider || appSettings.defaultProvider;
+  const provider = normalizeProvider(options.provider ?? appSettings.defaultProvider);
   const repository = path.resolve(options.repository || defaultWorkspacePath());
   if (!fs.statSync(repository).isDirectory()) {
     throw new Error(`Workspace is not a directory: ${repository}`);
   }
-  const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const branch = options.branch || getBranch(repository);
-  const providerConfig = resolveProviderConfig(provider, options);
-  const env = buildSessionEnvironment(provider, sessionId);
+  const agent = agentForProvider(provider);
+  const adapter = getOrCreateAdapter(agent);
 
-  // Delegate session lifecycle to the adapter
-  const adapter = getOrCreateAdapter('codex');
-  const session = await adapter.launch({
-    sessionId,
-    repository,
-    branch,
-    agent: 'codex',
-    provider,
-    providerConfig,
-    env,
-    localProviderBehavior: appSettings.localProviderBehavior,
-    selectedLanProviderId: options.selectedLanProviderId,
-    remoteLlamaCpp: options.remoteLlamaCpp,
-    ollama: options.ollama,
-    defaultModel: options.defaultModel,
-    codexThreadId: options.codexThreadId,
-    codexPath: options.codexPath,
-  });
+  let session;
+  let model: string | undefined;
+  let baseUrl: string | undefined;
+
+  if (agent === 'hermes') {
+    // Hermes owns the session id (local-<hash>) and the model catalogue; the app
+    // stores no endpoint of its own.
+    session = await adapter.launch({ repository, branch, agent: 'hermes' });
+    model = session.model;
+  } else {
+    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const providerConfig = resolveProviderConfig(provider, options);
+    const env = buildSessionEnvironment(provider, sessionId);
+    session = await adapter.launch({
+      sessionId,
+      repository,
+      branch,
+      agent: 'codex',
+      provider,
+      providerConfig,
+      env,
+      localProviderBehavior: appSettings.localProviderBehavior,
+      selectedLanProviderId: options.selectedLanProviderId,
+      remoteLlamaCpp: options.remoteLlamaCpp,
+      ollama: options.ollama,
+      defaultModel: options.defaultModel,
+      codexThreadId: options.codexThreadId,
+      codexPath: options.codexPath,
+    });
+    model = providerConfig.model;
+    baseUrl = providerConfig.baseUrl;
+  }
 
   // Update main.ts session storage (UI state)
   sessions.set(session.sessionId, {
@@ -1705,7 +1792,7 @@ async function startSession(options: SessionOptions) {
     args: [],
     env: {},
     codexCommand: resolveCodexCommand({ requested: options.codexPath }) || { executable: '', prefixArgs: [], displayPath: '' } as any,
-    codexThreadId: options.codexThreadId,
+    codexThreadId: agent === 'hermes' ? session.sessionId : options.codexThreadId,
     jsonRemainder: '',
     lastStructuredError: undefined,
     processedItemIds: new Set(),
@@ -1720,12 +1807,13 @@ async function startSession(options: SessionOptions) {
     repository: session.repository,
     branch: session.branch,
     provider,
+    agent,
     // Persist the resolved endpoint: reconnect rebuilds the provider config from
     // the record, so a missing model/baseUrl silently reconnects nowhere.
-    model: providerConfig.model,
-    baseUrl: providerConfig.baseUrl,
+    model,
+    baseUrl,
     selectedLanProviderId: options.selectedLanProviderId,
-    codexThreadId: options.codexThreadId,
+    codexThreadId: agent === 'hermes' ? session.sessionId : options.codexThreadId,
     status: 'running',
     created_at: Date.now(),
     updated_at: Date.now(),
@@ -1733,7 +1821,9 @@ async function startSession(options: SessionOptions) {
 
   saveStore();
   emitSessionUpdate();
-  recordEvent(session.sessionId, 'system', `Ready in ${session.repository}`);
+  recordEvent(session.sessionId, 'system', agent === 'hermes'
+    ? `Hermes session ready in ${session.repository}`
+    : `Ready in ${session.repository}`);
   return { sessionId: session.sessionId, repository: session.repository, branch: session.branch };
 }
 
@@ -1953,38 +2043,54 @@ async function reconnectSession(sessionId: string) {
   const record = records.get(sessionId);
   if (!record || sessions.has(sessionId)) return false;
   const branch = record.branch || getBranch(record.repository);
-  const provider = record.provider || appSettings.defaultProvider;
-  const providerConfig = resolveProviderConfig(provider, {
-    selectedLanProviderId: record.selectedLanProviderId,
-    remoteLlamaCpp: { baseUrl: record.baseUrl, model: record.model, apiKey: appSettings.remoteLlamaCpp.apiKey },
-    ollama: { baseUrl: appSettings.ollama.baseUrl, model: appSettings.ollama.model, apiKey: appSettings.ollama.apiKey },
-    defaultModel: record.model,
-  } as SessionOptions);
-  const env = buildSessionEnvironment(provider, sessionId);
+  const provider = normalizeProvider(record.provider ?? appSettings.defaultProvider);
+  // Records written before this change carry no `agent`; infer it from provider.
+  const agent = record.agent === 'codex' || record.agent === 'hermes'
+    ? (record.agent as AgentChoice)
+    : agentForProvider(provider);
+  const adapter = getOrCreateAdapter(agent);
 
-  // Delegate session lifecycle to the adapter. sessionId is the stored record's
-  // id: minting a fresh one here orphaned the record and every renderer
-  // subscription, so the task looked dead the moment it was reconnected.
-  const adapter = getOrCreateAdapter('codex');
-  const session = await adapter.launch({
-    sessionId,
-    repository: record.repository,
-    branch,
-    agent: 'codex',
-    provider,
-    providerConfig,
-    env,
-    localProviderBehavior: appSettings.localProviderBehavior,
-    selectedLanProviderId: record.selectedLanProviderId,
-    remoteLlamaCpp: provider === 'remote_llamacpp'
-      ? { baseUrl: record.baseUrl, model: record.model, apiKey: appSettings.remoteLlamaCpp.apiKey }
-      : undefined,
-    ollama: provider === 'ollama'
-      ? { baseUrl: appSettings.ollama.baseUrl, model: appSettings.ollama.model, apiKey: appSettings.ollama.apiKey }
-      : undefined,
-    defaultModel: appSettings.defaultModel,
-    codexThreadId: record.codexThreadId,
-  });
+  let session;
+  if (agent === 'hermes') {
+    // Hermes persists sessions in ~/.hermes/state.db, so reconnect is a resume of
+    // the same session id rather than a new conversation.
+    session = await adapter.launch({
+      repository: record.repository,
+      branch,
+      agent: 'hermes',
+      resumeSessionId: record.id,
+    });
+  } else {
+    const providerConfig = resolveProviderConfig(provider, {
+      selectedLanProviderId: record.selectedLanProviderId,
+      remoteLlamaCpp: { baseUrl: record.baseUrl, model: record.model, apiKey: appSettings.remoteLlamaCpp.apiKey },
+      ollama: { baseUrl: appSettings.ollama.baseUrl, model: appSettings.ollama.model, apiKey: appSettings.ollama.apiKey },
+      defaultModel: record.model,
+    } as SessionOptions);
+    const env = buildSessionEnvironment(provider, sessionId);
+
+    // sessionId is the stored record's id: minting a fresh one here orphaned the
+    // record and every renderer subscription.
+    session = await adapter.launch({
+      sessionId,
+      repository: record.repository,
+      branch,
+      agent: 'codex',
+      provider,
+      providerConfig,
+      env,
+      localProviderBehavior: appSettings.localProviderBehavior,
+      selectedLanProviderId: record.selectedLanProviderId,
+      remoteLlamaCpp: provider === 'remote_llamacpp'
+        ? { baseUrl: record.baseUrl, model: record.model, apiKey: appSettings.remoteLlamaCpp.apiKey }
+        : undefined,
+      ollama: provider === 'ollama'
+        ? { baseUrl: appSettings.ollama.baseUrl, model: appSettings.ollama.model, apiKey: appSettings.ollama.apiKey }
+        : undefined,
+      defaultModel: appSettings.defaultModel,
+      codexThreadId: record.codexThreadId,
+    });
+  }
 
   // Update main.ts session storage (UI state)
   sessions.set(session.sessionId, {
@@ -2011,6 +2117,8 @@ async function reconnectSession(sessionId: string) {
   const updated = records.get(session.sessionId);
   if (updated) {
     updated.status = 'running';
+    updated.agent = agent;
+    if (session.model) updated.model = session.model;
     updated.updated_at = Date.now();
     records.set(session.sessionId, updated);
     saveStore();
@@ -2402,6 +2510,31 @@ handleIpc('system:bootstrap-progress', () => latestBootstrapProgress);
 // ("Attempted to register a second handler for 'agents:readiness'") and the
 // app never reaches a window.
 handleIpc('system:check-updates', () => checkForAppUpdate());
+
+// ─── Hermes backend: model catalogue, settings configurator, updates ─────────
+handleIpc('agents:models', () => (isModelAware(activeAdapter) ? activeAdapter.availableModels() : []));
+handleIpc('agents:set-model', (_event, input: { sessionId: string; modelId: string }) =>
+  isModelAware(activeAdapter) ? activeAdapter.setSessionModel(input.sessionId, input.modelId) : false);
+handleIpc('hermes:config-list', () => readConfig());
+handleIpc('hermes:config-set', (_event, input: { key: string; value: string }) => {
+  const result = writeConfig(input.key, input.value);
+  mainWindow?.webContents.send('hermes:config-changed', result);
+  return result;
+});
+handleIpc('hermes:config-unset', (_event, key: string) => {
+  unsetConfig(key);
+  return readConfig();
+});
+handleIpc('hermes:config-path', () => configFilePath());
+handleIpc('hermes:update-check', () => checkForHermesUpdate());
+handleIpc('hermes:update-apply', (_event, input?: { restartGateway?: boolean }) =>
+  applyHermesUpdate({ restartGateway: input?.restartGateway !== false }));
+handleIpc('hermes:open-config', async () => {
+  const file = configFilePath();
+  if (!file) return false;
+  return (await shell.openPath(file)) === '';
+});
+handleIpc('hermes:log-path', () => path.join(app.getPath('userData'), 'hermes-acp.log'));
 handleIpc('system:check-providers', async () => (await providerReadiness()).checks);
 handleIpc('settings:update', (_event, nextSettings: Partial<AppSettings>) => {
   appSettings = {

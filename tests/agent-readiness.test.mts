@@ -41,6 +41,8 @@ test('reports ready installed agents with versions and support tiers', async () 
     env: {},
     now: () => 1234,
     runner: runnerFor({
+      'hermes --version': result({ stdout: 'Hermes Agent v0.22.2 (stable)\n' }),
+      'hermes acp --check': result({ stdout: 'Hermes ACP check OK\n' }),
       'codex --version': result({ stdout: 'codex-cli 1.2.3\n' }),
       'codex login status': result({ stdout: 'Logged in using ChatGPT\n' }),
       'interpreter --version': result({ stdout: 'Open Interpreter 0.4.2\n' }),
@@ -49,9 +51,16 @@ test('reports ready installed agents with versions and support tiers', async () 
     }),
   });
 
-  assert.equal(agents.length, 4);
+  assert.equal(agents.length, 5);
   assert.ok(agents.every(agent => agent.selectable));
   assert.ok(agents.every(agent => agent.checkedAt === 1234));
+
+  // Hermes is the default backend and is selectable without a cloud account.
+  const hermes = agents.find(agent => agent.id === 'hermes');
+  assert.equal(hermes?.installed, true);
+  assert.equal(hermes?.configuration, 'ready');
+  assert.equal(hermes?.supportTier, 'supported');
+  assert.match(hermes?.diagnostic || '', /ACP/);
 
   const codex = agents.find(agent => agent.id === 'codex');
   assert.equal(codex?.authenticated, true);
@@ -65,17 +74,34 @@ test('reports ready installed agents with versions and support tiers', async () 
   assert.equal(aider?.supportTier, 'preview');
 });
 
+test('gates Hermes on its ACP server, not on a cloud account', async () => {
+  const agents = await detectAgentReadiness({
+    env: {},
+    runner: runnerFor({
+      'hermes --version': result({ stdout: 'Hermes Agent v0.22.2 (stable)\n' }),
+      'hermes acp --check': result({ exitCode: 1, stderr: 'acp dependency missing\n' }),
+    }),
+  });
+
+  const hermes = agents.find(agent => agent.id === 'hermes');
+  assert.equal(hermes?.installed, true);
+  assert.equal(hermes?.state, 'configuration-required');
+  assert.equal(hermes?.selectable, false);
+  assert.match(hermes?.diagnostic || '', /acp --check/);
+});
+
 test('reports missing CLIs without attempting follow-up authentication', async () => {
   const calls: string[] = [];
   const agents = await detectAgentReadiness({ env: {}, runner: runnerFor({}, calls) });
 
-  assert.equal(agents.length, 4);
+  assert.equal(agents.length, 5);
   assert.ok(agents.every(agent => agent.state === 'missing'));
   assert.ok(agents.every(agent => !agent.selectable));
   assert.deepEqual(calls.sort(), [
     'aider --version',
     'claude --version',
     'codex --version',
+    'hermes --version',
     'interpreter --version',
   ]);
 });
@@ -173,7 +199,7 @@ test('returns partial readiness when one probe throws unexpectedly', async () =>
     }),
   });
 
-  assert.equal(agents.length, 4);
+  assert.equal(agents.length, 5);
   const interpreter = agents.find(agent => agent.id === 'open-interpreter');
   const claude = agents.find(agent => agent.id === 'claude-code');
   assert.equal(interpreter?.selectable, true);

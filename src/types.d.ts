@@ -1,6 +1,6 @@
-type CodexProvider = 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
+type CodexProvider = 'hermes' | 'codex' | 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
 
-type AgentId = 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
+type AgentId = 'hermes' | 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
 type AgentSupportTier = 'supported' | 'preview' | 'detected-only';
 type AgentReadinessState = 'ready' | 'configuration-required' | 'missing' | 'timeout' | 'error';
 type AgentConfigurationState = 'ready' | 'required' | 'not-required' | 'unknown';
@@ -277,6 +277,19 @@ interface CodexAPI {
   onDiscussionEvent: (callback: (data: { sessionId: string; event: CodexEvent }) => void) => () => void;
   onDiscussionError: (callback: (data: { sessionId: string; error: string }) => void) => () => void;
   getAvailableAgents: () => Promise<AgentReadiness[]>;
+
+  // Hermes backend (models, settings configurator, updates)
+  getModels: () => Promise<AgentModelInfo[]>;
+  setSessionModel: (sessionId: string, modelId: string) => Promise<boolean>;
+  listHermesConfig: () => Promise<HermesConfigEntry[]>;
+  setHermesConfig: (key: string, value: string) => Promise<HermesConfigWriteResult>;
+  unsetHermesConfig: (key: string) => Promise<HermesConfigEntry[]>;
+  getHermesConfigPath: () => Promise<string>;
+  checkHermesUpdate: () => Promise<HermesUpdateStatus>;
+  applyHermesUpdate: (input?: { restartGateway?: boolean }) => Promise<{ ok: boolean; output: string }>;
+  openHermesConfig: () => Promise<boolean>;
+  getHermesLogPath: () => Promise<string>;
+  onHermesConfigChanged: (callback: (result: HermesConfigWriteResult) => void) => () => void;
 }
 
 interface DiscussionMessage {
@@ -292,6 +305,8 @@ interface SessionRecord {
   repository: string;
   branch: string;
   provider?: CodexProvider;
+  /** Backend that owns the session, so reconnect can resume it by id. */
+  agent?: string;
   model?: string;
   baseUrl?: string;
   selectedLanProviderId?: string;
@@ -315,8 +330,43 @@ interface ApprovalRecord {
   workingDir: string;
   sandboxPolicy: string;
   affectedPaths: string[];
+  /** Protocol option ids the agent offered (ACP: allow_once / allow_always / reject…). */
+  optionIds?: string[];
   timestamp: number;
   status: 'pending' | 'approved' | 'rejected';
+}
+
+type HermesConfigValueKind = 'string' | 'integer' | 'ratio' | 'boolean';
+
+interface HermesConfigEntry {
+  key: string;
+  label: string;
+  kind: HermesConfigValueKind;
+  description: string;
+  requiresRestart?: boolean;
+  value: string | null;
+  error?: string;
+}
+
+interface HermesConfigWriteResult {
+  key: string;
+  before: string | null;
+  after: string | null;
+}
+
+interface HermesUpdateStatus {
+  state: 'up-to-date' | 'available' | 'unknown';
+  channel: string;
+  currentVersion: string;
+  availableVersion?: string;
+  summary: string;
+  checkedAt: number;
+}
+
+interface AgentModelInfo {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 interface GitStatusEntry {

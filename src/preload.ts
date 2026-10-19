@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('codexApi', {
     startSession: (opts: {
       repository?: string;
       branch?: string;
-      provider?: 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
+      provider?: CodexProvider;
       remoteLlamaCpp?: {
         baseUrl?: string;
         model?: string;
@@ -247,4 +247,31 @@ contextBridge.exposeInMainWorld('codexApi', {
     },
     getAvailableAgents: () =>
       ipcRenderer.invoke('agents:readiness'),
+
+    // Hermes backend: models, settings configurator, updates
+    getModels: () =>
+      ipcRenderer.invoke('agents:models'),
+    setSessionModel: (sessionId: string, modelId: string) =>
+      ipcRenderer.invoke('agents:set-model', { sessionId, modelId }),
+    listHermesConfig: () =>
+      ipcRenderer.invoke('hermes:config-list'),
+    setHermesConfig: (key: string, value: string) =>
+      ipcRenderer.invoke('hermes:config-set', { key, value }),
+    unsetHermesConfig: (key: string) =>
+      ipcRenderer.invoke('hermes:config-unset', key),
+    getHermesConfigPath: () =>
+      ipcRenderer.invoke('hermes:config-path'),
+    checkHermesUpdate: () =>
+      ipcRenderer.invoke('hermes:update-check'),
+    applyHermesUpdate: (input?: { restartGateway?: boolean }) =>
+      ipcRenderer.invoke('hermes:update-apply', input ?? {}),
+    openHermesConfig: () =>
+      ipcRenderer.invoke('hermes:open-config'),
+    getHermesLogPath: () =>
+      ipcRenderer.invoke('hermes:log-path'),
+    onHermesConfigChanged: (callback: (result: HermesConfigWriteResult) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: HermesConfigWriteResult) => callback(data);
+      ipcRenderer.on('hermes:config-changed', handler);
+      return () => ipcRenderer.removeListener('hermes:config-changed', handler);
+    },
 });
