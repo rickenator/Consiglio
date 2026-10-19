@@ -31,3 +31,6 @@ Thumbs.db
 *.deb
 *.rpm
 __pycache__/
+
+# Local agent scratch: plans and notes live here, not in the repo
+.hermes/

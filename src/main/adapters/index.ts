@@ -15,6 +15,7 @@ import { detectAgentReadiness } from '../agent-readiness';
 import type { AgentAdapter, AgentApproval, EventEmitters } from '../agent-adapter';
 import { resolveCodexCommand } from '../platform';
 import { CodexAdapter } from './codex-adapter';
+import { HermesAcpAdapter } from '../hermes/hermes-acp-adapter';
 import { OpenInterpreterAdapter } from './open-interpreter-adapter';
 import { AiderAdapter } from './aider-adapter';
 import { ClaudeCodeAdapter } from './claude-code-adapter';
@@ -23,7 +24,7 @@ export const AGENT_READINESS_CHANNEL = 'agents:readiness';
 export const AGENT_APPROVAL_RESOLVE_CHANNEL = 'agents:resolve-approval';
 export const AGENT_APPROVAL_PENDING_CHANNEL = 'agents:pending-approvals';
 
-type AgentId = 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
+type AgentId = 'hermes' | 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
 
 function assertTrustedRenderer(event: Electron.IpcMainInvokeEvent): void {
   const senderUrl = event.senderFrame?.url || event.sender.getURL();
@@ -93,6 +94,8 @@ registerAgentHandlers();
 
 function createConcreteAdapter(agent: AgentId, emitters: EventEmitters): AdapterCore {
   switch (agent) {
+    case 'hermes':
+      return new HermesAcpAdapter(emitters);
     case 'codex':
       return new CodexAdapter(emitters);
     case 'open-interpreter':
@@ -107,6 +110,22 @@ function createConcreteAdapter(agent: AgentId, emitters: EventEmitters): Adapter
 }
 
 export function getAdapter(agent: AgentId, emitters: EventEmitters): AgentAdapter {
+  if (agent === 'hermes') {
+    // Hermes resolves approvals over JSON-RPC rather than by writing to a PTY, so
+    // it must NOT be wrapped in ApprovalAwareAdapter: the concrete adapter owns
+    // resolveApproval and registers each approval with the shared router itself.
+    let adapter: HermesAcpAdapter | undefined;
+    const routedEmitters: EventEmitters = {
+      ...emitters,
+      emitApproval: (approval: AgentApproval) => {
+        if (!adapter?.trackApproval(approval)) return;
+        broadcast('codex:approval-request', approvalRecord(approval));
+      },
+    };
+    adapter = new HermesAcpAdapter(routedEmitters);
+    return adapter;
+  }
+
   let decorated: ApprovalAwareAdapter | undefined;
   const routedEmitters: EventEmitters = {
     ...emitters,
@@ -122,6 +141,7 @@ export function getAdapter(agent: AgentId, emitters: EventEmitters): AgentAdapte
 }
 
 export { CodexAdapter } from './codex-adapter';
+export { HermesAcpAdapter } from '../hermes/hermes-acp-adapter';
 export { OpenInterpreterAdapter } from './open-interpreter-adapter';
 export { AiderAdapter } from './aider-adapter';
 export { ClaudeCodeAdapter } from './claude-code-adapter';

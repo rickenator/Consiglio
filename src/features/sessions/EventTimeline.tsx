@@ -312,7 +312,7 @@ export default function EventTimeline({ sessionId, compact = false, onCopySessio
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Codex, paste a URL, or add documents"
+            placeholder="Ask Hermes, paste a URL, or add documents"
             disabled={isSending || isAwaitingResponse}
             className="codex-textarea"
             rows={2}

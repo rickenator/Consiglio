@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 
-export type AgentId = 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
+export type AgentId = 'hermes' | 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
 export type AgentSupportTier = 'supported' | 'preview' | 'detected-only';
 export type AgentReadinessState = 'ready' | 'configuration-required' | 'missing' | 'timeout' | 'error';
 export type AgentConfigurationState = 'ready' | 'required' | 'not-required' | 'unknown';
@@ -61,7 +61,7 @@ interface AgentSpec {
   versionArgs: string[];
   supportTier: AgentSupportTier;
   installDiagnostic: string;
-  authentication: 'codex' | 'not-required' | 'unknown';
+  authentication: 'codex' | 'not-required' | 'unknown' | 'hermes';
 }
 
 const DEFAULT_TIMEOUT_MS = 4_000;
@@ -69,13 +69,23 @@ const OUTPUT_LIMIT = 64 * 1024;
 
 const AGENT_SPECS: AgentSpec[] = [
   {
+    id: 'hermes',
+    name: 'Hermes Agent',
+    commandEnv: 'HERMES_BIN',
+    command: 'hermes',
+    versionArgs: ['--version'],
+    supportTier: 'supported',
+    installDiagnostic: 'Hermes Agent was not found. Install Hermes or set HERMES_BIN.',
+    authentication: 'hermes',
+  },
+  {
     id: 'codex',
     name: 'Codex',
     commandEnv: 'CODEX_BIN',
     command: 'codex',
     versionArgs: ['--version'],
     supportTier: 'supported',
-    installDiagnostic: 'Codex CLI was not found. Consiglio will attempt a user-level installation; CODEX_BIN may override it.',
+    installDiagnostic: 'Codex CLI was not found. Select the Codex backend to run it; CODEX_BIN may override the path.',
     authentication: 'codex',
   },
   {
@@ -309,6 +319,41 @@ async function detectOne(
       diagnostic: authenticated
         ? authOutput || `Codex ${version} is installed and authenticated.`
         : authOutput || 'Codex is installed but not signed in. Run `codex login` and refresh.',
+      supportTier: spec.supportTier,
+      checkedAt,
+    };
+  }
+
+  if (spec.authentication === 'hermes') {
+    // Hermes carries its own provider configuration; what matters for readiness
+    // is that its ACP server answers, not that a cloud account exists.
+    let acpOk = false;
+    let acpDetail = '';
+    try {
+      const acpResult = await runner({
+        command: command.command,
+        args: [...command.prefixArgs, 'acp', '--check'],
+        timeoutMs,
+        env,
+      });
+      acpDetail = firstLine(probeOutput(acpResult)) || '';
+      acpOk = acpResult.exitCode === 0 && !acpResult.timedOut;
+    } catch {
+      acpOk = false;
+    }
+
+    return {
+      id: spec.id,
+      name: spec.name,
+      installed: true,
+      authenticated: true,
+      configuration: acpOk ? 'ready' : 'required',
+      selectable: acpOk,
+      state: acpOk ? 'ready' : 'configuration-required',
+      version,
+      diagnostic: acpOk
+        ? `Hermes ${version} is ready; Consiglio drives it over ACP. Models come from your Hermes configuration.`
+        : `Hermes ${version} is installed, but its ACP server did not answer \`hermes acp --check\`${acpDetail ? `: ${acpDetail}` : '.'}`,
       supportTier: spec.supportTier,
       checkedAt,
     };

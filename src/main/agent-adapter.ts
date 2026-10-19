@@ -19,7 +19,7 @@ import type { IPty } from 'node-pty';
 export interface AgentEvent {
   id: string;
   type: 'prompt' | 'response' | 'code' | 'console' | 'error' | 'approval_request'
-       | 'system' | 'files' | 'interrupted';
+       | 'system' | 'files' | 'interrupted' | 'tool_call';
   content: string;
   metadata?: Record<string, unknown>;
   timestamp: number;
@@ -56,6 +56,8 @@ export interface AgentSession {
   repository: string;
   branch: string;
   adapter: AgentAdapter;
+  /** Model the agent has bound to this session, when it owns the catalogue. */
+  model?: string;
 }
 
 // ─── Session Options ──────────────────────────────────────────────────────────
@@ -67,11 +69,13 @@ export interface AgentSession {
 export interface AgentSessionOptions {
   repository: string;
   branch?: string;
-  agent: 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
+  agent: 'hermes' | 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
   model?: string;
   baseUrl?: string;
   apiKey?: string;
   customArgs?: string[];
+  /** Reattach to an agent-owned session instead of creating a new one. */
+  resumeSessionId?: string;
   /**
    * Fully resolved endpoint for the session's provider, computed by the caller
    * (which owns app settings and LAN discovery). Adapters must NOT read
@@ -102,7 +106,7 @@ export interface AgentSessionOptions {
 // ─── Agent Detection ──────────────────────────────────────────────────────────
 
 export interface AgentInfo {
-  id: 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
+  id: 'hermes' | 'codex' | 'open-interpreter' | 'aider' | 'claude-code';
   name: string;
   installed: boolean;
   authenticated: boolean;
@@ -196,4 +200,27 @@ export interface EventParser {
   parse(raw: string, sessionId: string): AgentEvent[];
 
   parseApproval?(raw: string, sessionId: string): AgentApproval | null;
+}
+
+// ─── Model Discovery (agent-owned model catalogues) ───────────────────────────
+
+/**
+ * Agents that own provider/model configuration — Hermes resolves models from the
+ * operator's own config — expose their catalogue so the shell can offer a picker
+ * instead of asking the user to type endpoints.
+ */
+export interface ModelAwareAdapter {
+  availableModels(): AgentModel[];
+  setSessionModel(sessionId: string, modelId: string): Promise<boolean>;
+}
+
+export interface AgentModel {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export function isModelAware(adapter: unknown): adapter is ModelAwareAdapter {
+  const candidate = adapter as Partial<ModelAwareAdapter> | null;
+  return Boolean(candidate && typeof candidate.availableModels === 'function' && typeof candidate.setSessionModel === 'function');
 }

@@ -1,601 +1,523 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import SessionList from './features/sessions/SessionList';
 import EventTimeline from './features/sessions/EventTimeline';
+import TabStrip from './features/sessions/TabStrip';
 import FileBrowser from './features/files/FileBrowser';
 import SecretsManager from './features/secrets/SecretsManager';
 import MobilePairing from './features/mobile/MobilePairing';
 import DiscussionPanel from './features/discussions/DiscussionPanel';
+import MenuBar, { type MenuDefinition } from './features/shell/MenuBar';
+import HermesSettings from './features/hermes/HermesSettings';
+import HermesUpdateDialog from './features/hermes/HermesUpdateDialog';
 
-type LanProviderConfig = {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  model: string;
-  apiKey: string;
-};
+type Provider = CodexProvider;
+type AppSettings = CodexSettings;
+type Notice = { kind: 'info' | 'success' | 'error'; message: string };
 
-type AppSettings = {
-  defaultProvider: 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
-  ollama: {
-    baseUrl: string;
-    model: string;
-    apiKey: string;
-  };
-  remoteLlamaCpp: {
-    baseUrl: string;
-    model: string;
-    apiKey: string;
-  };
-  lanProviders: LanProviderConfig[];
-  defaultModel?: string;
-  localProviderBehavior: {
-    isolateProfile: boolean;
-    enableWebSearch: boolean;
-    enableMultiAgent: boolean;
-  };
-};
+const TABS_KEY = 'consiglio:open-tabs';
+const ACTIVE_TAB_KEY = 'consiglio:active-tab';
+const AUTO_UPDATE_KEY = 'consiglio:hermes-auto-update';
 
-type Notice = {
-  kind: 'info' | 'success' | 'error';
-  message: string;
-};
-
-type ApprovalRequest = {
-  id: string;
-  sessionId: string;
-  command: string;
-  workingDir: string;
-  sandboxPolicy: string;
-  affectedPaths: string[];
-  timestamp: number;
-  status: 'pending' | 'approved' | 'rejected';
-};
-
-const defaultSettings: AppSettings = {
-  defaultProvider: 'default',
-  ollama: {
-    baseUrl: 'http://localhost:11434',
-    model: 'qwen2.5:32b-instruct-q4_K_M',
-    apiKey: '',
-  },
-  remoteLlamaCpp: {
-    baseUrl: '',
-    model: '',
-    apiKey: 'llama.cpp',
-  },
-  lanProviders: [],
-  defaultModel: '',
-  localProviderBehavior: {
-    isolateProfile: true,
-    enableWebSearch: true,
-    enableMultiAgent: false,
-  },
-};
+function readTabs(): string[] {
+  try {
+    const raw = window.localStorage.getItem(TABS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
-  const [selectedSession, setSelectedSession] = useState<string | null>(() => window.localStorage.getItem('consiglio:selected-session') ?? window.localStorage.getItem('consiglier:selected-session') ?? window.localStorage.getItem('codex-control:selected-session'));
-  const [recoveredSessions, setRecoveredSessions] = useState<string[]>([]);
-  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
-  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [openTabs, setOpenTabs] = useState<string[]>(() => readTabs());
+  const [activeTab, setActiveTab] = useState<string | null>(() => window.localStorage.getItem(ACTIVE_TAB_KEY));
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [providerStatus, setProviderStatus] = useState<Record<string, 'ok' | 'error' | 'checking' | null>>({});
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [startupStatus, setStartupStatus] = useState<StartupStatus | null>(null);
-  const [bootstrapProgress, setBootstrapProgress] = useState<BootstrapProgress>({
-    phase: 'discovering-local',
-    message: 'Preparing local AI discovery…',
-    active: true,
-    completed: 0,
-    total: 4,
-    updatedAt: Date.now(),
-  });
+  const [bootstrapProgress, setBootstrapProgress] = useState<BootstrapProgress | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [lanForm, setLanForm] = useState<{ id: string; name: string; host: string; port: string; model: string; apiKey: string }>({
-    id: '', name: '', host: '', port: '8081', model: '', apiKey: '',
-  });
-  const [discovering, setDiscovering] = useState(false);
-  const [testingConnection, setTestingConnection] = useState<string | null>(null);
-  const [showLanSettings, setShowLanSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
-  const [showMobilePairing, setShowMobilePairing] = useState(false);
+  const [showMobile, setShowMobile] = useState(false);
   const [showDiscussions, setShowDiscussions] = useState(false);
+  const [showHermesSettings, setShowHermesSettings] = useState(false);
+  const [showEndpoints, setShowEndpoints] = useState(false);
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [models, setModels] = useState<AgentModelInfo[]>([]);
+  const [hermesUpdate, setHermesUpdate] = useState<HermesUpdateStatus | null>(null);
+  const [autoUpdate, setAutoUpdate] = useState<boolean>(() => window.localStorage.getItem(AUTO_UPDATE_KEY) === 'true');
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const tabsRef = useRef<string[]>(openTabs);
+  tabsRef.current = openTabs;
 
-  const handleDiscoverLan = async () => {
-    setDiscovering(true);
-    try {
-      const result = await window.codexApi.lanDiscover();
-      if (result.error) {
-        setNotice({ kind: 'error', message: `LAN discovery failed: ${result.error}` });
-      } else if (result.added > 0) {
-        setNotice({ kind: 'success', message: `Found ${result.found} servers, added ${result.added} new providers` });
-        window.codexApi.getSettings().then(setSettings);
-      } else {
-        setNotice({ kind: 'info', message: `Scanned network: ${result.found} server(s) found, none new` });
-      }
-    } catch (e) {
-      setNotice({ kind: 'error', message: `LAN discovery failed: ${(e as Error).message}` });
-    } finally {
-      setDiscovering(false);
-    }
-  };
+  const activeSession = useMemo(
+    () => sessions.find(session => session.id === activeTab) ?? null,
+    [sessions, activeTab],
+  );
 
-  const startRecommendedSession = async (status: StartupStatus, currentSettings: AppSettings) => {
-    const recommendation = status.providerSetup;
-    if (!recommendation.ready || !recommendation.recommendedProvider) return false;
-    const nextSettings: AppSettings = {
-      ...currentSettings,
-      defaultProvider: recommendation.recommendedProvider,
-      ollama: recommendation.recommendedProvider === 'ollama'
-        ? { ...currentSettings.ollama, model: recommendation.recommendedModel || currentSettings.ollama.model }
-        : currentSettings.ollama,
-    };
-    const savedSettings = await window.codexApi.updateSettings(nextSettings);
-    setSettings(savedSettings);
-    const created = await window.codexApi.startSession({
-      provider: recommendation.recommendedProvider,
-      selectedLanProviderId: recommendation.selectedLanProviderId,
-      ollama: recommendation.recommendedProvider === 'ollama' ? savedSettings.ollama : undefined,
-      remoteLlamaCpp: recommendation.recommendedProvider === 'remote_llamacpp' ? savedSettings.remoteLlamaCpp : undefined,
+  const notify = useCallback((kind: Notice['kind'], message: string) => setNotice({ kind, message }), []);
+
+  // ─── Tabs ──────────────────────────────────────────────────────────────────
+
+  const openTab = useCallback((sessionId: string) => {
+    setOpenTabs(current => (current.includes(sessionId) ? current : [...current, sessionId]));
+    setActiveTab(sessionId);
+  }, []);
+
+  const closeTab = useCallback((sessionId: string) => {
+    setOpenTabs(current => {
+      const next = current.filter(id => id !== sessionId);
+      setActiveTab(active => (active === sessionId ? next[next.length - 1] ?? null : active));
+      return next;
     });
-    const updatedSessions = await window.codexApi.listSessions();
-    setSessions(updatedSessions);
-    setSelectedSession(created.sessionId);
-    return true;
-  };
+  }, []);
+
+  const cycleTab = useCallback((direction: 1 | -1) => {
+    setActiveTab(current => {
+      const tabs = tabsRef.current;
+      if (tabs.length === 0) return current;
+      const index = current ? tabs.indexOf(current) : -1;
+      return tabs[(index + direction + tabs.length) % tabs.length] ?? current;
+    });
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(TABS_KEY, JSON.stringify(openTabs));
+  }, [openTabs]);
+
+  useEffect(() => {
+    if (activeTab) window.localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
+    else window.localStorage.removeItem(ACTIVE_TAB_KEY);
+  }, [activeTab]);
+
+  // ─── Session actions ───────────────────────────────────────────────────────
+
+  const refreshSessions = useCallback(async () => {
+    const loaded = await window.codexApi.listSessions();
+    setSessions(loaded);
+    return loaded;
+  }, []);
+
+  const handleStartSession = useCallback(async (options: {
+    repository?: string;
+    branch?: string;
+    provider?: Provider;
+    selectedLanProviderId?: string;
+  } = {}) => {
+    try {
+      const provider = options.provider ?? settings?.defaultProvider ?? 'hermes';
+      const result = await window.codexApi.startSession({
+        repository: options.repository,
+        branch: options.branch,
+        provider,
+        selectedLanProviderId: options.selectedLanProviderId,
+      });
+      await refreshSessions();
+      openTab(result.sessionId);
+      notify('success', provider === 'codex' ? 'Codex CLI task started.' : 'Hermes task started.');
+    } catch (error) {
+      notify('error', `Could not start a task: ${(error as Error).message}`);
+    }
+  }, [settings?.defaultProvider, openTab, refreshSessions, notify]);
+
+  const handleReconnect = useCallback(async (sessionId: string) => {
+    try {
+      const reconnected = await window.codexApi.reconnectSession(sessionId);
+      if (!reconnected) throw new Error('the session could not be resumed');
+      openTab(sessionId);
+      notify('success', 'Task resumed.');
+    } catch (error) {
+      notify('error', `Could not resume the task: ${(error as Error).message}`);
+    }
+  }, [openTab, notify]);
+
+  const handleStopSession = useCallback(async (sessionId: string) => {
+    try {
+      await window.codexApi.stopSession(sessionId);
+      await refreshSessions();
+      notify('info', 'Task stopped. Its Hermes session stays available to resume.');
+    } catch (error) {
+      notify('error', `Could not stop the task: ${(error as Error).message}`);
+    }
+  }, [refreshSessions, notify]);
+
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    try {
+      await window.codexApi.deleteSession(sessionId);
+      closeTab(sessionId);
+      await refreshSessions();
+      notify('info', 'Task removed from Consiglio.');
+    } catch (error) {
+      notify('error', `Could not remove the task: ${(error as Error).message}`);
+    }
+  }, [closeTab, refreshSessions, notify]);
+
+  const handleSettingsChange = useCallback(async (next: Partial<CodexSettingsInput>) => {
+    try {
+      const saved = await window.codexApi.updateSettings(next);
+      setSettings(saved);
+      return saved;
+    } catch (error) {
+      notify('error', `Could not save settings: ${(error as Error).message}`);
+      return null;
+    }
+  }, [notify]);
+
+  const handleCopyText = useCallback(async (text: string, label: string) => {
+    try {
+      const copied = await window.codexApi.copyText(text);
+      notify(copied ? 'success' : 'error', copied ? `${label} copied to clipboard.` : 'Clipboard unavailable.');
+    } catch (error) {
+      notify('error', `Could not copy ${label.toLowerCase()}: ${(error as Error).message}`);
+    }
+  }, [notify]);
+
+  const handleOpenPath = useCallback(async (targetPath: string, label: string) => {
+    try {
+      const opened = await window.codexApi.openPath(targetPath);
+      notify(opened ? 'success' : 'error', opened ? `${label} opened.` : `Could not open ${label.toLowerCase()}.`);
+    } catch (error) {
+      notify('error', `Could not open ${label.toLowerCase()}: ${(error as Error).message}`);
+    }
+  }, [notify]);
+
+  const handleApprove = useCallback(async (approvalId: string) => {
+    try {
+      const approved = await window.codexApi.approveCommand(approvalId);
+      if (!approved) throw new Error('the agent no longer waits on this request');
+      setApprovals(await window.codexApi.getPendingApprovals());
+      notify('success', 'Approval granted.');
+    } catch (error) {
+      notify('error', `Could not approve: ${(error as Error).message}`);
+    }
+  }, [notify]);
+
+  const handleReject = useCallback(async (approvalId: string) => {
+    try {
+      const rejected = await window.codexApi.rejectCommand(approvalId);
+      if (!rejected) throw new Error('the agent no longer waits on this request');
+      setApprovals(await window.codexApi.getPendingApprovals());
+      notify('info', 'Approval denied.');
+    } catch (error) {
+      notify('error', `Could not deny: ${(error as Error).message}`);
+    }
+  }, [notify]);
+
+  const copyTranscript = useCallback(async () => {
+    if (!activeTab) return;
+    const events = await window.codexApi.getSessionEvents(activeTab);
+    const markdown = events
+      .filter(event => event.type !== 'system')
+      .map(event => `**${event.type}**\n\n${event.content}`)
+      .join('\n\n');
+    await handleCopyText(markdown, 'Transcript');
+  }, [activeTab, handleCopyText]);
+
+  // ─── Startup ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
-    const unsubscribeBootstrap = window.codexApi.onBootstrapProgress(setBootstrapProgress);
+    const unsubscribeBootstrap = window.codexApi.onBootstrapProgress(progress => setBootstrapProgress(progress));
     const initialize = async () => {
       try {
-        const [loadedSessions, loadedSettings, status] = await Promise.all([
+        const [loadedSessions, loadedSettings, status, loadedModels] = await Promise.all([
           window.codexApi.listSessions(),
           window.codexApi.getSettings(),
           window.codexApi.getStartupStatus(),
+          window.codexApi.getModels().catch(() => [] as AgentModelInfo[]),
         ]);
         if (cancelled) return;
         setSessions(loadedSessions);
         setSettings(loadedSettings);
         setStartupStatus(status);
         setBootstrapProgress(status.bootstrap);
-        const providerStates: Record<string, 'ok' | 'error' | 'checking' | null> = {};
-        status.checks.forEach(check => {
-          providerStates[check.id] = check.status === 'ok' ? 'ok' : check.status === 'error' ? 'error' : null;
-        });
-        setProviderStatus(providerStates);
-        const preferredSession = selectedSession && loadedSessions.some(session => session.id === selectedSession)
-          ? selectedSession
-          : loadedSessions[0]?.id;
-        if (!preferredSession) {
-          await startRecommendedSession(status, loadedSettings);
-          return;
-        }
-        setSelectedSession(preferredSession);
-        const preferredRecord = loadedSessions.find(session => session.id === preferredSession);
-        if (preferredRecord?.status !== 'running') {
-          await window.codexApi.reconnectSession(preferredSession);
-        }
+        setModels(loadedModels);
+
+        const update = await window.codexApi.checkHermesUpdate().catch(() => null);
+        if (cancelled) return;
+        setHermesUpdate(update);
+        if (update?.state === 'available') setShowUpdateDialog(true);
+
+        const storedTabs = tabsRef.current.filter(id => loadedSessions.some(session => session.id === id));
+        const preferred = storedTabs.length > 0 ? storedTabs : loadedSessions.slice(0, 1).map(session => session.id);
+        setOpenTabs(preferred);
+        const focus = activeTab && preferred.includes(activeTab) ? activeTab : preferred[0] ?? null;
+        setActiveTab(focus);
+        if (focus) await window.codexApi.reconnectSession(focus);
       } catch (error) {
-        if (!cancelled) setNotice({ kind: 'error', message: `Could not initialize Consiglio: ${(error as Error).message}` });
+        if (!cancelled) notify('error', `Could not initialize Consiglio: ${(error as Error).message}`);
       } finally {
         if (!cancelled) setIsInitializing(false);
       }
     };
     void initialize();
     return () => { cancelled = true; unsubscribeBootstrap(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(null), 5000);
+    const timeout = window.setTimeout(() => setNotice(null), 6000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
   useEffect(() => {
-    const unsubscribeRecovery = window.codexApi.onSessionsRecovered((sessionIds: string[]) => {
-      setRecoveredSessions(sessionIds);
-      setSelectedSession(prev => prev || sessionIds[0] || null);
-    });
-
     const unsubscribeApproval = window.codexApi.onApprovalRequest(() => {
-      window.codexApi.getPendingApprovals().then((approvals: ApprovalRecord[]) => {
-        setPendingApprovalCount(approvals.length);
-      });
+      void window.codexApi.getPendingApprovals().then(setApprovals);
     });
-
-    const unsubscribeSettings = window.codexApi.onSettingsChanged((s) => setSettings(s));
+    const unsubscribeSettings = window.codexApi.onSettingsChanged(setSettings);
     const unsubscribeSessions = window.codexApi.onSessionsUpdated(setSessions);
-
+    const unsubscribeNew = window.codexApi.onNewSession(() => { void handleStartSession({}); });
+    const unsubscribeConfig = window.codexApi.onHermesConfigChanged(result => {
+      notify('info', `Hermes ${result.key}: ${result.before ?? '(unset)'} → ${result.after ?? '(unset)'}`);
+    });
     return () => {
-      unsubscribeRecovery();
       unsubscribeApproval();
-      unsubscribeSessions();
       unsubscribeSettings();
+      unsubscribeSessions();
+      unsubscribeNew();
+      unsubscribeConfig();
     };
-  }, []);
+  }, [handleStartSession, notify]);
 
   useEffect(() => {
-    if (!sessions.length) return;
-    const selectedStillExists = selectedSession && sessions.some(session => session.id === selectedSession);
-    if (!selectedStillExists) {
-      setSelectedSession(sessions[0].id);
-    }
-  }, [sessions, selectedSession]);
-
-  useEffect(() => {
-    if (selectedSession) {
-      window.localStorage.setItem('consiglio:selected-session', selectedSession);
-    } else {
-      window.localStorage.removeItem('consiglio:selected-session');
-    }
-  }, [selectedSession]);
-
-  const activeSession = useMemo(() => sessions.find(session => session.id === selectedSession), [sessions, selectedSession]);
-  const activeConnection = activeSession ? describeConnection(activeSession, settings) : '';
-  const [quickProvider, setQuickProvider] = useState<'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama'>(settings.defaultProvider);
-
-  useEffect(() => {
-    setQuickProvider(settings.defaultProvider);
-  }, [settings.defaultProvider]);
-
-  const handleQuickProviderChange = async (provider: 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama') => {
-    setQuickProvider(provider);
-    const updatedSettings = { ...settings, defaultProvider: provider };
-    if (provider === 'ollama') {
-      updatedSettings.ollama = settings.ollama || { baseUrl: 'http://localhost:11434', model: 'qwen2.5:32b-instruct-q4_K_M', apiKey: '' };
-    }
-    await handleSettingsChange(updatedSettings);
-  };
-
-  const handleStartSession = async (options: {
-    repository?: string;
-    branch?: string;
-    provider?: 'default' | 'remote_llamacpp' | 'gpt56' | 'lan' | 'ollama';
-    selectedLanProviderId?: string;
-    lanProvider?: {
-      baseUrl?: string;
-      model?: string;
-      apiKey?: string;
-    };
-    remoteLlamaCpp?: {
-      baseUrl?: string;
-      model?: string;
-      apiKey?: string;
-    };
-    ollama?: {
-      baseUrl?: string;
-      model?: string;
-      apiKey?: string;
-    };
-    defaultModel?: string;
-  }) => {
-    try {
-      const fullOptions = {
-        ...options,
-        remoteLlamaCpp: options.remoteLlamaCpp || settings.remoteLlamaCpp,
-        ollama: options.ollama || settings.ollama,
-        defaultModel: options.defaultModel || settings.defaultModel,
-      };
-      const result = await window.codexApi.startSession(fullOptions);
-      const updated = await window.codexApi.listSessions();
-      setSessions(updated);
-      setSelectedSession(result.sessionId);
-      setNotice({ kind: 'success', message: `Started session for ${options.repository || 'the current workspace'}.` });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not start session: ${(e as Error).message}` });
-    }
-  };
-
-  const handleReconnect = async (sessionId: string) => {
-    try {
-      const reconnected = await window.codexApi.reconnectSession(sessionId);
-      if (!reconnected) {
-        throw new Error('Session could not be reconnected');
-      }
-      setSelectedSession(sessionId);
-      setNotice({ kind: 'success', message: 'Session reconnected.' });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not reconnect session: ${(e as Error).message}` });
-    }
-  };
-
-  const handleStopSession = async (sessionId: string) => {
-    try {
-      const stopped = await window.codexApi.stopSession(sessionId);
-      if (!stopped) {
-        throw new Error('Session could not be stopped');
-      }
-      setNotice({ kind: 'info', message: 'Session stopped.' });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not stop session: ${(e as Error).message}` });
-    }
-  };
-
-  const handleStopAllSessions = async () => {
-    const runningSessions = sessions.filter(s => s.status === 'running');
-    if (runningSessions.length === 0) {
-      setNotice({ kind: 'info', message: 'No running sessions to stop.' });
-      return;
-    }
-    let stopped = 0;
-    for (const session of runningSessions) {
-      try {
-        const result = await window.codexApi.stopSession(session.id);
-        if (result) stopped++;
-      } catch { /* skip failed stops */ }
-    }
-    const updated = await window.codexApi.listSessions();
-    setSessions(updated);
-    setNotice({ kind: 'info', message: `Stopped ${stopped} of ${runningSessions.length} session(s).` });
-  };
-
-  const handleDeleteSession = async (sessionId: string) => {
-    try {
-      await window.codexApi.deleteSession(sessionId);
-      setNotice({ kind: 'info', message: 'Session deleted.' });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not delete session: ${(e as Error).message}` });
-    }
-  };
-
-  const handleCopyText = async (text: string, label: string) => {
-    try {
-      const copied = await window.codexApi.copyText(text);
-      if (!copied) {
-        throw new Error('Clipboard unavailable');
-      }
-      setNotice({ kind: 'success', message: `${label} copied to clipboard.` });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not copy ${label.toLowerCase()}: ${(e as Error).message}` });
-    }
-  };
-
-  const handleOpenPath = async (targetPath: string, label: string) => {
-    try {
-      const opened = await window.codexApi.openPath(targetPath);
-      if (!opened) {
-        throw new Error('File manager could not open the path');
-      }
-      setNotice({ kind: 'success', message: `${label} opened.` });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not open ${label.toLowerCase()}: ${(e as Error).message}` });
-    }
-  };
-
-  const handleApprove = async (id: string) => {
-    try {
-      const approved = await window.codexApi.approveCommand(id);
-      if (!approved) {
-        throw new Error('Command could not be approved');
-      }
-      const approvals = await window.codexApi.getPendingApprovals();
-      setPendingApprovalCount(approvals.length);
-      setPendingApprovals(approvals);
-      setNotice({ kind: 'info', message: 'Approval granted.' });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not approve command: ${(e as Error).message}` });
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    try {
-      const rejected = await window.codexApi.rejectCommand(id);
-      if (!rejected) {
-        throw new Error('Command could not be rejected');
-      }
-      const approvals = await window.codexApi.getPendingApprovals();
-      setPendingApprovalCount(approvals.length);
-      setPendingApprovals(approvals);
-      setNotice({ kind: 'info', message: 'Approval rejected.' });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not reject command: ${(e as Error).message}` });
-    }
-  };
-
-  const handleTestConnection = async (providerType: 'remote_llamacpp' | 'ollama') => {
-    setTestingConnection(providerType);
-    try {
-      const config = providerType === 'remote_llamacpp'
-        ? { baseUrl: settings.remoteLlamaCpp.baseUrl, apiKey: settings.remoteLlamaCpp.apiKey || 'llama.cpp', model: settings.remoteLlamaCpp.model }
-        : { baseUrl: settings.ollama.baseUrl, apiKey: settings.ollama.apiKey || 'ollama', model: settings.ollama.model };
-      const result = await window.codexApi.testRemoteLlamaCpp(config);
-      setNotice({
-        kind: result.ok ? 'success' : 'error',
-        message: `${providerType === 'remote_llamacpp' ? 'Remote llama.cpp' : 'Ollama'}: ${result.message}`,
-      });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Connection test failed: ${(e as Error).message}` });
-    } finally {
-      setTestingConnection(null);
-    }
-  };
-
-  const handleTestProviderConnection = async (provider: {
-    baseUrl: string;
-    model: string;
-    apiKey: string;
-    label: string;
-  }) => {
-    setTestingConnection(provider.label);
-    try {
-      const result = await window.codexApi.testRemoteLlamaCpp({
-        baseUrl: provider.baseUrl,
-        model: provider.model,
-        apiKey: provider.apiKey || 'llama.cpp',
-      });
-      setNotice({
-        kind: result.ok ? 'success' : 'error',
-        message: `${provider.label}: ${result.message}`,
-      });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Connection test failed: ${(e as Error).message}` });
-    } finally {
-      setTestingConnection(null);
-    }
-  };
-
-  const handleSettingsChange = async (nextSettings: AppSettings) => {
-    try {
-      setSettings(nextSettings);
-      const saved = await window.codexApi.updateSettings(nextSettings);
-      setSettings(saved);
-      setNotice({ kind: 'success', message: 'Launch profile saved.' });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not save settings: ${(e as Error).message}` });
-    }
-  };
-
-  const handlePickRepository = async () => {
-    try {
-      const folder = await window.codexApi.pickFolder();
-      return folder;
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not open folder picker: ${(e as Error).message}` });
-      return null;
-    }
-  };
-
-  const handleTestRemoteLlamaCpp = async (config: { baseUrl: string; model: string; apiKey: string }) => {
-    try {
-      const result = await window.codexApi.testRemoteLlamaCpp(config);
-      setNotice({
-        kind: result.ok ? 'success' : 'error',
-        message: result.message,
-      });
-      return result.ok;
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not test remote llama.cpp: ${(e as Error).message}` });
-      return false;
-    }
-  };
-
-  const handleRequestNewSession = async () => {
-    await handleStartSession({});
-  };
-
-  const handleRefreshStartupStatus = async () => {
-    if (isRefreshingStatus) return;
-    setIsRefreshingStatus(true);
-    try {
-      const refreshed = await window.codexApi.getStartupStatus();
-      setStartupStatus(refreshed);
-      if (sessions.length === 0 && refreshed.providerSetup.ready) {
-        const started = await startRecommendedSession(refreshed, settings);
-        if (started) {
-          setNotice({
-            kind: 'success',
-            message: refreshed.providerSetup.recommendedProvider === 'ollama'
-              ? `Started with free local model ${refreshed.providerSetup.recommendedModel}.`
-              : 'Started with your AI account.',
-          });
-          return;
-        }
-      }
-      setNotice({ kind: refreshed.appUpdate.updateAvailable ? 'success' : 'info', message: refreshed.appUpdate.message });
-    } catch (e) {
-      setNotice({ kind: 'error', message: `Could not refresh health checks: ${(e as Error).message}` });
-    } finally {
-      setIsRefreshingStatus(false);
-    }
-  };
-
-  const handleUseDiscoveredLan = async () => {
-    const setup = startupStatus?.providerSetup;
-    if (!setup?.lanProviderId) return;
-    setIsRefreshingStatus(true);
-    try {
-      const nextSettings = await window.codexApi.updateSettings({ ...settings, defaultProvider: 'lan' });
-      setSettings(nextSettings);
-      const created = await window.codexApi.startSession({ provider: 'lan', selectedLanProviderId: setup.lanProviderId });
-      setSessions(await window.codexApi.listSessions());
-      setSelectedSession(created.sessionId);
-      setNotice({ kind: 'success', message: `Connected to ${setup.lanEndpoint}.` });
-    } catch (error) {
-      setNotice({ kind: 'error', message: `Could not use network provider: ${(error as Error).message}` });
-    } finally {
-      setIsRefreshingStatus(false);
-    }
-  };
-
-  // Fetch pending approvals when session changes
-  useEffect(() => {
-    if (!selectedSession) {
-      setPendingApprovals([]);
-      return;
-    }
     let cancelled = false;
     const refresh = async () => {
       try {
-        const approvals = await window.codexApi.getPendingApprovals(selectedSession);
-        if (!cancelled) setPendingApprovals(approvals);
+        const pending = await window.codexApi.getPendingApprovals();
+        if (!cancelled) setApprovals(pending);
       } catch { /* ignore */ }
     };
-    refresh();
+    void refresh();
     const interval = window.setInterval(refresh, 2000);
     return () => { cancelled = true; window.clearInterval(interval); };
-  }, [selectedSession]);
+  }, [activeTab]);
 
-  const healthSummary = summarizeHealth(startupStatus);
+  // Tab keyboard handling: Ctrl+W closes, Ctrl+Tab cycles, Ctrl+1..9 jumps.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const meta = event.ctrlKey || event.metaKey;
+      if (!meta) return;
+      if (event.key.toLowerCase() === 'w' && activeTab) {
+        event.preventDefault();
+        closeTab(activeTab);
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        cycleTab(event.shiftKey ? -1 : 1);
+      } else if (/^[1-9]$/.test(event.key)) {
+        const target = tabsRef.current[Number(event.key) - 1];
+        if (target) {
+          event.preventDefault();
+          setActiveTab(target);
+        }
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [activeTab, closeTab, cycleTab]);
+
+  // ─── Hermes updates ────────────────────────────────────────────────────────
+
+  const anyTaskBusy = sessions.some(session => session.status === 'running');
+
+  const applyUpdate = useCallback(async () => {
+    setUpdateBusy(true);
+    try {
+      // Updating restarts the Hermes gateway, so keep it when a task is answering.
+      const result = await window.codexApi.applyHermesUpdate({ restartGateway: !anyTaskBusy });
+      notify(result.ok ? 'success' : 'error', result.ok
+        ? 'Hermes updated. Restart Consiglio if the session list looks stale.'
+        : `Hermes update failed: ${result.output}`);
+      setShowUpdateDialog(false);
+      setHermesUpdate(await window.codexApi.checkHermesUpdate().catch(() => null));
+    } finally {
+      setUpdateBusy(false);
+    }
+  }, [anyTaskBusy, notify]);
+
+  const toggleAutoUpdate = useCallback((next: boolean) => {
+    setAutoUpdate(next);
+    window.localStorage.setItem(AUTO_UPDATE_KEY, String(next));
+  }, []);
+
+  useEffect(() => {
+    if (!autoUpdate || !hermesUpdate || hermesUpdate.state !== 'available' || isInitializing) return;
+    // Idle-only: an update restarts the gateway and would kill a running task.
+    if (anyTaskBusy) return;
+    void applyUpdate();
+  }, [autoUpdate, hermesUpdate, isInitializing, anyTaskBusy, applyUpdate]);
+
+  // ─── Menus (every entry performs a real action) ─────────────────────────────
+
+  const menuModels: MenuDefinition['items'] = models.length === 0
+    ? [{ group: 'Model (from Hermes)', label: 'No models reported yet', disabled: true }]
+    : models.slice(0, 14).map(model => ({
+      group: 'Model (from Hermes)',
+      label: model.description ? `${model.name} — ${model.description}` : model.name,
+      checked: activeSession?.model === model.id,
+      disabled: !activeTab,
+      onSelect: () => {
+        if (!activeTab) return;
+        void window.codexApi.setSessionModel(activeTab, model.id).then(ok => {
+          notify(ok ? 'success' : 'error', ok ? `Model set to ${model.name}.` : 'Hermes refused the model change.');
+          void refreshSessions();
+        });
+      },
+    }));
+
+  const menus: MenuDefinition[] = [
+    {
+      label: 'File',
+      items: [
+        { label: 'New task', shortcut: 'Ctrl+N', onSelect: () => void handleStartSession({}) },
+        { separator: true },
+        {
+          label: 'Open workspace folder in the OS file manager',
+          disabled: !activeSession?.repository,
+          onSelect: () => activeSession?.repository && void handleOpenPath(activeSession.repository, 'Workspace folder'),
+        },
+        {
+          label: 'Browse workspace in the Files panel',
+          disabled: !activeTab,
+          checked: showFiles,
+          onSelect: () => setShowFiles(true),
+        },
+        { separator: true },
+        { label: 'Close tab', shortcut: 'Ctrl+W', disabled: !activeTab, onSelect: () => activeTab && closeTab(activeTab) },
+        { label: 'Stop task', disabled: !activeTab, onSelect: () => activeTab && void handleStopSession(activeTab) },
+        { separator: true },
+        { label: 'API keys and MCP secrets…', onSelect: () => setShowSecrets(true) },
+        { label: 'Mobile companion pairing…', onSelect: () => setShowMobile(true) },
+      ],
+    },
+    {
+      label: 'View',
+      items: [
+        { label: 'Files panel', checked: showFiles, disabled: !activeTab, onSelect: () => setShowFiles(current => !current) },
+        { label: 'Multi-agent discussion', checked: showDiscussions, onSelect: () => setShowDiscussions(current => !current) },
+        { separator: true },
+        { label: 'Copy whole transcript', disabled: !activeTab, onSelect: () => void copyTranscript() },
+        { separator: true },
+        { label: 'Next tab', shortcut: 'Ctrl+Tab', disabled: openTabs.length < 2, onSelect: () => cycleTab(1) },
+        { label: 'Previous tab', shortcut: 'Ctrl+Shift+Tab', disabled: openTabs.length < 2, onSelect: () => cycleTab(-1) },
+      ],
+    },
+    {
+      label: 'Agent',
+      items: [
+        {
+          group: 'Backend',
+          label: 'Hermes Agent (default)',
+          checked: settings?.defaultProvider !== 'codex',
+          onSelect: () => void handleSettingsChange({ defaultProvider: 'hermes' }),
+        },
+        {
+          group: 'Backend',
+          label: 'Codex CLI',
+          checked: settings?.defaultProvider === 'codex',
+          onSelect: () => void handleSettingsChange({ defaultProvider: 'codex' }),
+        },
+        { separator: true },
+        ...menuModels,
+        { separator: true },
+        { group: 'Approvals', label: 'Allow the pending request', disabled: approvals.length === 0, onSelect: () => approvals[0] && void handleApprove(approvals[0].id) },
+        { group: 'Approvals', label: 'Deny the pending request', disabled: approvals.length === 0, onSelect: () => approvals[0] && void handleReject(approvals[0].id) },
+        { separator: true },
+        { label: 'Resume active task', disabled: !activeTab, onSelect: () => activeTab && void handleReconnect(activeTab) },
+        { label: 'Model endpoints (Codex backend only)…', onSelect: () => setShowEndpoints(true) },
+      ],
+    },
+    {
+      label: 'Hermes',
+      items: [
+        { label: 'Hermes settings…', onSelect: () => setShowHermesSettings(true) },
+        { label: 'Open Hermes config file', onSelect: () => void window.codexApi.openHermesConfig() },
+        { label: 'Copy Hermes log path', onSelect: () => void window.codexApi.getHermesLogPath().then(path => handleCopyText(path, 'Hermes log path')) },
+        { separator: true },
+        {
+          label: 'Check for Hermes updates',
+          onSelect: () => {
+            void window.codexApi.checkHermesUpdate().then(status => {
+              setHermesUpdate(status);
+              if (status.state === 'available') setShowUpdateDialog(true);
+              notify('info', status.summary);
+            });
+          },
+        },
+        { label: 'Update Hermes now', disabled: !hermesUpdate || hermesUpdate.state !== 'available', onSelect: () => void applyUpdate() },
+        { label: 'Update Hermes automatically on startup', checked: autoUpdate, onSelect: () => toggleAutoUpdate(!autoUpdate) },
+        { separator: true },
+        {
+          label: 'Refresh provider checks',
+          onSelect: () => void window.codexApi.getStartupStatus().then(status => {
+            setStartupStatus(status);
+            notify('info', 'Provider checks refreshed.');
+          }),
+        },
+      ],
+    },
+  ];
+
+  const health = summarizeHealth(startupStatus);
+  const connection = activeSession ? describeConnection(activeSession, settings) : 'Hermes Agent';
 
   if (isInitializing && sessions.length === 0) {
-    return <ProviderSetupScreen status={null} checking progress={bootstrapProgress} />;
+    return <ProviderSetupScreen status={null} checking progress={bootstrapProgress} autoUpdate={autoUpdate} />;
   }
 
   if (sessions.length === 0) {
     return (
       <ProviderSetupScreen
         status={startupStatus}
-        checking={isRefreshingStatus || bootstrapProgress.active}
+        checking={isRefreshingStatus || Boolean(bootstrapProgress?.active)}
         progress={bootstrapProgress}
-        onRefresh={() => void handleRefreshStartupStatus()}
-        onUseLan={() => void handleUseDiscoveredLan()}
+        autoUpdate={autoUpdate}
+        onToggleAutoUpdate={toggleAutoUpdate}
+        onRefresh={() => {
+          setIsRefreshingStatus(true);
+          void window.codexApi.getStartupStatus()
+            .then(async status => {
+              setStartupStatus(status);
+              if (status.providerSetup.ready) await handleStartSession({});
+            })
+            .catch(error => notify('error', `Could not refresh checks: ${(error as Error).message}`))
+            .finally(() => setIsRefreshingStatus(false));
+        }}
+        onStart={() => void handleStartSession({})}
+        onOpenHermes={() => void window.codexApi.openHermesConfig()}
+        onOpenHermesSettings={() => setShowHermesSettings(true)}
         onOpenCodex={() => void window.codexApi.openPath('https://github.com/openai/codex#installation')}
-        onOpenOllama={() => void window.codexApi.openPath('https://ollama.com/download')}
       />
     );
   }
 
-  const sandboxColors: Record<string, string> = {
-    'danger-full-access': '#f85149',
-    'on-request': '#d29922',
-    'off': '#3fb950',
-    'auto-approve': '#58a6ff',
-  };
-
   return (
     <div className="codex-app-shell">
-      {/* Notice Banner */}
+      <MenuBar menus={menus} status={<span title={connection}>{connection}</span>} />
+
+      <TabStrip
+        tabs={openTabs}
+        active={activeTab}
+        sessions={sessions}
+        onSelect={setActiveTab}
+        onClose={closeTab}
+        onNewTask={() => void handleStartSession({})}
+      />
+
       {notice && (
         <div className={`codex-banner ${notice.kind === 'error' ? 'codex-notice-error' : notice.kind === 'success' ? 'codex-notice-success' : 'codex-notice-info'}`}>
-          <span style={{ fontSize: 13 }}>{notice.message}</span>
+          <span style={{ fontSize: 14 }}>{notice.message}</span>
           <button className="codex-button codex-button-secondary" onClick={() => setNotice(null)}>Dismiss</button>
         </div>
       )}
 
-      {/* Recovered Sessions Banner */}
-      {recoveredSessions.length > 0 && (
-        <div className="codex-banner codex-recovery-banner">
-          <span style={{ fontSize: 13, color: '#58a6ff' }}>
-            {recoveredSessions.length} session{recoveredSessions.length === 1 ? '' : 's'} recovered from the last run
-          </span>
-          <button
-            className="codex-button codex-button-secondary"
-            onClick={() => setRecoveredSessions([])}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Health Check Banner */}
-      <section className="codex-banner codex-health-banner" style={{ alignItems: 'stretch', background: 'rgba(255,255,255,0.035)', borderColor: healthSummary.borderColor }}>
+      <section className="codex-banner codex-health-banner" style={{ alignItems: 'stretch', background: 'rgba(255,255,255,0.035)', borderColor: health.borderColor }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: healthSummary.color }}>{healthSummary.message}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: health.color }}>{health.message}</span>
           {startupStatus && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {startupStatus.checks.map(check => (
@@ -606,390 +528,136 @@ export default function App() {
         </div>
         <button
           className="codex-button codex-button-secondary"
-          onClick={handleRefreshStartupStatus}
           disabled={isRefreshingStatus}
-          style={{ fontSize: 10, padding: '4px 10px', whiteSpace: 'nowrap' }}
+          onClick={() => {
+            setIsRefreshingStatus(true);
+            void window.codexApi.getStartupStatus()
+              .then(status => { setStartupStatus(status); notify('info', status.appUpdate.message); })
+              .catch(error => notify('error', `Could not refresh checks: ${(error as Error).message}`))
+              .finally(() => setIsRefreshingStatus(false));
+          }}
         >
-          {isRefreshingStatus ? 'Checking…' : 'Refresh'}
+          {isRefreshingStatus ? 'Checking…' : 'Refresh checks'}
         </button>
       </section>
 
-      {/* Approval Banner — full-width, impossible to miss */}
-      {pendingApprovals.length > 0 && (
-        <section className="codex-banner codex-approval-banner" style={{
-          background: 'rgba(210, 153, 34, 0.12)',
-          borderColor: 'rgba(210, 153, 34, 0.4)',
-          flexDirection: 'column',
-          alignItems: 'stretch',
-          gap: 10,
-          padding: '12px 16px',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#d29922' }}>
-              ⏳ {pendingApprovals.length} pending approval{pendingApprovals.length === 1 ? '' : 's'}
+      {approvals.length > 0 && (
+        <section className="codex-banner codex-approval-banner" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#d29922' }}>
+              Hermes is asking permission ({approvals.length})
             </span>
-            <button
-              className="codex-button codex-button-secondary"
-              onClick={() => setPendingApprovals([])}
-              style={{ fontSize: 10, padding: '3px 8px' }}
-            >
-              Dismiss
-            </button>
+            <span className="codex-help">Denying or ignoring this lets the agent continue without that action.</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pendingApprovals.map(approval => (
-              <div key={approval.id} style={{
-                background: 'rgba(0,0,0,0.2)',
-                borderRadius: 10,
-                padding: '10px 12px',
-                borderLeft: `3px solid ${sandboxColors[approval.sandboxPolicy] || '#8b949e'}`,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
-                  <code style={{
-                    fontSize: 12, color: '#c9d1d9', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-                  }}>
-                    {approval.command}
-                  </code>
-                  <div className="codex-chip" style={{ padding: '2px 6px', fontSize: 9, borderColor: sandboxColors[approval.sandboxPolicy] || '#8b949e', flexShrink: 0 }}>
-                    <span className="codex-chip-value" style={{ color: sandboxColors[approval.sandboxPolicy] || '#8b949e' }}>{approval.sandboxPolicy}</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                  <button
-                    className="codex-button codex-button-primary"
-                    onClick={() => handleApprove(approval.id)}
-                    style={{ fontSize: 11, padding: '4px 12px' }}
-                  >
-                    ✓ Approve
-                  </button>
-                  <button
-                    className="codex-button codex-button-danger"
-                    onClick={() => handleReject(approval.id)}
-                    style={{ fontSize: 11, padding: '4px 12px' }}
-                  >
-                    ✗ Reject
-                  </button>
-                </div>
+          {approvals.map(approval => (
+            <div key={approval.id} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                <code style={{ fontSize: 13, color: '#c9d1d9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {approval.command}
+                </code>
+                {approval.sessionId && (
+                  <span className="codex-chip" style={{ flexShrink: 0 }}>
+                    <span className="codex-chip-label">session</span>
+                    <span className="codex-chip-value">{approval.sessionId.slice(0, 14)}…</span>
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="codex-button codex-button-primary" style={{ fontSize: 13 }} onClick={() => void handleApprove(approval.id)}>
+                  Allow once
+                </button>
+                <button className="codex-button codex-button-danger" style={{ fontSize: 13 }} onClick={() => void handleReject(approval.id)}>
+                  Deny
+                </button>
+              </div>
+            </div>
+          ))}
         </section>
       )}
 
-      {/* Settings Panel */}
-      {showSettings && (
-        <section className="codex-panel" style={{ margin: '0 14px 14px', flex: '0 0 auto' }}>
-          <div className="codex-panel-header">
-            <div className="codex-panel-title">
-              <span className="codex-kicker">Settings</span>
-              <span className="codex-panel-heading">Local provider behavior</span>
-            </div>
-          </div>
-          <div style={{ padding: 14, display: 'grid', gap: 12 }}>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={settings.localProviderBehavior.isolateProfile}
-                onChange={(event) => void handleSettingsChange({
-                  ...settings,
-                  localProviderBehavior: { ...settings.localProviderBehavior, isolateProfile: event.target.checked },
-                })}
-              />
-              <span>
-                <strong style={{ color: '#f0f6fc' }}>Isolate local-provider sessions</strong>
-                <span className="codex-help" style={{ display: 'block', marginTop: 2 }}>
-                  Keeps normal AI MCP servers and profile settings out of llama.cpp/LAN sessions.
-                </span>
-              </span>
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={settings.localProviderBehavior.enableWebSearch}
-                onChange={(event) => void handleSettingsChange({
-                  ...settings,
-                  localProviderBehavior: { ...settings.localProviderBehavior, enableWebSearch: event.target.checked },
-                })}
-              />
-              <span>
-                <strong style={{ color: '#f0f6fc' }}>Enable web search</strong>
-                <span className="codex-help" style={{ display: 'block', marginTop: 2 }}>
-                  Starts local-provider sessions with live web search enabled.
-                </span>
-              </span>
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={settings.localProviderBehavior.enableMultiAgent}
-                onChange={(event) => void handleSettingsChange({
-                  ...settings,
-                  localProviderBehavior: { ...settings.localProviderBehavior, enableMultiAgent: event.target.checked },
-                })}
-              />
-              <span>
-                <strong style={{ color: '#f0f6fc' }}>Enable multi-agent</strong>
-                <span className="codex-help" style={{ display: 'block', marginTop: 2 }}>
-                  Experimental with local providers; enable only when that server handles the required tool schemas.
-                </span>
-              </span>
-            </label>
-          </div>
-        </section>
-      )}
-
-      {/* LAN Providers Settings */}
-      {showSettings && (
-        <section className="codex-panel" style={{ margin: '0 14px 14px', flex: '0 0 auto' }}>
-          <div className="codex-panel-header">
-            <div className="codex-panel-title">
-              <span className="codex-kicker">Providers</span>
-              <span className="codex-panel-heading">Remote & LAN</span>
-            </div>
-            <button
-              className="codex-button codex-button-secondary"
-              onClick={() => { setShowSettings(false); setShowLanSettings(true); }}
-              style={{ fontSize: 11, padding: '4px 10px' }}
-            >
-              Manage
-            </button>
-          </div>
-          <div style={{ padding: 14, display: 'grid', gap: 12 }}>
-            {/* Remote llama.cpp */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: 13, color: '#f0f6fc', fontWeight: 600 }}>Remote llama.cpp</label>
-                <button
-                  className="codex-button codex-button-secondary"
-                  onClick={() => handleTestConnection('remote_llamacpp')}
-                  disabled={testingConnection !== null}
-                  style={{ fontSize: 10, padding: '2px 6px' }}
-                >
-                  Test
-                </button>
-              </div>
-              <input
-                type="text"
-                placeholder="Base URL (e.g., http://192.168.1.50:8081)"
-                value={settings.remoteLlamaCpp.baseUrl}
-                onChange={(e) => void handleSettingsChange({ ...settings, remoteLlamaCpp: { ...settings.remoteLlamaCpp, baseUrl: e.target.value } })}
-                className="codex-input"
-              />
-              <input
-                type="text"
-                placeholder="Model"
-                value={settings.remoteLlamaCpp.model}
-                onChange={(e) => void handleSettingsChange({ ...settings, remoteLlamaCpp: { ...settings.remoteLlamaCpp, model: e.target.value } })}
-                className="codex-input"
-              />
-            </div>
-
-            {/* Ollama */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: 13, color: '#f0f6fc', fontWeight: 600 }}>Ollama</label>
-                <button
-                  className="codex-button codex-button-secondary"
-                  onClick={() => handleTestConnection('ollama')}
-                  disabled={testingConnection !== null}
-                  style={{ fontSize: 10, padding: '2px 6px' }}
-                >
-                  Test
-                </button>
-              </div>
-              <input
-                type="text"
-                placeholder="Base URL (e.g., http://localhost:11434)"
-                value={settings.ollama.baseUrl}
-                onChange={(e) => void handleSettingsChange({ ...settings, ollama: { ...settings.ollama, baseUrl: e.target.value } })}
-                className="codex-input"
-              />
-              <input
-                type="text"
-                placeholder="Model"
-                value={settings.ollama.model}
-                onChange={(e) => void handleSettingsChange({ ...settings, ollama: { ...settings.ollama, model: e.target.value } })}
-                className="codex-input"
-              />
-            </div>
-
-            {/* LAN Providers */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: 13, color: '#f0f6fc', fontWeight: 600 }}>LAN Providers</label>
-                <button
-                  className="codex-button codex-button-secondary"
-                  onClick={() => { setShowSettings(false); setShowLanSettings(true); }}
-                  style={{ fontSize: 11, padding: '4px 10px' }}
-                >
-                  Manage
-                </button>
-              </div>
-              {settings.lanProviders.length === 0 ? (
-                <span style={{ fontSize: 12, color: '#8b949e' }}>No LAN providers configured</span>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {settings.lanProviders.map(p => (
-                    <div key={p.id} style={{ fontSize: 12, color: '#f0f6fc', padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600 }}>{p.name || p.host}:{p.port}</span>
-                        <button
-                          className="codex-button codex-button-secondary"
-                          onClick={() => handleTestProviderConnection({
-                            baseUrl: p.host.startsWith('http://') || p.host.startsWith('https://') ? p.host : `http://${p.host}:${p.port}`,
-                            model: p.model,
-                            apiKey: p.apiKey,
-                            label: p.name || `${p.host}:${p.port}`,
-                          })}
-                          disabled={testingConnection !== null}
-                          style={{ fontSize: 10, padding: '2px 6px' }}
-                          title={`Test ${p.name || p.host}`}
-                        >
-                          Test
-                        </button>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#8b949e' }}>
-                        {p.host}:{p.port} {p.model ? `· ${p.model}` : '· no model set'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Save Button */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
-              <button
-                className="codex-button codex-button-secondary"
-                onClick={() => setShowSettings(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="codex-button codex-button-primary"
-                onClick={() => {
-                  handleSettingsChange(settings);
-                  setShowSettings(false);
-                }}
-              >
-                Save Settings
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Main Content: Sidebar + Single Timeline Panel */}
       <div className="codex-shell-grid">
         <SessionList
           sessions={sessions}
-          selected={selectedSession}
-          onSelect={setSelectedSession}
-          onStartSession={(opts: any) => handleStartSession(opts)}
-          onReconnect={handleReconnect}
-          onPickRepository={handlePickRepository}
+          selected={activeTab}
+          onSelect={openTab}
+          onStartSession={options => void handleStartSession(options)}
+          onReconnect={sessionId => void handleReconnect(sessionId)}
+          onPickRepository={() => window.codexApi.pickFolder()}
           onCopyPath={handleCopyText}
           onOpenPath={handleOpenPath}
-          onTestRemote={handleTestRemoteLlamaCpp}
-          onRequestNewSession={handleRequestNewSession}
-          onStopSession={handleStopSession}
-          onDeleteSession={handleDeleteSession}
-          settings={{ ...settings, lanProviders: settings.lanProviders || [] }}
-          connectionLabel={activeConnection}
-          onSettingsChange={(s: any) => handleSettingsChange(s)}
+          onRequestNewSession={() => handleStartSession({})}
+          onStopSession={sessionId => handleStopSession(sessionId)}
+          onDeleteSession={sessionId => handleDeleteSession(sessionId)}
+          settings={{
+            defaultProvider: settings?.defaultProvider ?? 'hermes',
+            lanProviders: settings?.lanProviders ?? [],
+          }}
+          connectionLabel={connection}
         />
 
-        {/* Single timeline panel — no more 2-column grid */}
         <section className="codex-panel" style={{ flex: 1, minWidth: 0 }}>
           <div className="codex-panel-header">
             <div className="codex-panel-title">
               <span className="codex-panel-heading">
-                {activeSession?.repository ? sessionLabel(activeSession.repository) : 'New task'}
+                {activeSession?.repository ? sessionLabel(activeSession.repository) : 'No task selected'}
               </span>
-              <span className="codex-kicker" title={activeConnection}>
-                {activeSession ? `${activeSession.branch || 'current branch'} · ${activeConnection}` : 'Start a task or choose one from the sidebar'}
+              <span className="codex-kicker" title={connection}>
+                {activeSession
+                  ? `${activeSession.branch || 'current branch'} · ${connection}`
+                  : 'Choose a task on the left, or start a new one'}
               </span>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-              {activeSession?.repository && (
-                <button
-                  className="codex-button codex-button-secondary"
-                  onClick={() => handleOpenPath(activeSession.repository, 'Workspace')}
-                >
-                  Open folder
-                </button>
-              )}
-              {selectedSession && (
-                <button
-                  className={`codex-button ${showFiles ? 'codex-button-info' : 'codex-button-secondary'}`}
-                  onClick={() => setShowFiles((current) => !current)}
-                >
-                  Files
-                </button>
-              )}
-              <button
-                className={`codex-button ${showDiscussions ? 'codex-button-info' : 'codex-button-secondary'}`}
-                onClick={() => setShowDiscussions((current) => !current)}
-                title="Multi-agent discussion"
-              >
-                Discuss
-              </button>
-              <button
-                className="codex-button codex-button-secondary"
-                onClick={() => setShowLanSettings(true)}
-                title="LAN providers"
-              >
-                Providers
-              </button>
-              <button
-                className={`codex-button ${showSettings ? 'codex-button-info' : 'codex-button-secondary'}`}
-                onClick={() => setShowSettings((current) => !current)}
-                title="Task behavior settings"
-              >
-                Settings
-              </button>
-              <button
-                className="codex-button codex-button-secondary"
-                onClick={() => setShowSecrets(true)}
-                title="API keys and MCP credentials"
-              >
-                Secrets
-              </button>
-              <button
-                className="codex-button codex-button-secondary"
-                onClick={() => setShowMobilePairing(true)}
-                title="Pair Android and iOS companions"
-              >
-                Mobile
-              </button>
-              {activeSession?.status === 'running' && selectedSession && (
-                <button
-                  className="codex-button codex-button-danger"
-                  onClick={() => handleStopSession(selectedSession)}
-                >
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {activeSession?.status === 'running' && activeTab && (
+                <button className="codex-button codex-button-danger" onClick={() => void handleStopSession(activeTab)}>
                   Stop
                 </button>
               )}
+              <button
+                className={`codex-button ${showFiles ? 'codex-button-info' : 'codex-button-secondary'}`}
+                disabled={!activeTab}
+                onClick={() => setShowFiles(current => !current)}
+                title="Show or hide the in-app file browser"
+              >
+                Files
+              </button>
             </div>
           </div>
+
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', position: 'relative' }}>
             {showDiscussions ? (
-              <DiscussionPanel onError={(message) => setNotice({ kind: 'error', message })} />
+              <DiscussionPanel onError={message => notify('error', message)} />
+            ) : openTabs.length === 0 ? (
+              <div className="codex-empty-state" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 15 }}>No open tasks.</span>
+                  <button className="codex-button codex-button-primary" onClick={() => void handleStartSession({})}>
+                    Start a Hermes task
+                  </button>
+                </div>
+              </div>
             ) : (
               <>
-                <EventTimeline
-                  sessionId={selectedSession}
-                  compact
-                  onCopySessionId={(value) => handleCopyText(value, 'Message')}
-                  onRequestNewSession={handleRequestNewSession}
-                  onError={(message) => setNotice({ kind: 'error', message })}
-                />
-                {showFiles && selectedSession && (
+                {/* Every open tab stays mounted: switching never rebuilds a conversation. */}
+                {openTabs.map(sessionId => (
+                  <div
+                    key={sessionId}
+                    style={{ display: sessionId === activeTab ? 'flex' : 'none', flex: 1, minWidth: 0, minHeight: 0 }}
+                  >
+                    <EventTimeline
+                      sessionId={sessionId}
+                      compact
+                      onCopySessionId={value => handleCopyText(value, 'Message')}
+                      onRequestNewSession={() => handleStartSession({})}
+                      onError={message => notify('error', message)}
+                    />
+                  </div>
+                ))}
+                {showFiles && activeTab && (
                   <FileBrowser
-                    sessionId={selectedSession}
+                    sessionId={activeTab}
                     onClose={() => setShowFiles(false)}
-                    onError={(message) => setNotice({ kind: 'error', message })}
+                    onError={message => notify('error', message)}
                   />
                 )}
               </>
@@ -998,120 +666,58 @@ export default function App() {
         </section>
       </div>
 
-      {/* LAN Settings Modal */}
-      <SecretsManager
-        open={showSecrets}
-        onClose={() => setShowSecrets(false)}
-        onNotice={(kind, message) => setNotice({ kind, message })}
+      <SecretsManager open={showSecrets} onClose={() => setShowSecrets(false)} onNotice={notify} />
+      <MobilePairing open={showMobile} onClose={() => setShowMobile(false)} onNotice={notify} />
+      <HermesSettings open={showHermesSettings} onClose={() => setShowHermesSettings(false)} onNotice={notify} />
+      <HermesUpdateDialog
+        status={showUpdateDialog ? hermesUpdate : null}
+        autoUpdate={autoUpdate}
+        busy={updateBusy}
+        onToggleAutoUpdate={toggleAutoUpdate}
+        onUpdate={() => void applyUpdate()}
+        onClose={() => setShowUpdateDialog(false)}
       />
 
-      <MobilePairing
-        open={showMobilePairing}
-        onClose={() => setShowMobilePairing(false)}
-        onNotice={(kind, message) => setNotice({ kind, message })}
-      />
-
-      {showLanSettings && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-        }} onClick={() => setShowLanSettings(false)}>
-          <div style={{
-            background: '#161b22', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16,
-            padding: 24, width: 480, maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: '#f0f6fc' }}>
-                {lanForm.id ? 'Edit LAN Provider' : 'Add LAN Provider'}
-              </h3>
-              <button
-                className="codex-button codex-button-secondary"
-                onClick={() => void handleDiscoverLan()}
-                disabled={discovering}
-              >
-                {discovering ? 'Scanning…' : 'Discover LAN'}
-              </button>
+      {showEndpoints && (
+        <div className="codex-modal-backdrop" onMouseDown={() => setShowEndpoints(false)}>
+          <section className="codex-new-task-dialog" onMouseDown={event => event.stopPropagation()}>
+            <div className="codex-dialog-header">
+              <div>
+                <h2>Model endpoints</h2>
+                <p>Only used by the Codex CLI backend. Hermes manages its own models and endpoints.</p>
+              </div>
+              <button className="codex-icon-button" onClick={() => setShowEndpoints(false)} aria-label="Close">×</button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <input
-                type="text"
-                placeholder="Name (e.g., Godzilla)"
-                value={lanForm.name}
-                onChange={e => setLanForm({ ...lanForm, name: e.target.value })}
-                className="codex-input"
-              />
-              <input
-                type="text"
-                placeholder="Host (e.g., 192.168.1.50)"
-                value={lanForm.host}
-                onChange={e => setLanForm({ ...lanForm, host: e.target.value })}
-                className="codex-input"
-              />
-              <input
-                type="number"
-                placeholder="Port (e.g., 8081)"
-                value={lanForm.port}
-                onChange={e => setLanForm({ ...lanForm, port: e.target.value })}
-                className="codex-input"
-              />
-              <input
-                type="text"
-                placeholder="Model (optional)"
-                value={lanForm.model}
-                onChange={e => setLanForm({ ...lanForm, model: e.target.value })}
-                className="codex-input"
-              />
-              <input
-                type="password"
-                placeholder="API Key (optional)"
-                value={lanForm.apiKey}
-                onChange={e => setLanForm({ ...lanForm, apiKey: e.target.value })}
-                className="codex-input"
-              />
+            <div className="codex-task-options">
+              {settings?.lanProviders.length
+                ? settings.lanProviders.map(provider => (
+                  <div className="codex-hermes-current" key={provider.id}>
+                    <code>{provider.name || `${provider.host}:${provider.port}`}</code>
+                    {provider.model ? ` · ${provider.model}` : ' · no model set'}
+                  </div>
+                ))
+                : <span className="codex-help">No endpoints stored.</span>}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button
-                className="codex-button codex-button-secondary"
-                onClick={() => setShowLanSettings(false)}
-              >
-                Cancel
-              </button>
+            <div className="codex-dialog-actions">
               <button
                 className="codex-button codex-button-primary"
-                onClick={async () => {
-                  try {
-                    if (lanForm.id) {
-                      await window.codexApi.lanUpdateProvider({
-                        id: lanForm.id,
-                        name: lanForm.name,
-                        host: lanForm.host,
-                        port: parseInt(lanForm.port),
-                        model: lanForm.model,
-                        apiKey: lanForm.apiKey,
-                      });
-                    } else {
-                      await window.codexApi.lanAddProvider({
-                        id: `lan-${Date.now()}`,
-                        name: lanForm.name,
-                        host: lanForm.host,
-                        port: parseInt(lanForm.port),
-                        model: lanForm.model,
-                        apiKey: lanForm.apiKey,
-                      });
-                    }
-                    const updated = await window.codexApi.getSettings();
-                    setSettings(updated);
-                    setShowLanSettings(false);
-                    setNotice({ kind: 'success', message: lanForm.id ? 'Provider updated' : 'Provider added' });
-                  } catch (e) {
-                    setNotice({ kind: 'error', message: `LAN provider error: ${(e as Error).message}` });
-                  }
+                disabled={discovering}
+                onClick={() => {
+                  setDiscovering(true);
+                  void window.codexApi.lanDiscover()
+                    .then(result => {
+                      notify('info', `Scanned the network: ${result.found} server(s), ${result.added} added.`);
+                      return window.codexApi.getSettings().then(setSettings);
+                    })
+                    .catch(error => notify('error', `Discovery failed: ${(error as Error).message}`))
+                    .finally(() => setDiscovering(false));
                 }}
               >
-                {lanForm.id ? 'Update' : 'Add'}
+                {discovering ? 'Scanning…' : 'Scan the local network'}
               </button>
+              <button className="codex-button codex-button-secondary" onClick={() => setShowEndpoints(false)}>Close</button>
             </div>
-          </div>
+          </section>
         </div>
       )}
     </div>
@@ -1120,42 +726,40 @@ export default function App() {
 
 function sessionLabel(repository?: string) {
   const trimmed = repository?.trim() || '';
-  if (!trimmed) return 'Untitled workspace';
+  if (!trimmed) return 'Untitled task';
   const segments = trimmed.split(/[\\/]/).filter(Boolean);
   return segments[segments.length - 1] || trimmed;
 }
 
-function describeConnection(session: SessionRecord, settings: AppSettings) {
-  const model = session.model?.trim();
-  if (session.provider === 'ollama') {
-    return ['Ollama', model, session.baseUrl || settings.ollama.baseUrl].filter(Boolean).join(' · ');
+function describeConnection(session: SessionRecord, settings: AppSettings | null) {
+  if (session.agent === 'codex' || session.provider === 'codex'
+    || session.provider === 'remote_llamacpp' || session.provider === 'lan' || session.provider === 'ollama') {
+    return ['Codex CLI', session.model, session.baseUrl].filter(Boolean).join(' · ');
   }
-  if (session.provider === 'remote_llamacpp') {
-    return ['Remote llama.cpp', model, session.baseUrl || settings.remoteLlamaCpp.baseUrl].filter(Boolean).join(' · ');
-  }
-  if (session.provider === 'lan') {
-    const provider = settings.lanProviders.find(candidate => candidate.id === session.selectedLanProviderId);
-    const endpoint = session.baseUrl || (provider ? `http://${provider.host}:${provider.port}/v1` : 'LAN endpoint');
-    return [provider?.name || 'Network AI', model, endpoint].filter(Boolean).join(' · ');
-  }
-  if (session.provider === 'gpt56') return `OpenAI cloud · ${model || 'gpt-5.6'} · Codex account`;
-  return ['OpenAI cloud', model || 'model selected by AI', 'AI account'].join(' · ');
+  const model = session.model || settings?.defaultModel;
+  return ['Hermes Agent', model].filter(Boolean).join(' · ');
 }
 
 function summarizeHealth(status: StartupStatus | null) {
-  if (!status) return { message: 'Checking Consiglio releases and provider interfaces…', color: '#58a6ff', borderColor: 'rgba(88, 166, 255, 0.28)' };
-  if (status.appUpdate.updateAvailable) return { message: status.appUpdate.message, color: '#d29922', borderColor: 'rgba(210, 153, 34, 0.36)' };
-  const hasError = status.checks.some(check => check.status === 'error');
-  if (hasError) return { message: 'Some startup checks need attention before sessions will be reliable.', color: '#f85149', borderColor: 'rgba(248, 81, 73, 0.36)' };
-  const hasWarning = status.checks.some(check => check.status === 'warning') || status.appUpdate.status === 'warning';
-  if (hasWarning) return { message: 'Consiglio started, but one or more provider/update checks could not be verified.', color: '#d29922', borderColor: 'rgba(210, 153, 34, 0.36)' };
-  return { message: 'Consiglio and configured provider interfaces look ready.', color: '#3fb950', borderColor: 'rgba(63, 185, 80, 0.36)' };
+  if (!status) return { message: 'Checking Hermes and provider readiness…', color: '#58a6ff', borderColor: 'rgba(88, 166, 255, 0.28)' };
+  const hermesCheck = status.checks.find(check => check.id === 'hermes-agent');
+  if (hermesCheck && hermesCheck.status === 'error') {
+    return { message: 'Hermes was not found — Consiglio cannot run a task yet.', color: '#f85149', borderColor: 'rgba(248, 81, 73, 0.36)' };
+  }
+  const updateCheck = status.checks.find(check => check.id === 'hermes-update');
+  if (updateCheck?.status === 'warning') {
+    return { message: updateCheck.message, color: '#d29922', borderColor: 'rgba(210, 153, 34, 0.36)' };
+  }
+  if (status.checks.some(check => check.status === 'error')) {
+    return { message: 'A startup check failed; tasks may not be reliable until it is fixed.', color: '#f85149', borderColor: 'rgba(248, 81, 73, 0.36)' };
+  }
+  return { message: 'Hermes is ready and Consiglio is connected.', color: '#3fb950', borderColor: 'rgba(63, 185, 80, 0.36)' };
 }
 
-function HealthPill({ label, status, message }: { label: string; status: HealthCheckItem['status'] | UpdateStatus['status']; message: string }) {
+function HealthPill({ label, status, message }: { label: string; status: HealthCheckItem['status']; message: string }) {
   const color = status === 'ok' ? '#3fb950' : status === 'error' ? '#f85149' : status === 'warning' ? '#d29922' : '#58a6ff';
   return (
-    <div className="codex-chip" title={message} style={{ maxWidth: 360, borderColor: `${color}66` }}>
+    <div className="codex-chip" title={message} style={{ maxWidth: 420, borderColor: `${color}66` }}>
       <span className="codex-chip-label" style={{ color }}>{label}</span>
       <span className="codex-chip-value" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{message}</span>
     </div>
@@ -1166,104 +770,100 @@ function ProviderSetupScreen({
   status,
   checking,
   progress,
+  autoUpdate,
+  onToggleAutoUpdate,
   onRefresh,
+  onStart,
+  onOpenHermes,
+  onOpenHermesSettings,
   onOpenCodex,
-  onOpenOllama,
-  onUseLan,
 }: {
   status: StartupStatus | null;
   checking: boolean;
-  progress: BootstrapProgress;
+  progress: BootstrapProgress | null;
+  autoUpdate: boolean;
+  onToggleAutoUpdate?: (next: boolean) => void;
   onRefresh?: () => void;
+  onStart?: () => void;
+  onOpenHermes?: () => void;
+  onOpenHermesSettings?: () => void;
   onOpenCodex?: () => void;
-  onOpenOllama?: () => void;
-  onUseLan?: () => void;
 }) {
-  const setup = status?.providerSetup;
-  const percent = Math.max(8, Math.round((progress.completed / Math.max(1, progress.total)) * 100));
+  const hermesCheck = status?.checks.find(check => check.id === 'hermes-agent');
+  const codexCheck = status?.checks.find(check => check.id === 'codex-cli');
+  const updateCheck = status?.checks.find(check => check.id === 'hermes-update');
+  const hermesReady = Boolean(hermesCheck && hermesCheck.status === 'ok');
+
   return (
     <main className="provider-setup-shell">
       <section className="provider-setup-card" aria-live="polite">
         <div className="provider-setup-brand">Consiglio</div>
         <div className="provider-setup-heading">
-          <span className="provider-setup-kicker">LOCAL-FIRST STARTUP</span>
-          <h1>{checking ? 'Finding and configuring local AI' : 'Your AI setup'}</h1>
+          <span className="provider-setup-kicker">FIRST RUN</span>
+          <h1>{checking ? 'Checking your Hermes install' : 'Consiglio drives Hermes'}</h1>
           <p>
-            Consiglio first searches this computer and its local network for llama.cpp, Ollama, and compatible OpenAI-style endpoints.
-            Codex and Open Interpreter are installed as lightweight front ends when missing.
+            Consiglio is a shell over Hermes Agent: sessions, transcripts and models come from
+            your Hermes configuration.
           </p>
         </div>
 
-        {checking && (
+        {checking && progress && (
           <div className="provider-discovery-progress">
             <span className="provider-discovery-spinner" aria-hidden="true" />
             <div className="provider-discovery-copy">
               <strong>{progress.message}</strong>
-              <div className="provider-discovery-track"><span style={{ width: `${percent}%` }} /></div>
+              <div className="provider-discovery-track">
+                <span style={{ width: `${Math.max(8, Math.round((progress.completed / Math.max(1, progress.total)) * 100))}%` }} />
+              </div>
             </div>
           </div>
         )}
 
         <div className="provider-setup-options">
-          <article className={`provider-setup-option${setup?.lanAvailable ? ' is-ready' : ''}`}>
+          <article className={`provider-setup-option${hermesReady ? ' is-ready' : ''}`}>
             <div className="provider-setup-option-title">
-              <span>llama.cpp and network AI</span>
-              <span className="provider-setup-tag is-lan">First choice</span>
+              <span>Hermes Agent</span>
+              <span className="provider-setup-tag">Default backend</span>
             </div>
-            <p>Use a running local or LAN model server without sending prompts to a hosted provider.</p>
-            <div className="provider-setup-status">
-              {setup?.lanAvailable
-                ? `${setup.lanProviderName} · ${setup.lanModel} · ${setup.lanEndpoint}`
-                : checking ? 'Scanning loopback and local subnets…' : 'No compatible llama.cpp endpoint responded.'}
+            <p>Consiglio talks to <code>hermes acp</code>. Models, providers and endpoints come from your Hermes config.</p>
+            <div className="provider-setup-status">{hermesCheck?.message || 'Checking Hermes…'}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="codex-button codex-button-primary" disabled={!hermesReady || !onStart} onClick={onStart}>
+                Start a Hermes task
+              </button>
+              <button className="codex-button codex-button-secondary" onClick={onOpenHermesSettings}>Hermes settings</button>
+              <button className="codex-button codex-button-secondary" onClick={onOpenHermes}>Open config file</button>
             </div>
-            {setup?.lanAvailable && <button className="codex-button codex-button-secondary" onClick={onUseLan}>Use this endpoint</button>}
           </article>
 
-          <article className={`provider-setup-option${setup?.ollamaAvailable ? ' is-ready' : ''}`}>
+          <article className={`provider-setup-option${codexCheck?.status === 'ok' ? ' is-ready' : ''}`}>
             <div className="provider-setup-option-title">
-              <span>Ollama</span>
-              <span className="provider-setup-tag is-free">Local</span>
+              <span>Codex CLI</span>
+              <span className="provider-setup-tag is-lan">Optional</span>
             </div>
-            <p>Use models already installed in Ollama on this computer.</p>
-            <div className="provider-setup-status">
-              {setup?.ollamaAvailable
-                ? `${setup.ollamaModels.length} local model${setup.ollamaModels.length === 1 ? '' : 's'} detected`
-                : checking ? 'Checking the Ollama service…' : 'Ollama is not running or has no installed model.'}
-            </div>
-            {!setup?.ollamaAvailable && !checking && <button className="codex-button codex-button-secondary" onClick={onOpenOllama}>Get Ollama</button>}
-          </article>
-
-          <article className={`provider-setup-option${setup?.codexInstalled ? ' is-ready' : ''}`}>
-            <div className="provider-setup-option-title">
-              <span>Codex agent front end</span>
-              <span className="provider-setup-tag">Automatic</span>
-            </div>
-            <p>Runs tasks against the selected local provider; cloud sign-in remains optional.</p>
-            <div className="provider-setup-status">
-              {setup?.codexInstalled
-                ? setup.codexAuthenticated ? 'Installed and signed in; local providers remain preferred' : 'Installed; ready for local providers'
-                : checking ? 'Installing Codex if needed…' : 'Automatic installation did not complete.'}
-            </div>
-            {!setup?.codexInstalled && !checking && <button className="codex-button codex-button-secondary" onClick={onOpenCodex}>Install manually</button>}
-          </article>
-
-          <article className={`provider-setup-option${status?.agentInstalls.some(agent => agent.id === 'open-interpreter' && agent.installed) ? ' is-ready' : ''}`}>
-            <div className="provider-setup-option-title">
-              <span>Open Interpreter</span>
-              <span className="provider-setup-tag">Automatic</span>
-            </div>
-            <p>Installed in an isolated Consiglio-managed Python environment when Python is available.</p>
-            <div className="provider-setup-status">
-              {status?.agentInstalls.find(agent => agent.id === 'open-interpreter')?.diagnostic || (checking ? 'Checking and installing if needed…' : 'Not yet verified.')}
-            </div>
+            <p>Run the Codex CLI as an alternative backend, with its own profile and MCP servers.</p>
+            <div className="provider-setup-status">{codexCheck?.message || 'Codex CLI not detected.'}</div>
+            {codexCheck?.status !== 'ok' && (
+              <button className="codex-button codex-button-secondary" onClick={onOpenCodex}>Install Codex</button>
+            )}
           </article>
         </div>
 
         <div className="provider-setup-actions">
-          <span>{checking ? progress.message : 'Discovery can be run again whenever local services or models change.'}</span>
-          <button className="codex-button codex-button-primary" onClick={onRefresh} disabled={checking || !onRefresh}>
-            {checking ? 'Discovering…' : 'Discover again'}
-          </button>
+          <span>{updateCheck?.message || (checking ? progress?.message || 'Checking…' : 'Checks can be run again at any time.')}</span>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <label className="codex-update-checkbox" style={{ border: 'none', padding: 0, margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={autoUpdate}
+                onChange={event => onToggleAutoUpdate?.(event.target.checked)}
+              />
+              <span>Auto-update Hermes on startup</span>
+            </label>
+            <button className="codex-button codex-button-secondary" onClick={onRefresh} disabled={checking || !onRefresh}>
+              {checking ? 'Checking…' : 'Check again'}
+            </button>
+          </div>
         </div>
       </section>
     </main>
