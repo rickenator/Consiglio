@@ -210,8 +210,10 @@ bool HermesSetup::separateInstallSupported(const Environment &env) {
 }
 
 QString HermesSetup::launchExecutable() {
-    const Choice c = savedChoice();
-    if (c == Choice::Separate) {
+    // An explicit path (Settings, or "use a different hermes") always wins.
+    const QString override = QSettings().value(kExecutableKey).toString().trimmed();
+    if (!override.isEmpty()) return override;
+    if (savedChoice() == Choice::Separate) {
         const QString root = separateRoot();
 #ifdef Q_OS_WIN
         const bool win = true;
@@ -222,13 +224,16 @@ QString HermesSetup::launchExecutable() {
             if (QFileInfo::exists(p)) return p;
         return separateExecutableCandidates(root, win).first();
     }
-    if (c == Choice::Custom) return QSettings().value(kExecutableKey).toString().trimmed();
-    return QSettings().value(kExecutableKey).toString().trimmed();   // "" unless the user set an override
+    return {};   // automatic resolution: $HERMES_BIN, PATH, standard folders
 }
 
 QProcessEnvironment HermesSetup::processEnvironment(QProcessEnvironment base) {
+    // Only the separate copy gets its own HERMES_HOME; an existing Hermes
+    // keeps whatever environment the user already has.
     const QString root = separateRoot();
-    if (!root.isEmpty()) base.insert(QStringLiteral("HERMES_HOME"), separateHermesHome(root));
+    if (savedChoice() == Choice::Separate && !root.isEmpty()
+        && QSettings().value(kExecutableKey).toString().trimmed().isEmpty())
+        base.insert(QStringLiteral("HERMES_HOME"), separateHermesHome(root));
     return base;
 }
 

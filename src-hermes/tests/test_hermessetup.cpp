@@ -273,6 +273,10 @@ private slots:
         QCOMPARE(HermesSetup::launchExecutable(), root + "/.local/bin/hermes");
         QCOMPARE(HermesSetup::processEnvironment(QProcessEnvironment()).value("HERMES_HOME"), root + "/.hermes");
         QCOMPARE(snapshot(m_home), before);
+        // A path set later in Settings wins, and then no HERMES_HOME is forced.
+        QSettings().setValue("hermes/executable", "/opt/other/hermes");
+        QCOMPARE(HermesSetup::launchExecutable(), QStringLiteral("/opt/other/hermes"));
+        QVERIFY(!HermesSetup::processEnvironment(QProcessEnvironment()).contains("HERMES_HOME"));
     }
 
     void windowsDoesNotOfferSeparateCopies() {

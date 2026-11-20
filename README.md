@@ -80,9 +80,39 @@ Hermes is powerful, but serious work rarely fits into one terminal session. Cons
 
 ## Start Here
 
-### 1. Install Hermes Agent
+### 1. Download Consiglio · Hermes
 
-Use the official installer ([Hermes installation docs](https://hermes-agent.nousresearch.com/docs/getting-started/installation)):
+The native Hermes client is on the [releases page](https://github.com/rickenator/Consiglio/releases/latest):
+
+| Platform | Download | Notes |
+| --- | --- | --- |
+| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-<version>-linux-amd64.deb` | `sudo apt install ./Consiglio-Hermes-*.deb`; uses the system Qt 5 |
+| Other Linux x64 | `Consiglio-Hermes-<version>-linux-x86_64.AppImage` | `chmod +x` and run; Qt is bundled |
+| macOS Apple Silicon | `Consiglio-Hermes-<version>-mac-arm64.dmg` | drag **Consiglio Hermes** to Applications |
+| macOS Intel | `Consiglio-Hermes-<version>-mac-x64.dmg` | drag **Consiglio Hermes** to Applications |
+| Windows 10/11 x64 | `Consiglio-Hermes-<version>-win-x64.zip` | unzip anywhere and run `ConsiglioHermes.exe` |
+
+The macOS and Windows builds are not code-signed yet. On macOS, right-click the app and choose **Open** the first time (or run `xattr -dr com.apple.quarantine "/Applications/Consiglio Hermes.app"`); on Windows, SmartScreen asks you to confirm. Every file is listed in `SHA256SUMS.txt` and covered by the release's provenance attestation ([verifying a download](docs/RELEASING.md#verify-a-downloaded-release)).
+
+None of these packages installs, updates or touches Hermes Agent: the `.deb` has no install scripts, and the AppImage, `.dmg` and `.zip` are just the app.
+
+### 2. First launch: your existing Hermes is kept as it is
+
+On first launch Consiglio looks for Hermes without changing anything: `$HERMES_BIN`, then `PATH`, then the standard install folders, and the Hermes data folder (`$HERMES_HOME`, or `~/.hermes`; `%LOCALAPPDATA%\hermes` on Windows). It shows what it found (version, executable, data folder, whether there is a config, API keys, sessions and skills; key files are never read) and asks:
+
+<p align="center">
+  <img src="docs/screenshots/setup-existing.png" alt="First-run setup: an existing Hermes was found and will be used as it is" width="560">
+</p>
+
+- **Use this Hermes as it is** (the default). Consiglio doesn't modify, update, reinstall or migrate it, and doesn't pin its path or version, so `hermes update` keeps working.
+- **Use a different hermes executable.** Only the path you pick is stored.
+- **Install a separate, fresh copy** (Linux and macOS). The official installer runs in its own folder with its own home, so your existing Hermes, its launcher in `~/.local/bin` and your shell profile are left alone. Consiglio then runs that copy with its own `HERMES_HOME`. (Not offered on Windows, where the official installer always edits the user `PATH`.)
+
+If no Hermes is found, Consiglio offers to open the official installer in a terminal, or to skip. If there is Hermes data but no executable, running the installer against that data needs an explicit tick-box first. Nothing is installed until you press the button, and **Settings → Hermes Agent → Detect Hermes again…** brings the dialog back.
+
+### 3. Install Hermes Agent yourself (optional)
+
+If you prefer, use the official installer before launching Consiglio ([Hermes installation docs](https://hermes-agent.nousresearch.com/docs/getting-started/installation)):
 
 ```bash
 # Linux, macOS, WSL2
@@ -103,7 +133,7 @@ hermes doctor
 
 Consiglio uses whatever provider and model Hermes is configured with. It was developed and tested against Hermes v0.23.3, and it works out what each newer version supports when it connects.
 
-### 2. Build and run Consiglio · Hermes
+#### Build from source
 
 The native client needs CMake 3.16+, a C++17 compiler and Qt 5 (Core, Gui, Widgets, Svg, Test). On Debian or Ubuntu:
 
@@ -116,20 +146,21 @@ cmake --build src-hermes/build -j
 src-hermes/build/ConsiglioHermes
 ```
 
-On macOS, install `cmake` and `qt@5` with Homebrew and add `-DCMAKE_PREFIX_PATH="$(brew --prefix qt@5)"` to the first `cmake` command. The client is developed and tested on Linux. There are no prebuilt packages of it yet: the [release downloads](https://github.com/rickenator/Consiglio/releases/latest) are the [Electron app](#optional-and-legacy-backends) below. Tests and the screenshot tour are described in [`src-hermes/README.md`](src-hermes/README.md).
+On macOS, install `cmake` and `qt@5` with Homebrew and add `-DCMAKE_PREFIX_PATH="$(brew --prefix qt@5)"` to the first `cmake` command. On Windows, use Qt 5.15 for MSVC and Visual Studio 2019 or newer. `src-hermes/packaging/package.sh` builds the same packages as a release. Tests and the screenshot tours are described in [`src-hermes/README.md`](src-hermes/README.md).
 
-### 3. How Consiglio finds Hermes
+### How Consiglio finds Hermes
 
 The executable is looked up every time the agent starts, in this order:
 
-1. a path set in Settings → Hermes Agent, or passed as `--hermes <path>`;
-2. `$HERMES_BIN`;
-3. `PATH`;
-4. the standard install locations: `~/.local/bin`, `~/.hermes/hermes-agent/venv/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `~/bin`.
+1. a path set in Settings → Hermes Agent (or in first-run setup), or passed as `--hermes <path>`;
+2. a separate copy you installed from first-run setup;
+3. `$HERMES_BIN`;
+4. `PATH`;
+5. the standard install locations: `~/.local/bin`, `~/.hermes/hermes-agent/venv/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `~/bin` (on Windows, `%LOCALAPPDATA%\hermes\bin`).
 
 So an app opened from a desktop launcher still finds a Hermes installed in `~/.local/bin`, even when its `PATH` is shorter than a terminal's.
 
-### 4. Hermes updates itself
+### Hermes updates itself
 
 Hermes updates with `hermes update`, or from **Hermes → Check for Updates** in Consiglio. Consiglio never pins a Hermes path or version:
 
@@ -185,18 +216,20 @@ Consiglio · Hermes starts `hermes acp` as a child process with an argument list
 
 **Which model does it use?** Whichever one Hermes is configured with (`hermes model`, or the toolbar model picker). Consiglio doesn't store provider keys for Hermes; they stay in Hermes's own `~/.hermes/.env`.
 
-**Does it work after `hermes update`?** Yes. See [Hermes updates itself](#4-hermes-updates-itself).
+**Does it work after `hermes update`?** Yes. See [Hermes updates itself](#hermes-updates-itself).
 
 **A command I just got from an update is missing.** Use **Hermes → Refresh Command List**. If the agent was running during the update, restart it first (Ctrl+Shift+R).
 
 **Nothing happens when I send a prompt.** Check the status bar, then run `hermes doctor` and `hermes status` (both are also under Settings → Hermes Agent). A missing or misconfigured provider is the usual cause: run `hermes setup`.
 
-**Where are the downloads?** The [releases](https://github.com/rickenator/Consiglio/releases/latest) currently contain only the Electron app. Build Consiglio · Hermes from source as shown above.
+**Where are the downloads?** On the [releases page](https://github.com/rickenator/Consiglio/releases/latest): the `Consiglio-Hermes-*` files are the native Hermes client (see [Download](#1-download-consiglio--hermes)); the other `Consiglio-*` files are the [Electron app](#optional-and-legacy-backends).
+
+**Will Consiglio change my existing Hermes setup?** No. It detects Hermes read-only and, by default, uses it as it is. It only runs an installer when you choose one in first-run setup, and writing into an existing Hermes data folder needs an explicit tick-box.
 
 ## Optional And Legacy Backends
 
 > [!NOTE]
-> Everything in this section is about the **Electron app** (`src/`, the packages on the releases page) and the earlier **Qt client** (`src-qt/`). These are still in the repository and still work, but they are no longer the primary way to use Consiglio. The Electron app does not run Hermes; it runs the Codex CLI, plus preview adapters for other coding-agent CLIs.
+> Everything in this section is about the **Electron app** (`src/`, the `Consiglio-<version>-*` packages on the releases page) and the earlier **Qt client** (`src-qt/`). These are still in the repository and still work, but they are no longer the primary way to use Consiglio. The Electron app does not run Hermes; it runs the Codex CLI, plus preview adapters for other coding-agent CLIs.
 
 ### Qt client with one-shot Hermes (`src-qt`)
 
