@@ -101,7 +101,12 @@ mac)
     codesign --force --deep --sign "${MAC_CODESIGN_IDENTITY:--}" "$app"
     codesign --verify --deep --strict "$app"
     # Smoke test with only what the bundle carries (the default cocoa plugin).
-    env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM -u QML2_IMPORT_PATH "$app/Contents/MacOS/ConsiglioHermes" --version
+    if ! env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM -u QML2_IMPORT_PATH "$app/Contents/MacOS/ConsiglioHermes" --version; then
+        env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM QT_DEBUG_PLUGINS=1 "$app/Contents/MacOS/ConsiglioHermes" --version 2>&1 | tail -n 40 || true
+        otool -L "$app/Contents/PlugIns/platforms/libqcocoa.dylib" || true
+        ls "$app/Contents/Frameworks" || true
+        exit 1
+    fi
     ln -s /Applications "$stage/Applications"
     hdiutil create -volname "Consiglio Hermes $version" -srcfolder "$stage" -ov -format UDZO \
         "$out/$base-mac-$arch.dmg"
