@@ -166,9 +166,10 @@ QList<HermesCli::ConfigSection> HermesCli::parseConfigShow(const QString &raw) {
         ConfigRow row;
         if (const auto m = notSet.match(line); m.hasMatch()) {
             row.key = m.captured(1).trimmed();
+            if (row.key.endsWith(':')) row.key.chop(1);
             row.value = QObject::tr("Not set");
             row.set = false;
-        } else if (const auto c = colon.match(line); c.hasMatch() && !inApiKeys) {
+        } else if (const auto c = colon.match(line); c.hasMatch()) {
             row.key = c.captured(1).trimmed();
             row.value = c.captured(2).trimmed();
         } else if (const auto s = spaced.match(line); s.hasMatch()) {

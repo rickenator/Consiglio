@@ -64,8 +64,10 @@ add_test(NAME AcpClientTests COMMAND test_acpclient)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_commandcatalog.cpp")
     add_executable(test_commandcatalog tests/test_commandcatalog.cpp)
-    target_link_libraries(test_commandcatalog PRIVATE Qt5::Core Qt5::Test HermesUi)
+    target_link_libraries(test_commandcatalog PRIVATE Qt5::Test HermesUi)
+    target_compile_definitions(test_commandcatalog PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     add_test(NAME CommandCatalogTests COMMAND test_commandcatalog)
+    set_tests_properties(CommandCatalogTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mainwindow.cpp")

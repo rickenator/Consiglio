@@ -1,0 +1,24 @@
+📚 **Commands** (110 total, page 2/6)
+
+`/goal [text | -- <text> | draft <text> | show | gate add <cmd> | pause | resume | clear | status | wait <pid> | unwait]` -- Set a standing goal Hermes works on across turns until achieved
+`/heartbeat [every <interval> <prompt> | status | pause | resume | clear]` -- Set a recurring prompt that re-enters this session when idle (alias: `/hb`)
+`/refine [focus instructions]` -- Review this conversation now and save lessons to memory/skills
+`/review [review instructions]` -- Spawn an independent subagent to review the work just discussed (PR, code, docs)
+`/loop [interval] <prompt> [--times N] [--until <condition>] | status | pause | resume | stop` -- Re-run a prompt on a recurring interval in this session (alias: `/proactive`)
+`/plan [task]` -- Write a markdown implementation plan to .hermes/plans/ without executing anything
+`/moa <prompt>` -- Run one prompt through the default Mixture of Agents preset, then restore your model
+`/subgoal [text | remove N | clear]` -- Add or manage extra criteria on the active goal
+`/status` -- Show session, model, token, and context info
+`/egress [status]` -- Show Docker egress proxy status
+`/context [all]` -- Show detailed context window view with usage gauge, category breakdown, compression stats, and throughput (alias: `/ctx`)
+`/whoami` -- Show your slash command access (admin / user)
+`/profile` -- Show active profile name and home directory
+`/sethome` -- Set this chat as the home channel (alias: `/set-home`)
+`/resume [name]` -- Resume a previously-named session
+`/sessions` -- Browse and resume previous sessions
+`/model [model|reset] [--provider name] [--reasoning level] [--global|--session] [--refresh]` -- Switch model (session-scoped; --global to persist)
+`/codex-runtime [auto|codex_app_server]` -- Toggle codex app-server runtime for OpenAI/Codex models
+`/personality [name]` -- Set a predefined personality
+`/diff [staged|all|session] [--stat] [path...]` -- Show git changes in the working directory
+
+`/commands 1` ← prev | next → `/commands 3`

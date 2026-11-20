@@ -267,7 +267,7 @@ GoalDialog::GoalDialog(const CommandCatalog::GoalStatus &current, bool draftAvai
 
 QString GoalDialog::goalText() const { return m_text->toPlainText().trimmed(); }
 void GoalDialog::setGoalText(const QString &text) { m_text->setPlainText(text); }
-bool GoalDialog::draft() const { return m_draft->isVisible() && m_draft->isChecked(); }
+bool GoalDialog::draft() const { return !m_draft->isHidden() && m_draft->isChecked(); }
 void GoalDialog::setDraft(bool draft) { m_draft->setChecked(draft); }
 
 QString GoalDialog::commandLine() const {

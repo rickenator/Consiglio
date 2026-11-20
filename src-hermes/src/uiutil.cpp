@@ -270,8 +270,10 @@ QString maskSecrets(const QString &text) {
     static const QRegularExpression bearer(QStringLiteral("(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]{8,}"));
     out.replace(bearer, QStringLiteral("\\1••••••••"));
     // KEY: value / KEY=value where the key name says it's a secret.
+    // Only values that contain a letter (so "Tokens: 1,204" stays readable).
     static const QRegularExpression kv(QStringLiteral(
-        "(?im)^(\\s*[\\w.-]*(?:api[_-]?key|token|secret|password|passwd)[\\w.-]*\\s*[:=]\\s*)(?!\\(not set\\)|not set|none|null|$)(\\S.*)$"));
+        "(?i)(\\b[\\w.-]*(?:api[_-]?key|token|secret|password|passwd)[\\w.-]*\\s*[:=]\\s*)"
+        "(?!\\(not set\\)|not set\\b|none\\b|null\\b)((?=[^\\s,;]*[A-Za-z])[^\\s,;]+)"));
     out.replace(kv, QStringLiteral("\\1••••••••"));
     return out;
 }

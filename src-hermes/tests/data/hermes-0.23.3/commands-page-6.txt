@@ -1,0 +1,14 @@
+📚 **Commands** (110 total, page 6/6)
+
+`/requesting-code-review` — Pre-commit review: security scan, quality gates, auto-fix.
+`/simplify-code` — Parallel 4-agent cleanup of recent code changes.
+`/songwriting-and-ai-music` — Songwriting craft and Suno AI music prompts.
+`/spike` — Throwaway experiments to validate an idea before build.
+`/systematic-debugging` — 4-phase root cause debugging: understand bugs before fixing.
+`/teams-meeting-pipeline` — Teams meeting summaries, job replay, Graph subscriptions.
+`/test-driven-development` — TDD: enforce RED-GREEN-REFACTOR, tests before code.
+`/weekly-review-planning` — Weekly reset: commitments, stalled work, next-week plan.
+`/xurl` — X/Twitter via xurl CLI: raw post search, posting, DM, media.
+`/youtube-content` — YouTube transcripts to summaries, threads, blogs.
+
+`/commands 5` ← prev

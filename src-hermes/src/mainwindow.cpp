@@ -321,7 +321,7 @@ void MainWindow::setupActions() {
                tr("Stop the response Hermes is writing"));
     makeAction("app:settings", tr("&Settings…"), "settings", QKeySequence(Qt::CTRL | Qt::Key_Comma),
                tr("Appearance, session options, Hermes setup and configuration"));
-    makeAction("app:quit", tr("&Quit"), "power", QKeySequence::Quit, tr("Quit Consiglio"));
+    makeAction("app:quit", tr("&Quit"), "power", QKeySequence(Qt::CTRL | Qt::Key_Q), tr("Quit Consiglio"));
     makeAction("app:workspace", tr("Choose &Workspace Folder…"), "folder-open", QKeySequence(Qt::CTRL | Qt::Key_O),
                tr("Pick the folder new sessions work in"));
 
@@ -657,7 +657,7 @@ void MainWindow::rebuildCommandMenus() {
         any = true;
     }
     if (!any) {
-        QAction *none = m_hermesMenu->addAction(tr("Commands appear once Hermes connects"));
+        QAction *none = m_hermesMenu->addAction(tr("Start a session to load Hermes commands"));
         none->setEnabled(false);
     }
     m_hermesMenu->addSeparator();
