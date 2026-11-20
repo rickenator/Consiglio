@@ -82,19 +82,26 @@ Hermes is powerful, but serious work rarely fits into one terminal session. Cons
 
 ### 1. Download Consiglio · Hermes
 
-The native Hermes client is on the [releases page](https://github.com/rickenator/Consiglio/releases/latest):
+The [releases page](https://github.com/rickenator/Consiglio/releases/latest) has **two** apps, and their filenames look alike. GitHub lists them alphabetically, so the classic Electron packages appear first.
 
-| Platform | Download | Notes |
+> [!IMPORTANT]
+> **Want the native Hermes client shown in the screenshots at the top of this README?** The filename must contain **`Consiglio-Hermes-`**.
+>
+> Files named only `Consiglio-<version>-…` (no `Hermes`) are the **classic Electron app**. They wrap Codex and other CLIs and **do not run Hermes**. They are still published so those features stay available; they are not the new Hermes client.
+
+| Your computer | Native Hermes client (**recommended**) | Classic Electron app (Codex and other CLIs) |
 | --- | --- | --- |
-| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-<version>-linux-amd64.deb` | `sudo apt install ./Consiglio-Hermes-*.deb`; uses the system Qt 5 |
-| Other Linux x64 | `Consiglio-Hermes-<version>-linux-x86_64.AppImage` | `chmod +x` and run; Qt is bundled |
-| macOS Apple Silicon | `Consiglio-Hermes-<version>-mac-arm64.dmg` | drag **Consiglio Hermes** to Applications |
-| macOS Intel | `Consiglio-Hermes-<version>-mac-x64.dmg` | drag **Consiglio Hermes** to Applications |
-| Windows 10/11 x64 | `Consiglio-Hermes-<version>-win-x64.zip` | unzip anywhere and run `ConsiglioHermes.exe` |
+| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-<version>-linux-amd64.deb` | `Consiglio-<version>-linux-amd64.deb` |
+| Other Linux x64 | `Consiglio-Hermes-<version>-linux-x86_64.AppImage` | `Consiglio-<version>-linux-x86_64.AppImage` |
+| macOS Apple Silicon | `Consiglio-Hermes-<version>-mac-arm64.dmg` | `Consiglio-<version>-mac-arm64.dmg` |
+| macOS Intel | `Consiglio-Hermes-<version>-mac-x64.dmg` | `Consiglio-<version>-mac-x64.dmg` |
+| Windows 10/11 x64 | `Consiglio-Hermes-<version>-win-x64.zip` (run `ConsiglioHermes.exe`) | `Consiglio-<version>-windows-x64-setup.exe` |
+
+On Debian or Ubuntu, install the Hermes client with `sudo apt install ./Consiglio-Hermes-*.deb`. The AppImage is `chmod +x` and run (Qt is bundled; the `.deb` uses the system Qt 5). macOS: drag **Consiglio Hermes** to Applications. Windows: unzip the Hermes zip anywhere.
 
 The macOS and Windows builds are not code-signed yet. On macOS, right-click the app and choose **Open** the first time (or run `xattr -dr com.apple.quarantine "/Applications/Consiglio Hermes.app"`); on Windows, SmartScreen asks you to confirm. Every file is listed in `SHA256SUMS.txt` and covered by the release's provenance attestation ([verifying a download](docs/RELEASING.md#verify-a-downloaded-release)).
 
-None of these packages installs, updates or touches Hermes Agent: the `.deb` has no install scripts, and the AppImage, `.dmg` and `.zip` are just the app.
+None of the Hermes-client packages installs, updates or touches Hermes Agent: the `.deb` has no install scripts, and the AppImage, `.dmg` and `.zip` are just the app.
 
 ### 2. First launch: your existing Hermes is kept as it is
 
@@ -222,7 +229,7 @@ Consiglio · Hermes starts `hermes acp` as a child process with an argument list
 
 **Nothing happens when I send a prompt.** Check the status bar, then run `hermes doctor` and `hermes status` (both are also under Settings → Hermes Agent). A missing or misconfigured provider is the usual cause: run `hermes setup`.
 
-**Where are the downloads?** On the [releases page](https://github.com/rickenator/Consiglio/releases/latest): the `Consiglio-Hermes-*` files are the native Hermes client (see [Download](#1-download-consiglio--hermes)); the other `Consiglio-*` files are the [Electron app](#optional-and-legacy-backends).
+**Where are the downloads?** On the [releases page](https://github.com/rickenator/Consiglio/releases/latest). The filename must contain **`Consiglio-Hermes-`** for the native Hermes client shown in the screenshots (see [Download](#1-download-consiglio--hermes)). Files named only `Consiglio-<version>-…` (no `Hermes`) are the [classic Electron app](#optional-and-legacy-backends); they do not run Hermes.
 
 **Will Consiglio change my existing Hermes setup?** No. It detects Hermes read-only and, by default, uses it as it is. It only runs an installer when you choose one in first-run setup, and writing into an existing Hermes data folder needs an explicit tick-box.
 
@@ -245,11 +252,13 @@ The Electron app wraps the Codex CLI: persistent tasks that reconnect at startup
 
 #### Download
 
+These are the **classic Electron** packages. Their filenames start with `Consiglio-<version>-` and do **not** contain `Hermes`. They are not the native Hermes client (that one is `Consiglio-Hermes-*`; see [Download Consiglio · Hermes](#1-download-consiglio--hermes)).
+
 | Platform | Recommended package | Alternative |
 | --- | --- | --- |
-| Linux x64 | `.deb` for Debian and Ubuntu | AppImage for other distributions |
-| Windows x64 | Setup `.exe` | Portable `.exe` |
-| macOS Apple Silicon or Intel | `.dmg` | `.zip` |
+| Linux x64 | `Consiglio-<version>-linux-amd64.deb` | `Consiglio-<version>-linux-x86_64.AppImage` |
+| Windows x64 | `Consiglio-<version>-windows-x64-setup.exe` | `Consiglio-<version>-windows-x64-portable.exe` |
+| macOS Apple Silicon or Intel | `Consiglio-<version>-mac-arm64.dmg` or `…-mac-x64.dmg` | the matching `.zip` |
 
 From the [releases page](https://github.com/rickenator/Consiglio/releases/latest). Every change is type-checked, tested, built and packaged on Linux, Windows and macOS.
 
