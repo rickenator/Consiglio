@@ -144,7 +144,8 @@ test('CodexAdapter: buildProviderArgs for remote_llamacpp includes model and pro
 
   const adapter = new (CodexAdapter as never)(emitters);
   // Access the private method via any cast
-  const buildArgs = (adapter as any).buildProviderArgs.bind(adapter);
+  // buildProviderArgs(state, options): the session state carries provider + env.
+  const buildArgs = (opts: any) => (adapter as any).buildProviderArgs({ provider: opts.provider || 'default', env: {} }, opts);
 
   const args = buildArgs({
     repository: '/tmp/test',
@@ -165,7 +166,8 @@ test('CodexAdapter: buildProviderArgs for ollama includes model and provider con
   const { CodexAdapter } = await import('../src/main/adapters/codex-adapter.ts');
 
   const adapter = new (CodexAdapter as never)(emitters);
-  const buildArgs = (adapter as any).buildProviderArgs.bind(adapter);
+  // buildProviderArgs(state, options): the session state carries provider + env.
+  const buildArgs = (opts: any) => (adapter as any).buildProviderArgs({ provider: opts.provider || 'default', env: {} }, opts);
 
   const args = buildArgs({
     repository: '/tmp/test',
@@ -185,7 +187,8 @@ test('CodexAdapter: buildProviderArgs for gpt56 includes model flag', async () =
   const { CodexAdapter } = await import('../src/main/adapters/codex-adapter.ts');
 
   const adapter = new (CodexAdapter as never)(emitters);
-  const buildArgs = (adapter as any).buildProviderArgs.bind(adapter);
+  // buildProviderArgs(state, options): the session state carries provider + env.
+  const buildArgs = (opts: any) => (adapter as any).buildProviderArgs({ provider: opts.provider || 'default', env: {} }, opts);
 
   const args = buildArgs({
     repository: '/tmp/test',
@@ -203,7 +206,8 @@ test('CodexAdapter: buildProviderArgs for default provider has no provider-speci
   const { CodexAdapter } = await import('../src/main/adapters/codex-adapter.ts');
 
   const adapter = new (CodexAdapter as never)(emitters);
-  const buildArgs = (adapter as any).buildProviderArgs.bind(adapter);
+  // buildProviderArgs(state, options): the session state carries provider + env.
+  const buildArgs = (opts: any) => (adapter as any).buildProviderArgs({ provider: opts.provider || 'default', env: {} }, opts);
 
   const args = buildArgs({
     repository: '/tmp/test',
@@ -220,7 +224,8 @@ test('CodexAdapter: buildProviderArgs for lan provider includes multi_agent and 
   const { CodexAdapter } = await import('../src/main/adapters/codex-adapter.ts');
 
   const adapter = new (CodexAdapter as never)(emitters);
-  const buildArgs = (adapter as any).buildProviderArgs.bind(adapter);
+  // buildProviderArgs(state, options): the session state carries provider + env.
+  const buildArgs = (opts: any) => (adapter as any).buildProviderArgs({ provider: opts.provider || 'default', env: {} }, opts);
 
   const args = buildArgs({
     repository: '/tmp/test',

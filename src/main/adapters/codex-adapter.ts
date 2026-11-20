@@ -205,7 +205,10 @@ export class CodexAdapter implements AgentAdapter {
   private buildProviderArgs(state: SessionState, options: AgentSessionOptions): string[] {
     const args: string[] = [];
     const provider = state.provider;
-    const config = options.providerConfig || {};
+    // Prefer the caller-resolved endpoint; fall back to the legacy top-level
+    // model/baseUrl/apiKey fields so older callers keep working.
+    const config = options.providerConfig
+      || { baseUrl: options.baseUrl, model: options.model, apiKey: options.apiKey };
     const isLocalOpenAiCompatibleProvider = provider === 'remote_llamacpp' || provider === 'lan';
 
     if (isLocalOpenAiCompatibleProvider) {
