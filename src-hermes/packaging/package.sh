@@ -80,6 +80,34 @@ mac)
     app="$stage/Consiglio Hermes.app"
     macdeployqt="${MACDEPLOYQT:-$(command -v macdeployqt)}"
     "$macdeployqt" "$app" -always-overwrite
+    # macdeployqt misses @rpath dependencies of third-party dylibs (Homebrew's
+    # libbrotlidec -> @rpath/libbrotlicommon, ...). Copy each missing one next
+    # to the others and point every reference at the bundled copy.
+    fw="$app/Contents/Frameworks"
+    libsearch=()
+    command -v brew >/dev/null 2>&1 && libsearch+=("$(brew --prefix)/lib")
+    [ -n "${QT_ROOT_DIR:-}" ] && libsearch+=("$QT_ROOT_DIR/lib")
+    for pass in 1 2 3 4 5; do
+        changed=0
+        for lib in "$fw"/*.dylib; do
+            [ -f "$lib" ] || continue
+            while IFS= read -r dep; do
+                case "$dep" in @rpath/*|@loader_path/*) ;; *) continue ;; esac
+                name="${dep##*/}"
+                [ "$name" = "$(basename "$lib")" ] && continue
+                if [ ! -f "$fw/$name" ]; then
+                    src=""
+                    for d in "${libsearch[@]}"; do [ -f "$d/$name" ] && { src="$d/$name"; break; }; done
+                    [ -n "$src" ] || { echo "cannot find $name for $(basename "$lib")" >&2; exit 1; }
+                    cp -L "$src" "$fw/$name"; chmod u+w "$fw/$name"
+                    install_name_tool -id "@executable_path/../Frameworks/$name" "$fw/$name"
+                    changed=1
+                fi
+                install_name_tool -change "$dep" "@executable_path/../Frameworks/$name" "$lib"
+            done < <(otool -L "$lib" | tail -n +2 | awk '{print $1}')
+        done
+        [ "$changed" -eq 0 ] && break
+    done
     # Nothing in the bundle may point back at the build machine's Qt.
     # (A dylib's own install name is listed first by otool -L and doesn't
     # matter at load time, so only its dependencies are checked.)
