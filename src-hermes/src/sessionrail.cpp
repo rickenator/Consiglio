@@ -113,7 +113,7 @@ SessionRail::SessionRail(QWidget *parent) : QWidget(parent) {
     atext->addWidget(m_activeTitle);
     atext->addWidget(m_activeCwd);
     al->addLayout(atext, 1);
-    m_stopBtn = ui::iconButton("square", ui::withShortcut(tr("End session"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_W)),
+    m_stopBtn = ui::iconButton("x", ui::withShortcut(tr("End session"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_W)),
                                m_activeCard, "blockAction", 14);
     al->addWidget(m_stopBtn, 0, Qt::AlignVCenter);
     m_activeCard->setVisible(false);
@@ -186,7 +186,7 @@ void SessionRail::restyle() {
     auto &t = Theme::instance();
     m_workspaceBtn->setIcon(t.icon("folder"));
     m_newBtn->setIcon(t.icon("plus", t.tokens().accentText));
-    m_stopBtn->setIcon(t.icon("square"));
+    m_stopBtn->setIcon(t.icon("x"));
     m_sessionsList->viewport()->update();
 }
 

@@ -394,7 +394,11 @@ QPushButton[role="primary"] {
 }
 QPushButton[role="primary"]:hover { background: %accentHover; border-color: %accentHover; }
 QPushButton[role="primary"]:disabled { background: %hover; color: %textFaint; border-color: %border; }
+QPushButton[role="primary"]:default { background: %accent; color: %accentText; border-color: %accent; }
+QPushButton[role="primary"]:default:hover { background: %accentHover; border-color: %accentHover; }
+QPushButton[role="primary"]:default:disabled { background: %hover; color: %textFaint; border-color: %border; }
 QPushButton[role="danger"] { background: %raised; color: %danger; border-color: %borderStrong; }
+QPushButton[role="danger"]:default { background: %raised; color: %danger; border-color: %danger; }
 QPushButton[role="danger"]:hover { background: %dangerSoft; border-color: %danger; }
 QPushButton[role="ghost"] { background: transparent; border-color: transparent; color: %textMuted; }
 QPushButton[role="ghost"]:hover { background: %hover; color: %text; }
@@ -413,6 +417,22 @@ QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox {
 }
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus { border: 1px solid %focus; }
 QLineEdit:disabled, QPlainTextEdit:disabled { color: %textFaint; background: %surface; }
+QSpinBox, QDoubleSpinBox { padding-right: %p26px; }
+QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border; width: %p22px; border: none; border-left: 1px solid %border; background: transparent;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-position: top right; border-top-right-radius: %rpx; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-position: bottom right; border-bottom-right-radius: %rpx; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { background: %hover; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(%chevronUp); width: %p10px; height: %p10px; }
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(%chevron); width: %p10px; height: %p10px; }
+QSlider::groove:horizontal { height: %p4px; background: %hover; border-radius: %p2px; }
+QSlider::sub-page:horizontal { background: %accent; border-radius: %p2px; }
+QSlider::handle:horizontal {
+    background: %accentText; border: %p2px solid %accent; width: %p12px; height: %p12px;
+    margin: -%p6px 0; border-radius: %p8px;
+}
+QSlider::handle:horizontal:hover { background: %accentSoft; }
 QComboBox {
     background: %raised; color: %text; border: 1px solid %borderStrong;
     border-radius: %rpx; padding: %p5px %p30px %p5px %p10px; min-height: %p18px;
@@ -555,10 +575,12 @@ QLabel#emptyTitle { font-size: %p22px; font-weight: 650; color: %text; }
 QLabel#emptySubtitle { color: %textMuted; font-size: %p14px; }
 QPushButton#emptyAction {
     background: %surface; border: 1px solid %border; border-radius: %rlpx;
-    padding: %p10px %p14px; text-align: left; color: %text;
+    padding: %p10px %p14px; text-align: left; color: %text; min-height: %p38px;
 }
 QPushButton#emptyAction:hover { border-color: %accent; background: %accentSoft; }
 QPushButton#emptyAction:disabled { color: %textFaint; }
+QLabel#emptyActionTitle { color: %text; font-weight: 600; background: transparent; }
+QLabel#emptyActionText { color: %textMuted; font-size: %p12px; background: transparent; }
 
 /* ── Composer ──────────────────────────────────────────── */
 QWidget#composerArea { background: %window; }
@@ -569,6 +591,7 @@ QPlainTextEdit#composerInput {
     background: transparent; border: none; padding: 0; margin: 0;
     selection-background-color: %selection;
 }
+QLabel#composerPlaceholder { color: %textFaint; background: transparent; padding: 0; }
 QToolButton#sendButton {
     background: %accent; border: none; border-radius: %p16px; padding: %p6px;
 }
@@ -618,8 +641,9 @@ QLabel#statusDot { background: transparent; }
     out += s.midRef(last);
 
     const QString chevronOnAccent = tintedFile(QStringLiteral("chevron-down"), t.accentText);
+    const QString chevronUp = tintedFile(QStringLiteral("chevron-up"), t.textMuted);
     const QList<QPair<QString, QString>> colors = {
-        {"%chevronOnAccent", chevronOnAccent}, {"%chevron", chevron}, {"%check", check},
+        {"%chevronOnAccent", chevronOnAccent}, {"%chevronUp", chevronUp}, {"%chevron", chevron}, {"%check", check},
         {"%rlpx", QString::number(rl) + "px"}, {"%rpx", QString::number(r) + "px"},
         {"%window", hex(t.window)}, {"%surface", hex(t.surface)}, {"%raised", hex(t.raised)},
         {"%hover", hex(t.hover)}, {"%pressed", hex(t.pressed)},

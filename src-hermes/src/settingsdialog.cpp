@@ -428,6 +428,7 @@ QWidget *SettingsDialog::buildAgent() {
     top->addWidget(m_agentDot);
     m_agentStatus = new QLabel(status);
     m_agentStatus->setProperty("role", "heading");
+    m_agentStatus->setWordWrap(true);
     top->addWidget(m_agentStatus, 1);
     auto *restart = button(tr("Restart Agent"), "refresh-cw",
                            tr("Relaunch Hermes (picks up a new version) and reopen the session"), status);
@@ -443,8 +444,9 @@ QWidget *SettingsDialog::buildAgent() {
 
     l->addWidget(label(tr("UPDATES & HEALTH"), "section", w));
     auto *health = card(w, &cl);
-    auto *hrow = new QHBoxLayout();
-    hrow->setSpacing(th().px(8));
+    auto *hrowBox = new QWidget(health);
+    auto *hrow = new ui::FlowLayout(hrowBox, th().px(8), th().px(8));
+    hrow->setContentsMargins(0, 0, 0, 0);
     auto *check = button(tr("Check for Updates"), "download", tr("hermes update --check"), health);
     auto *update = button(tr("Update Hermes…"), "rocket", tr("Run hermes update, then restart the agent"), health);
     auto *doctor = button(tr("Run Doctor"), "heart-pulse", tr("hermes doctor — diagnose the install"), health);
@@ -453,8 +455,7 @@ QWidget *SettingsDialog::buildAgent() {
         hrow->addWidget(b);
         m_cliButtons << b;
     }
-    hrow->addStretch();
-    cl->addLayout(hrow);
+    cl->addWidget(hrowBox);
     connect(check, &QPushButton::clicked, this, [this]() {
         runToOutput(tr("Checking for updates…"), {"update", "--check"}, 120000);
     });
@@ -500,8 +501,9 @@ QWidget *SettingsDialog::buildAgent() {
     auto *prov = card(w, &cl);
     m_authLabel = label(QString(), "muted", prov);
     cl->addWidget(m_authLabel);
-    auto *prow = new QHBoxLayout();
-    prow->setSpacing(th().px(8));
+    auto *prowBox = new QWidget(prov);
+    auto *prow = new ui::FlowLayout(prowBox, th().px(8), th().px(8));
+    prow->setContentsMargins(0, 0, 0, 0);
     auto *setup = button(tr("Configure Provider…"), "log-in",
                          tr("Open Hermes's provider setup in a terminal"), prov, "primary");
     auto *model = button(tr("Choose Default Model…"), "cpu", tr("hermes model, in a terminal"), prov);
@@ -509,8 +511,7 @@ QWidget *SettingsDialog::buildAgent() {
     prow->addWidget(setup);
     prow->addWidget(model);
     prow->addWidget(wizard);
-    prow->addStretch();
-    cl->addLayout(prow);
+    cl->addWidget(prowBox);
     connect(setup, &QPushButton::clicked, this, [this]() {
         QStringList args{"setup"};
         if (m_client) {
@@ -530,6 +531,8 @@ QWidget *SettingsDialog::buildAgent() {
     m_resolved->setProperty("role", "mono");
     m_resolved->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_resolved->setWordWrap(true);
+    m_resolved->setMinimumWidth(1);   // long paths have no break points; let the label wrap anywhere
+    m_resolved->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     cl->addWidget(settingRow(tr("In use"), QString(), nullptr, exe));
     cl->addWidget(m_resolved);
     cl->addWidget(divider(exe));
@@ -564,7 +567,7 @@ QWidget *SettingsDialog::buildAgent() {
         emit executableChanged();
     });
     cl->addWidget(divider(exe));
-    m_autoRestart = new QCheckBox(tr("Reconnect automatically when Hermes exits (for example during an update)"), exe);
+    m_autoRestart = new QCheckBox(tr("Reconnect automatically"), exe);
     m_autoRestart->setChecked(QSettings().value("hermes/autoRestart", true).toBool());
     ui::describe(m_autoRestart, tr("Reconnect automatically"),
                  tr("Relaunch Hermes with backoff and reopen the session if it exits unexpectedly"));
@@ -573,6 +576,8 @@ QWidget *SettingsDialog::buildAgent() {
         emit autoRestartChanged(on);
     });
     cl->addWidget(m_autoRestart);
+    cl->addWidget(label(tr("If Hermes exits (for example while it updates itself), Consiglio relaunches it "
+                           "and reopens your session."), "faint", exe));
     l->addWidget(exe);
     l->addStretch(1);
     refreshAgent();
@@ -616,8 +621,12 @@ void SettingsDialog::refreshAgent() {
             flow->addWidget(b);
         }
     }
-    m_resolved->setText(m_client && !m_client->resolvedExecutable().isEmpty() ? m_client->resolvedExecutable()
-                                                                              : HermesCli::executable());
+    const QString resolvedPath = m_client && !m_client->resolvedExecutable().isEmpty() ? m_client->resolvedExecutable()
+                                                                                       : HermesCli::executable();
+    // Zero-width spaces after separators let a long path wrap instead of
+    // widening the page.
+    m_resolved->setText(QString(resolvedPath).replace(QLatin1Char('/'), QStringLiteral("/\u200B")));
+    m_resolved->setToolTip(resolvedPath);
     QString auth;
     if (m_client) {
         for (const auto &m : m_client->authMethods()) {

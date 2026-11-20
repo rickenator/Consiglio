@@ -83,6 +83,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void onPromptSubmitted(const QString &text);
@@ -153,6 +154,7 @@ private:
     void showToast(const QString &text, int ms = 4000);
     void restyle();
     void applyZoom(double delta);
+    void updateResponsive();   // fit the chrome to the window width (no clipped toolbar)
 
     AcpClient m_client;
     CommandCatalog m_catalog;
@@ -177,6 +179,7 @@ private:
     QList<QAction *> m_configActions;        // toolbar widgets for combos
     QHash<QString, QComboBox *> m_configCombos;
     QHash<QString, QAction *> m_actions;     // by id
+    bool m_railAutoHidden = false;           // rail hidden because the window is narrow
 
     // Status bar widgets.
     ui::StatusDot *m_stateDot = nullptr;

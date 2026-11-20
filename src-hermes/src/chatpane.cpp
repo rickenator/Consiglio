@@ -93,6 +93,7 @@ QTextEdit *makeBody(const QString &objectName, QWidget *parent) {
 }
 
 } // namespace
+static QString preserveLineBreaks(const QString &md);
 
 // ─── ChatBlock ─────────────────────────────────────────────────────────────
 
@@ -337,7 +338,7 @@ void ChatBlock::restyle() {
         if (w->property("state").isValid() || w->property("level").isValid()) repolish(w);
     }
     if (m_finalized && (m_kind == Agent || m_kind == Thinking)) {
-        static_cast<QTextEdit *>(m_body)->document()->setMarkdown(m_accumulated,
+        static_cast<QTextEdit *>(m_body)->document()->setMarkdown(preserveLineBreaks(m_accumulated),
                                                                   QTextDocument::MarkdownDialectGitHub);
         styleMarkdown();
         fitBody(false);
@@ -372,6 +373,7 @@ void ChatBlock::appendText(const QString &text) {
         }
         label->setText(m_accumulated);
         label->setAccessibleName(command ? tr("Command %1").arg(trimmed) : tr("Your message"));
+        updateBubbleWidth();
     } else if (m_kind == Notice) {
         static_cast<QLabel *>(m_body)->setText(m_accumulated);
     } else if (m_kind == Tool) {
@@ -408,11 +410,26 @@ void ChatBlock::fitBody(bool growOnly) {
 
 void ChatBlock::resizeToFit() { fitBody(true); }
 
+// A word-wrapped QLabel picks a narrow "pleasant" width on its own; give the
+// bubble its natural width (up to 78% of the column) so short and medium
+// messages stay on one line and long ones wrap at a readable measure.
+void ChatBlock::updateBubbleWidth() {
+    if (m_kind != User || !m_bubble || width() <= 0) return;
+    auto *label = static_cast<QLabel *>(m_body);
+    const int maxBubble = qMax(theme().px(200), int(width() * 0.78));
+    m_bubble->setMaximumWidth(maxBubble);
+    const QMargins bm = m_bubble->layout() ? m_bubble->layout()->contentsMargins() : QMargins();
+    int chrome = bm.left() + bm.right();
+    if (m_icon && m_isCommand) chrome += m_icon->sizeHint().width() + (m_bubble->layout() ? m_bubble->layout()->spacing() : 0);
+    const QFontMetrics fm(label->font());
+    int natural = 0;
+    for (const QString &line : m_accumulated.split(QLatin1Char('\n'))) natural = qMax(natural, fm.horizontalAdvance(line));
+    label->setMinimumWidth(qMin(natural + 4, qMax(theme().px(60), maxBubble - chrome)));
+}
+
 void ChatBlock::resizeEvent(QResizeEvent *e) {
     QWidget::resizeEvent(e);
-    if (m_kind == User && m_bubble) {
-        m_bubble->setMaximumWidth(qMax(theme().px(200), int(width() * 0.78)));
-    }
+    if (m_kind == User && m_bubble) updateBubbleWidth();
     if (m_kind == Agent || m_kind == Thinking) {
         // A width change reflows the text: re-measure (a reflow may shrink).
         QTimer::singleShot(0, this, [this]() { fitBody(false); });
@@ -430,7 +447,13 @@ void ChatBlock::styleMarkdown() {
         QTextBlockFormat bf = b.blockFormat();
         const bool code = bf.hasProperty(QTextFormat::BlockCodeFence) || bf.nonBreakableLines();
         QTextCursor bc(b);
-        if (code) {
+        const bool inTable = bc.currentTable() != nullptr;
+        if (inTable) {
+            // No paragraph margins inside cells (they misalign header rows).
+            bf.setTopMargin(0);
+            bf.setBottomMargin(0);
+            bc.setBlockFormat(bf);
+        } else if (code) {
             bf.setBackground(tk.code);
             bf.setLeftMargin(theme().px(10));
             bf.setRightMargin(theme().px(10));
@@ -449,7 +472,7 @@ void ChatBlock::styleMarkdown() {
             fc.setPosition(f.position() + f.length(), QTextCursor::KeepAnchor);
             if (cf.fontFixedPitch() || code) {
                 cf.setFontFamily(mono);
-                cf.setFontPointSize(0);
+                cf.clearProperty(QTextFormat::FontPointSize);
                 if (!code) cf.setBackground(tk.code);
                 fc.setCharFormat(cf);
             } else if (cf.isAnchor()) {
@@ -468,9 +491,39 @@ void ChatBlock::styleMarkdown() {
             tf.setCellPadding(theme().px(6));
             tf.setBorderCollapse(true);
             table->setFormat(tf);
+            for (int r = 0; r < table->rows(); ++r) {
+                for (int c = 0; c < table->columns(); ++c) {
+                    QTextTableCell cell = table->cellAt(r, c);
+                    QTextCharFormat cf = cell.format();
+                    cf.setVerticalAlignment(QTextCharFormat::AlignMiddle);
+                    if (r == 0) cf.setBackground(tk.code);
+                    cell.setFormat(cf);
+                }
+            }
         }
     }
     edit.endEditBlock();
+}
+
+// Hermes's own command replies (and many model answers) use single newlines
+// as line breaks; CommonMark would join them into one paragraph. Keep them,
+// except inside code fences and tables.
+static QString preserveLineBreaks(const QString &md) {
+    const QStringList lines = md.split(QLatin1Char('\n'));
+    QStringList out;
+    bool fence = false;
+    for (int i = 0; i < lines.size(); ++i) {
+        QString line = lines[i];
+        const QString t = line.trimmed();
+        if (t.startsWith(QLatin1String("```")) || t.startsWith(QLatin1String("~~~"))) { fence = !fence; out << line; continue; }
+        const QString next = i + 1 < lines.size() ? lines[i + 1].trimmed() : QString();
+        if (!fence && !t.isEmpty() && !next.isEmpty() && !t.startsWith(QLatin1Char('|')) && !next.startsWith(QLatin1Char('|'))
+            && !t.startsWith(QLatin1Char('#')) && !next.startsWith(QLatin1String("```")) && !line.endsWith(QLatin1String("  "))
+            && !line.endsWith(QLatin1Char('\\')))
+            line += QStringLiteral("  ");
+        out << line;
+    }
+    return out.join(QLatin1Char('\n'));
 }
 
 void ChatBlock::finalize() {
@@ -479,7 +532,7 @@ void ChatBlock::finalize() {
     if (m_kind == Agent || m_kind == Thinking) {
         if (m_kind == Thinking) m_thoughtSecs = int(m_started.elapsed() / 1000);
         auto *body = static_cast<QTextEdit *>(m_body);
-        body->document()->setMarkdown(m_accumulated, QTextDocument::MarkdownDialectGitHub);
+        body->document()->setMarkdown(preserveLineBreaks(m_accumulated), QTextDocument::MarkdownDialectGitHub);
         styleMarkdown();
         // Size the body to its content. This is a one-time settle at turn end, so
         // unlike the grow-only streaming path it may shrink to the true height.
@@ -694,7 +747,12 @@ void ChatPane::setupUI() {
     m_input->document()->setDocumentMargin(0);
     m_input->installEventFilter(this); // "/" → palette or file picker; Enter → send
     m_placeholder = tr("Message Hermes…");
-    m_input->setPlaceholderText(m_placeholder);
+    m_inputPlaceholder = new QLabel(m_placeholder, m_input->viewport());
+    m_inputPlaceholder->setObjectName("composerPlaceholder");
+    m_inputPlaceholder->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_inputPlaceholder->move(0, 0);
+    connect(m_input, &QPlainTextEdit::textChanged, this, &ChatPane::updatePlaceholder);
+    m_input->viewport()->installEventFilter(this);
     m_input->setAccessibleName(tr("Message"));
     m_input->setAccessibleDescription(tr("Type a message. Enter sends, Shift+Enter adds a line, / opens commands."));
     cl->addWidget(m_input);
@@ -798,11 +856,36 @@ void ChatPane::setEmptyState(const QString &title, const QString &subtitle,
         auto *b = new QPushButton(m_emptyActions);
         b->setObjectName("emptyAction");
         b->setCursor(Qt::PointingHandCursor);
-        b->setIcon(t.icon(a.icon, t.tokens().accent));
-        b->setIconSize(QSize(t.px(18), t.px(18)));
-        b->setText(a.description.isEmpty() ? a.label : a.label + QStringLiteral("\n") + a.description);
+        // Icon · title (strong) over description (muted), as child labels so
+        // the two lines get their own typography.
+        auto *bl = new QHBoxLayout(b);
+        bl->setContentsMargins(t.px(14), t.px(10), t.px(14), t.px(10));
+        bl->setSpacing(t.px(12));
+        auto *ic = new QLabel(b);
+        ic->setPixmap(t.pixmap(a.icon, t.px(18), a.enabled ? t.tokens().accent : t.tokens().textFaint));
+        ic->setAttribute(Qt::WA_TransparentForMouseEvents);
+        ic->setProperty("themeIcon", a.icon);
+        bl->addWidget(ic, 0, Qt::AlignVCenter);
+        auto *col = new QVBoxLayout();
+        col->setSpacing(t.px(1));
+        auto *ttl = new QLabel(a.label, b);
+        ttl->setObjectName("emptyActionTitle");
+        ttl->setAttribute(Qt::WA_TransparentForMouseEvents);
+        col->addWidget(ttl);
+        if (!a.description.isEmpty()) {
+            auto *ds = new QLabel(a.description, b);
+            ds->setObjectName("emptyActionText");
+            ds->setAttribute(Qt::WA_TransparentForMouseEvents);
+            col->addWidget(ds);
+        }
+        bl->addLayout(col, 1);
         b->setEnabled(a.enabled);
-        b->setMinimumHeight(t.px(a.description.isEmpty() ? 40 : 56));
+        for (QLabel *lab : b->findChildren<QLabel *>()) {
+            lab->ensurePolished();
+            if (!a.enabled) lab->setStyleSheet(QStringLiteral("color: %1;").arg(t.tokens().textFaint.name()));
+        }
+        b->setMinimumHeight(qMax(t.px(a.description.isEmpty() ? 44 : 58), bl->sizeHint().height()));
+        b->setMinimumWidth(t.px(250));
         b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         b->setProperty("actionId", a.id);
         ui::describe(b, a.label, ui::withShortcut(a.description.isEmpty() ? a.label : a.description,
@@ -849,10 +932,17 @@ QString ChatPane::bannerTitle() const { return isBannerVisible() ? m_bannerTitle
 void ChatPane::setComposerEnabled(bool enabled, const QString &placeholder) {
     m_composerEnabled = enabled;
     m_input->setReadOnly(!enabled);
-    m_input->setPlaceholderText(placeholder.isEmpty() ? m_placeholder : placeholder);
+    m_inputPlaceholder->setText(placeholder.isEmpty() ? m_placeholder : placeholder);
+    updatePlaceholder();
     m_composerCard->setProperty("enabled", enabled ? "true" : "false");
     repolish(m_composerCard);
     updateSendButton();
+}
+
+void ChatPane::updatePlaceholder() {
+    if (!m_inputPlaceholder) return;
+    m_inputPlaceholder->setVisible(m_input->document()->isEmpty());
+    m_inputPlaceholder->resize(m_input->viewport()->width(), m_inputPlaceholder->sizeHint().height());
 }
 
 void ChatPane::focusComposer() { m_input->setFocus(); }
@@ -913,6 +1003,7 @@ void ChatPane::submit() {
 }
 
 bool ChatPane::eventFilter(QObject *obj, QEvent *event) {
+    if (m_input && obj == m_input->viewport() && event->type() == QEvent::Resize) updatePlaceholder();
     if (obj == m_input && event->type() == QEvent::FocusIn) {
         m_composerCard->setProperty("focused", "true");
         repolish(m_composerCard);
@@ -1121,6 +1212,8 @@ void ChatPane::applyFontSizes(int chatPx, int thinkingPx, int toolPx) {
     QFont f = m_input->font();
     f.setPixelSize(qMax(8, qRound(chatPx * theme().scale())));
     m_input->setFont(f);
+    m_inputPlaceholder->setFont(f);
+    updatePlaceholder();
     updateComposerHeight();
     // Restyle every existing block so the change is visible immediately.
     for (ChatBlock *b : blocks()) b->applyFontSizes(chatPx, thinkingPx, toolPx);

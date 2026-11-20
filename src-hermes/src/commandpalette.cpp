@@ -293,7 +293,9 @@ void CommandPalette::rebuild() {
             m_model->appendRow(h);
         }
     }
-    m_count->setText(terms.isEmpty() ? tr("%n command(s)", "", shown) : tr("%n match(es)", "", shown));
+    m_count->setText(terms.isEmpty() ? (shown == 1 ? tr("1 command") : tr("%1 commands").arg(shown))
+                                  : shown == 0 ? tr("No matches")
+                                  : (shown == 1 ? tr("1 match") : tr("%1 matches").arg(shown)));
     selectFirst();
 }
 

@@ -159,6 +159,7 @@ public:
         outer->addLayout(row);
         if (firstReject) { firstReject->setDefault(true); firstReject->setFocus(); }
         setMinimumWidth(t.px(460));
+        ui::fitOnShow(this);
     }
     QString choice() const { return m_choice; }
 
@@ -204,6 +205,7 @@ void MainWindow::init(const Options &options) {
     connect(&m_catalog, &CommandCatalog::changed, this, [this]() {
         rebuildCommandMenus();
         rebuildPalette();
+        updateEmptyState();
     });
     rebuildCommandMenus();
     rebuildPalette();
@@ -352,7 +354,7 @@ void MainWindow::setupActions() {
     auto *sidebar = makeAction("app:sidebar", tr("&Sidebar"), "panel-left", QKeySequence(Qt::CTRL | Qt::Key_B),
                                tr("Show or hide the sessions sidebar"));
     sidebar->setCheckable(true);
-    sidebar->setChecked(m_rail->isVisible());
+    sidebar->setChecked(QSettings().value(QStringLiteral("view/sidebar"), true).toBool());
     makeAction("app:focus-composer", tr("&Focus Message Box"), "text-cursor-input", QKeySequence(Qt::CTRL | Qt::Key_L),
                tr("Move the cursor to the message box"));
     makeAction("app:zoom-in", tr("Zoom &In"), "", QKeySequence::ZoomIn, tr("Make the interface larger"));
@@ -457,10 +459,6 @@ void MainWindow::setupToolbar() {
 
     m_toolbar->addAction(m_actions.value("app:sidebar"));
     m_toolbar->addAction(m_actions.value("app:new-session"));
-    if (auto *b = qobject_cast<QToolButton *>(m_toolbar->widgetForAction(m_actions.value("app:new-session")))) {
-        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        b->setText(tr("New"));
-    }
     m_toolbar->addSeparator();
 
     m_goalButton = new QToolButton(m_toolbar);
@@ -589,7 +587,7 @@ void MainWindow::addCommandToMenu(QMenu *menu, const CommandCatalog::Command &cm
     }
     const QStringList choices = cmd.choices();
     if (!choices.isEmpty() && !cmd.requiresArgs()) {
-        QMenu *sub = menu->addMenu(icon, cmd.label);
+        QMenu *sub = menu->addMenu(icon, QString(cmd.label).replace(QLatin1Char('&'), QStringLiteral("&&")));
         sub->setToolTipsVisible(true);
         finish(sub->menuAction());
         QAction *run = sub->addAction(tr("Run %1").arg(slash));
@@ -607,7 +605,8 @@ void MainWindow::addCommandToMenu(QMenu *menu, const CommandCatalog::Command &cm
         connect(more, &QAction::triggered, this, [this, name]() { triggerCommand(name); });
         return;
     }
-    const QString label = cmd.takesArgs() ? cmd.label + QStringLiteral("…") : cmd.label;
+    QString label = cmd.takesArgs() ? cmd.label + QStringLiteral("…") : cmd.label;
+    label.replace(QLatin1Char('&'), QStringLiteral("&&"));
     QAction *a = menu->addAction(label);
     finish(a);
     connect(a, &QAction::triggered, this, [this, name]() { triggerCommand(name); });
@@ -650,7 +649,7 @@ void MainWindow::rebuildCommandMenus() {
         if (g.id == QLatin1String("session") || g.id == QLatin1String("goal")) continue;
         const auto cmds = m_catalog.commandsInGroup(g.id);
         if (cmds.isEmpty()) continue;
-        QMenu *sub = m_hermesMenu->addMenu(theme().icon(g.icon), g.title);
+        QMenu *sub = m_hermesMenu->addMenu(theme().icon(g.icon), QString(g.title).replace(QLatin1Char('&'), QStringLiteral("&&")));
         sub->menuAction()->setProperty("themeIcon", g.icon);
         sub->menuAction()->setProperty("catalogGroup", g.id);
         sub->setToolTipsVisible(true);
@@ -681,7 +680,7 @@ void MainWindow::rebuildConfigCombos() {
     if (!m_client.isReady()) { updateModelLabel(); return; }
 
     Theme &t = theme();
-    auto addCombo = [&](const QString &key, const QString &name, const QString &description,
+    auto addCombo = [&](const QString &key, const QString &category, const QString &name, const QString &description,
                         const QList<AcpClient::ConfigChoice> &choices, const QString &current,
                         std::function<void(const QString &)> apply) {
         if (choices.isEmpty()) return;
@@ -689,16 +688,23 @@ void MainWindow::rebuildConfigCombos() {
         combo->setObjectName(QStringLiteral("toolbarCombo"));
         combo->setProperty("configId", key);
         combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-        combo->setMaximumWidth(t.px(key.contains(QLatin1String("model")) ? 260 : 190));
+        combo->setMaximumWidth(t.px(category == QLatin1String("model") ? 240 : 180));
         combo->setFocusPolicy(Qt::TabFocus);
         combo->setCursor(Qt::PointingHandCursor);
+        const QString iconName = category == QLatin1String("model") ? QStringLiteral("cpu")
+                               : category == QLatin1String("thought_level") ? QStringLiteral("brain")
+                               : category == QLatin1String("mode") ? QStringLiteral("shield-check")
+                               : QStringLiteral("sliders-horizontal");
+        const QIcon itemIcon = t.icon(iconName);
+        combo->setIconSize(QSize(t.px(14), t.px(14)));
+        combo->setProperty("themeIcon", iconName);
         QString lastGroup;
         for (const auto &c : choices) {
             if (!c.group.isEmpty() && c.group != lastGroup) {
                 if (combo->count() > 0) combo->insertSeparator(combo->count());
                 lastGroup = c.group;
             }
-            combo->addItem(c.name.isEmpty() ? c.value : c.name, c.value);
+            combo->addItem(itemIcon, c.name.isEmpty() ? c.value : c.name, c.value);
             const int i = combo->count() - 1;
             QString itemTip = c.description;
             if (!c.group.isEmpty()) itemTip = c.group + (itemTip.isEmpty() ? QString() : QStringLiteral(" — ") + itemTip);
@@ -706,7 +712,7 @@ void MainWindow::rebuildConfigCombos() {
         }
         const int idx = combo->findData(current);
         if (idx >= 0) combo->setCurrentIndex(idx);
-        else if (!current.isEmpty()) { combo->insertItem(0, current, current); combo->setCurrentIndex(0); }
+        else if (!current.isEmpty()) { combo->insertItem(0, itemIcon, current, current); combo->setCurrentIndex(0); }
         const QString tip = description.isEmpty() ? name : QStringLiteral("%1 — %2").arg(name, description);
         ui::describe(combo, name, tip);
         connect(combo, QOverload<int>::of(&QComboBox::activated), this, [combo, apply](int i) {
@@ -730,7 +736,7 @@ void MainWindow::rebuildConfigCombos() {
         if (o.type != QLatin1String("select")) continue;
         if (o.category == QLatin1String("mode")) haveMode = true;
         const QString id = o.id;
-        addCombo(id, o.name.isEmpty() ? id : o.name, o.description, o.choices, o.currentValue,
+        addCombo(id, o.category, o.name.isEmpty() ? id : o.name, o.description, o.choices, o.currentValue,
                  [this, id](const QString &v) {
                      if (!m_client.setConfigOption(id, v)) showToast(tr("Couldn't change that setting right now."));
                      updateModelLabel();
@@ -739,7 +745,7 @@ void MainWindow::rebuildConfigCombos() {
     if (!haveMode && !m_client.sessionModes().isEmpty()) {
         QList<AcpClient::ConfigChoice> modes;
         for (const auto &m : m_client.sessionModes()) modes << AcpClient::ConfigChoice{m.id, m.name, m.description, QString()};
-        addCombo(QStringLiteral("__mode"), tr("Mode"), tr("How Hermes works in this session"), modes,
+        addCombo(QStringLiteral("__mode"), QStringLiteral("mode"), tr("Mode"), tr("How Hermes works in this session"), modes,
                  m_client.currentModeId(), [this](const QString &v) { m_client.setMode(v); });
     }
     if (!m_configActions.isEmpty()) {
@@ -749,6 +755,7 @@ void MainWindow::rebuildConfigCombos() {
         m_configActions << sep;
     }
     updateModelLabel();
+    updateResponsive();
 }
 
 void MainWindow::rebuildPalette() {
@@ -1314,6 +1321,7 @@ void MainWindow::onPaletteAction(const QString &id) {
     else if (id == QLatin1String("app:sidebar")) {
         const bool show = m_actions.value(id)->isChecked();
         m_rail->setVisible(show);
+        m_railAutoHidden = false;
         QSettings().setValue(QStringLiteral("view/sidebar"), show);
     }
     else if (id == QLatin1String("app:focus-composer")) m_chat->focusComposer();
@@ -1428,7 +1436,7 @@ void MainWindow::updateEmptyState() {
         bool hasRecent = false;
         for (QAction *a : m_recentMenu->actions()) if (a->data().toStringList().size() == 2) { hasRecent = true; break; }
         QList<QA> actions{QA{"app:new-session", tr("New Session"), tr("Start fresh in %1").arg(QDir(cwd()).dirName().isEmpty() ? cwd() : QDir(cwd()).dirName()), "message-square-plus", sc("app:new-session")},
-                          QA{"app:goal", tr("Set a Goal"), tr("Hermes works toward it across turns"), "target", sc("app:goal")}};
+                          QA{"app:goal", tr("Set a Goal"), tr("A standing objective"), "target", sc("app:goal")}};
         if (hasRecent) actions << QA{"app:resume-last", tr("Resume Last"), tr("Pick up where you left off"), "history", QString()};
         else actions << QA{"app:settings", tr("Settings"), tr("Theme, model and Hermes setup"), "settings", sc("app:settings")};
         actions << QA{"app:palette", tr("Browse Commands"), tr("Every Hermes command"), "command", sc("app:palette")};
@@ -1442,7 +1450,7 @@ void MainWindow::updateEmptyState() {
         actions << QA{"/status", tr("Session Status"), tr("Model, tokens and settings"), "activity", QString()};
     if (m_catalog.contains(QStringLiteral("tools")))
         actions << QA{"/tools", tr("Tools"), tr("What Hermes can use"), "wrench", QString()};
-    actions << QA{"app:palette", tr("All Commands"), tr("%n command(s) available", nullptr, m_catalog.count()), "command", sc("app:palette")};
+    actions << QA{"app:palette", tr("All Commands"), m_catalog.count() == 1 ? tr("1 command available") : tr("%1 commands available").arg(m_catalog.count()), "command", sc("app:palette")};
     m_chat->setEmptyState(tr("Hermes is ready"), tr("Ask anything, or give it a goal to pursue."), actions);
 }
 
@@ -1479,7 +1487,8 @@ void MainWindow::updateGoalButton() {
         tip = ui::withShortcut(tr("Set a goal Hermes works toward across turns"), m_actions.value("app:goal")->shortcut());
     }
     const QFontMetrics fm(m_goalButton->font());
-    m_goalButton->setText(fm.elidedText(text, Qt::ElideRight, t.px(230)));
+    const int goalWidth = width() < t.px(900) ? t.px(140) : t.px(210);
+    m_goalButton->setText(fm.elidedText(text, Qt::ElideRight, goalWidth));
     const QColor iconColor = state == QLatin1String("paused") && has ? t.tokens().warning
                            : state == QLatin1String("done") && has ? t.tokens().success
                            : t.tokens().accentText;
@@ -1606,6 +1615,57 @@ QList<QPair<QString, QString>> MainWindow::shortcutList() const {
     list << qMakePair(tr("Commands (in an empty message box)"), QStringLiteral("/"));
     list << qMakePair(tr("Insert a file path (mid-message)"), QStringLiteral("/  or  ./"));
     return list;
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event) {
+    QMainWindow::resizeEvent(event);
+    updateResponsive();
+}
+
+void MainWindow::updateResponsive() {
+    if (!m_rail || !m_toolbar) return;
+    Theme &t = theme();
+    const int w = width();
+    // The sidebar steps aside when the window gets narrow (the user's choice is restored
+    // when the window widens again; Ctrl+B still toggles it).
+    const bool wantRail = m_actions.value("app:sidebar") && m_actions.value("app:sidebar")->isChecked();
+    const bool narrow = w < t.px(760);
+    if (wantRail) {
+        m_railAutoHidden = narrow;
+        m_rail->setVisible(!narrow);
+    }
+    // When the toolbar runs out of room, secondary pickers (reasoning, mode,
+    // …) step out first, then the Commands label, then the model picker.
+    // They all stay reachable in Settings → Session and the Hermes menu.
+    updateGoalButton();
+    auto *paletteBtn = qobject_cast<QToolButton *>(m_toolbar->widgetForAction(m_actions.value("app:palette")));
+    if (paletteBtn) paletteBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    QList<QAction *> secondary, primary;
+    for (QAction *a : qAsConst(m_configActions)) {
+        a->setVisible(true);
+        auto *combo = qobject_cast<QComboBox *>(m_toolbar->widgetForAction(a));
+        if (!combo) continue;
+        (combo->property("themeIcon").toString() == QLatin1String("cpu") ? primary : secondary) << a;
+    }
+    const int spacing = m_toolbar->layout() ? m_toolbar->layout()->spacing() : 4;
+    auto needed = [&]() {
+        int total = m_toolbar->contentsMargins().left() + m_toolbar->contentsMargins().right() + t.px(24);
+        for (QAction *a : m_toolbar->actions()) {
+            if (!a->isVisible() || a == m_configAnchor) continue;
+            QWidget *wid = m_toolbar->widgetForAction(a);
+            total += (wid ? wid->sizeHint().width() : t.px(12)) + spacing;
+        }
+        return total;
+    };
+    const int avail = m_toolbar->width() > 0 ? m_toolbar->width() : w;
+    while (needed() > avail && !secondary.isEmpty()) secondary.takeLast()->setVisible(false);
+    if (needed() > avail && paletteBtn) paletteBtn->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    while (needed() > avail && !primary.isEmpty()) primary.takeLast()->setVisible(false);
+    bool anyCombo = false;
+    for (QAction *a : qAsConst(m_configActions))
+        if (qobject_cast<QComboBox *>(m_toolbar->widgetForAction(a)) && a->isVisible()) anyCombo = true;
+    for (QAction *a : qAsConst(m_configActions))
+        if (a->isSeparator()) a->setVisible(anyCombo);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {

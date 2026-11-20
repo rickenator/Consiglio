@@ -21,6 +21,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -233,6 +234,11 @@ int main(int argc, char **argv) {
     settle(500);
     g_log << "Catalog: " << w.catalog()->count() << " commands\n";
     shot(&w, "session-ready");
+    if (auto *in = w.findChild<QPlainTextEdit *>(QStringLiteral("composerInput"))) {
+        in->grab().save(g_out + "/composer-debug.png");
+        g_log << "  composer: ro=" << in->isReadOnly() << " ph='" << in->placeholderText() << "' len=" << in->toPlainText().size()
+              << " geo=" << in->width() << "x" << in->height() << " vis=" << in->isVisible() << " vp=" << in->viewport()->width() << "x" << in->viewport()->height() << " vpvis=" << in->viewport()->isVisible() << " empty=" << in->document()->isEmpty() << " blocks=" << in->document()->blockCount() << " chars=" << in->document()->characterCount() << " phc=" << in->palette().color(QPalette::PlaceholderText).name(QColor::HexArgb) << " base=" << in->palette().color(QPalette::Base).name(QColor::HexArgb) << " text=" << in->palette().color(QPalette::Text).name(QColor::HexArgb) << "\n";
+    }
 
     runAndWait(w, QStringLiteral("hello world"), real ? 180000 : 10000);
     shot(&w, "hello-world");

@@ -83,6 +83,7 @@ CommandDialog::CommandDialog(const CommandCatalog::Command &command, QWidget *pa
     setWindowTitle(command.label);
     setModal(true);
     setMinimumWidth(t.px(520));
+    ui::fitOnShow(this);
     auto *l = new QVBoxLayout(this);
     l->setContentsMargins(t.px(22), t.px(20), t.px(22), t.px(18));
     l->setSpacing(t.px(12));
@@ -185,6 +186,7 @@ GoalDialog::GoalDialog(const CommandCatalog::GoalStatus &current, bool draftAvai
     setWindowTitle(tr("Set a Goal"));
     setModal(true);
     setMinimumWidth(t.px(560));
+    ui::fitOnShow(this);
     auto *l = new QVBoxLayout(this);
     l->setContentsMargins(t.px(22), t.px(20), t.px(22), t.px(18));
     l->setSpacing(t.px(12));

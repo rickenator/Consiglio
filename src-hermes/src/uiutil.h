@@ -26,6 +26,11 @@ void describe(QAction *a, const QString &tooltip = QString());
 QToolButton *iconButton(const QString &icon, const QString &tooltip, QWidget *parent,
                         const QString &objectName = QStringLiteral("blockAction"), int iconPx = 16);
 
+// Size a dialog to its polished contents when it is first shown (word-wrapped
+// labels and stylesheet fonts otherwise leave it clipped) and keep it from
+// being shrunk below that.
+void fitOnShow(QWidget *dialog);
+
 // A label whose text is elided to its width (full text in the tooltip).
 class ElidedLabel : public QLabel {
     Q_OBJECT

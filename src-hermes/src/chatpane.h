@@ -69,6 +69,7 @@ private:
     void styleMarkdown();
     void fitBody(bool growOnly);
     void updateToggle();
+    void updateBubbleWidth();
 
     Kind m_kind;
     int m_chatPx, m_thinkingPx, m_toolPx;
@@ -216,6 +217,8 @@ private:
 
     QFrame *m_composerCard = nullptr;
     QPlainTextEdit *m_input = nullptr;
+    QLabel *m_inputPlaceholder = nullptr;   // drawn ourselves: reliable across styles/platforms
+    void updatePlaceholder();
     QToolButton *m_sendBtn = nullptr;
     QToolButton *m_commandsBtn = nullptr;
     QLabel *m_hint = nullptr;

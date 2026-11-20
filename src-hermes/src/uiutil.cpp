@@ -3,6 +3,9 @@
 #include "theme.h"
 
 #include <QAction>
+#include <QEvent>
+#include <QStyle>
+#include <QLayout>
 #include <QDateTime>
 #include <QKeySequence>
 #include <QPainter>
@@ -47,6 +50,45 @@ QToolButton *iconButton(const QString &icon, const QString &tooltip, QWidget *pa
     b->setProperty("themeIcon", icon);
     describe(b, tooltip);
     return b;
+}
+
+namespace {
+class FitOnShow : public QObject {
+public:
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *event) override {
+        if (event->type() == QEvent::Show) {
+            auto *w = static_cast<QWidget *>(obj);
+            w->ensurePolished();
+            for (QWidget *c : w->findChildren<QWidget *>()) {
+                // Widgets polished early (e.g. by QDialogButtonBox) before their
+                // "role" property was set need a repolish to pick up the QSS.
+                if (c->property("role").isValid()) {
+                    c->style()->unpolish(c);
+                    c->style()->polish(c);
+                }
+                c->ensurePolished();
+            }
+            if (QLayout *l = w->layout()) {
+                l->invalidate();
+                l->activate();
+                const int width = qMax(w->minimumWidth(), qMax(w->width(), l->sizeHint().width()));
+                const int height = l->hasHeightForWidth() ? l->totalHeightForWidth(width)
+                                                          : l->totalSizeHint().height();
+                const int h = qMax(height, l->totalMinimumSize().height());
+                w->setMinimumHeight(h);
+                w->resize(width, h);
+            }
+        }
+        return false;
+    }
+};
+} // namespace
+
+void fitOnShow(QWidget *dialog) {
+    if (!dialog || dialog->property("fitOnShow").toBool()) return;
+    dialog->setProperty("fitOnShow", true);
+    dialog->installEventFilter(new FitOnShow(dialog));
 }
 
 // ─── ElidedLabel ──────────────────────────────────────────────────────────
