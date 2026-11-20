@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantMap>
 #include <QString>
 #include <QList>
 #include <QMap>
@@ -21,6 +22,9 @@ struct SessionRecord {
     QString permissionMode;
     QString preferredName;
     QString codexThreadId;
+    // Launch options (minus secrets), persisted so reconnect can rebuild the
+    // same configuration.
+    QVariantMap options;
     qint64 startedAt = 0;
     qint64 lastActivity = 0;
 };
@@ -36,7 +40,7 @@ public:
     QString startSession(const QString &provider, const QString &repository = {},
                          const QString &branch = {}, const QVariantMap &options = {});
     bool stopSession(const QString &sessionId);
-    bool reconnectSession(const SessionRecord &record);
+    bool reconnectSession(const SessionRecord &record, const QVariantMap &overrides = {});
     bool hasSession(const QString &sessionId) const;
     bool sendCommand(const QString &sessionId, const QString &command);
 
@@ -81,5 +85,6 @@ private:
     bool startCodexTurn(const QString &sessionId, const QString &prompt);
     void consumeCodexOutput(const QString &sessionId, const QByteArray &data, bool flush = false);
     bool startHermesTurn(const QString &sessionId, const QString &prompt);
+    void configureProvider(SessionState &state, const QString &provider, const QVariantMap &options);
     void consumeHermesOutput(const QString &sessionId, const QByteArray &data, bool flush = false);
 };

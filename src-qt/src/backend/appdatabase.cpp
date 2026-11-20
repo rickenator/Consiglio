@@ -1,5 +1,8 @@
 #include "appdatabase.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
+
 #include <QDataStream>
 #include <QDateTime>
 #include <QCryptographicHash>
@@ -78,16 +81,23 @@ bool AppDatabase::ensureSchema() {
     query.exec("PRAGMA table_info(sessions)");
     bool hasProjectId = false;
     bool hasCodexThreadId = false;
+    bool hasOptions = false;
     while (query.next()) {
         const QString column = query.value(1).toString();
         if (column == "project_id") hasProjectId = true;
         if (column == "codex_thread_id") hasCodexThreadId = true;
+        if (column == "options") hasOptions = true;
     }
     if (!hasProjectId && !query.exec("ALTER TABLE sessions ADD COLUMN project_id TEXT")) {
         m_lastError = query.lastError().text();
         return false;
     }
     if (!hasCodexThreadId && !query.exec("ALTER TABLE sessions ADD COLUMN codex_thread_id TEXT")) {
+        m_lastError = query.lastError().text();
+        return false;
+    }
+    // Launch options as JSON, so reconnect can rebuild the session (M2).
+    if (!hasOptions && !query.exec("ALTER TABLE sessions ADD COLUMN options TEXT")) {
         m_lastError = query.lastError().text();
         return false;
     }
@@ -172,11 +182,11 @@ bool AppDatabase::upsertSession(const SessionRecord &record) {
     QSqlQuery query(m_db);
     query.prepare(
         "INSERT INTO sessions(id, provider, status, repository, branch, project_id, permission_mode, "
-        "preferred_name, started_at, last_activity) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "preferred_name, options, started_at, last_activity) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET provider=excluded.provider, status=excluded.status, "
         "repository=excluded.repository, branch=excluded.branch, "
         "project_id=excluded.project_id, permission_mode=excluded.permission_mode, "
-        "preferred_name=excluded.preferred_name, "
+        "preferred_name=excluded.preferred_name, options=excluded.options, "
         "started_at=excluded.started_at, last_activity=excluded.last_activity");
     query.addBindValue(record.id);
     query.addBindValue(record.provider);
@@ -186,6 +196,10 @@ bool AppDatabase::upsertSession(const SessionRecord &record) {
     query.addBindValue(record.projectId);
     query.addBindValue(record.permissionMode);
     query.addBindValue(record.preferredName);
+    query.addBindValue(record.options.isEmpty()
+        ? QString()
+        : QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(record.options))
+                                .toJson(QJsonDocument::Compact)));
     query.addBindValue(record.startedAt);
     query.addBindValue(record.lastActivity);
     if (query.exec()) return true;
@@ -213,7 +227,7 @@ QList<SessionRecord> AppDatabase::sessions(const QString &projectId) const {
     QList<SessionRecord> records;
     QSqlQuery query(m_db);
     QString sql = "SELECT id, provider, status, repository, branch, project_id, permission_mode, "
-                  "preferred_name, codex_thread_id, started_at, last_activity FROM sessions";
+                  "preferred_name, codex_thread_id, started_at, last_activity, options FROM sessions";
     if (!projectId.isEmpty()) sql += " WHERE project_id = ?";
     sql += " ORDER BY last_activity DESC";
     query.prepare(sql);
@@ -232,6 +246,9 @@ QList<SessionRecord> AppDatabase::sessions(const QString &projectId) const {
         record.codexThreadId = query.value(8).toString();
         record.startedAt = query.value(9).toLongLong();
         record.lastActivity = query.value(10).toLongLong();
+        const QByteArray optionsJson = query.value(11).toString().toUtf8();
+        if (!optionsJson.isEmpty())
+            record.options = QJsonDocument::fromJson(optionsJson).object().toVariantMap();
         records.append(record);
     }
     return records;

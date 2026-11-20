@@ -1,5 +1,8 @@
 #include "hermesoptionsdialog.h"
+
 #include "uimetrics.h"
+
+#include <QMessageBox>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -40,6 +43,8 @@ HermesOptionsDialog::HermesOptionsDialog(const QString &initialWorkspace,
     const int maxTurns = current.value("maxTurns").toInt();
     if (maxTurns > 0) m_maxTurnsEdit->setText(QString::number(maxTurns));
     m_yoloCheck->setChecked(current.value("yolo", false).toBool());
+    // Already confirmed when it was first turned on.
+    m_yoloConfirmed = current.value("yolo", false).toBool();
     m_worktreeCheck->setChecked(current.value("worktree", false).toBool());
 }
 
@@ -129,9 +134,24 @@ void HermesOptionsDialog::setupUI() {
 
     layout->addLayout(form);
 
+    // Ok (AcceptRole) — an Apply button has ApplyRole, which never emits
+    // QDialogButtonBox::accepted, so the dialog could not be confirmed (H3).
     auto *buttons = new QDialogButtonBox(
-        QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
-    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
+    connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
+        // --yolo turns off Hermes's dangerous-command approval entirely; ask
+        // for the same explicit confirmation Codex danger-full-access gets (H4).
+        if (m_yoloCheck->isChecked() && !m_yoloConfirmed) {
+            const auto answer = QMessageBox::warning(
+                this, tr("Skip all approvals?"),
+                tr("--yolo lets Hermes run dangerous commands without asking. "
+                   "Consiglio cannot approve or block them for you.\n\nContinue?"),
+                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+            if (answer != QMessageBox::Yes) return;
+        }
+        accept();
+    });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
 

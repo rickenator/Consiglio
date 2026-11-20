@@ -43,20 +43,36 @@ QString normalizedUserName(const QVariantMap &options) {
     return name.left(80);
 }
 
-// Pulls the `session_id: <id>` value out of Hermes stderr output. Returns an
-// empty string when no id is present.
+// Pulls the `session_id: <id>` value out of Hermes stderr output. Only a
+// whole line of the form `session_id: <id>` counts (the last one wins), so
+// error text that merely mentions "session_id:" is not mistaken for it.
+// Returns an empty string when no id is present.
 QString extractHermesSessionId(const QString &stderrText) {
-    const int idx = stderrText.lastIndexOf("session_id:");
-    if (idx < 0) return {};
-    const QString rest = stderrText.mid(idx + QStringLiteral("session_id:").length());
-    int start = -1;
-    for (int i = 0; i < rest.length(); ++i) {
-        if (!rest.at(i).isSpace()) { start = i; break; }
-    }
-    if (start < 0) return {};
-    int end = start;
-    while (end < rest.length() && !rest.at(end).isSpace()) ++end;
-    return rest.mid(start, end - start);
+    static const QRegularExpression re(QStringLiteral("^\\s*session_id:\\s*(\\S+)\\s*$"),
+                                       QRegularExpression::MultilineOption);
+    QString id;
+    auto matches = re.globalMatch(stderrText);
+    while (matches.hasNext()) id = matches.next().captured(1);
+    return id;
+}
+
+// Removes a trailing `session_id: <id>` line that leaked onto stdout. Text
+// that mentions "session_id:" anywhere else is part of the answer (M1).
+QString stripTrailingHermesSessionLine(QString text) {
+    static const QRegularExpression re(QStringLiteral("(?:^|\\n)[ \\t]*session_id:[ \\t]*\\S+[ \\t]*\\s*$"));
+    const auto m = re.match(text);
+    if (m.hasMatch()) text.truncate(m.capturedStart());
+    return text;
+}
+
+// Launch options worth persisting so a reconnected session is rebuilt with
+// the same configuration (M2). Secrets are never written to the database.
+QVariantMap persistableOptions(QVariantMap options) {
+    options.remove("apiKey");
+    // Install-specific paths are re-supplied by the caller on reconnect.
+    options.remove("historyMcpScript");
+    options.remove("historyDatabasePath");
+    return options;
 }
 }
 
@@ -69,30 +85,10 @@ QList<SessionRecord> SessionManager::listSessions() const {
     return result;
 }
 
-QString SessionManager::startSession(const QString &provider, const QString &repository,
-                                     const QString &branch, const QVariantMap &options) {
-    const QString sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    SessionState state;
-    state.record.id = sessionId;
-    state.record.provider = provider;
-    state.record.status = "running";
-    state.record.repository = repository;
-    state.record.branch = branch;
-    state.record.projectId = options.value("projectId").toString();
-    state.record.permissionMode = validatedSandboxMode(options);
-    state.record.preferredName = normalizedUserName(options);
-    state.record.startedAt = QDateTime::currentMSecsSinceEpoch();
-    state.record.lastActivity = state.record.startedAt;
-    state.workingDir = !repository.isEmpty() && QDir(repository).exists()
-        ? repository : QDir::currentPath();
-    state.environment = QProcessEnvironment::systemEnvironment();
-    // These describe the process that launched Consiglio; they must not
-    // silently override the permission selected for a new child session.
-    state.environment.remove("CODEX_PERMISSION_PROFILE");
-    state.environment.remove("CODEX_SANDBOX_NETWORK_DISABLED");
-    state.environment.remove("CODEX_THREAD_ID");
-    state.environment.remove("CODEX_CI");
-
+void SessionManager::configureProvider(SessionState &state, const QString &provider,
+                                       const QVariantMap &options) {
+    // Shared by startSession and reconnectSession so a reconnected session
+    // runs with exactly the configuration it was started with (M2).
     if (provider == "ollama") {
         state.program = "ollama";
         const QString baseUrl = options.value("baseUrl").toString();
@@ -196,6 +192,40 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
                     tomlStringArray({historyMcpScript, "--database", historyDatabasePath}));
         }
     }
+}
+
+QString SessionManager::startSession(const QString &provider, const QString &repository,
+                                     const QString &branch, const QVariantMap &options) {
+    const QString sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    SessionState state;
+    state.record.id = sessionId;
+    state.record.provider = provider;
+    state.record.status = "running";
+    state.record.repository = repository;
+    state.record.branch = branch;
+    state.record.projectId = options.value("projectId").toString();
+    // Hermes manages its own approvals (`approvals.*` in its config, or none
+    // with --yolo); Consiglio's sandbox modes don't apply to it, so don't
+    // display one that isn't enforced (H4).
+    state.record.permissionMode = provider == "hermes"
+        ? (options.value("yolo", false).toBool() ? QStringLiteral("hermes-yolo")
+                                                 : QStringLiteral("provider-managed"))
+        : validatedSandboxMode(options);
+    state.record.options = persistableOptions(options);
+    state.record.preferredName = normalizedUserName(options);
+    state.record.startedAt = QDateTime::currentMSecsSinceEpoch();
+    state.record.lastActivity = state.record.startedAt;
+    state.workingDir = !repository.isEmpty() && QDir(repository).exists()
+        ? repository : QDir::currentPath();
+    state.environment = QProcessEnvironment::systemEnvironment();
+    // These describe the process that launched Consiglio; they must not
+    // silently override the permission selected for a new child session.
+    state.environment.remove("CODEX_PERMISSION_PROFILE");
+    state.environment.remove("CODEX_SANDBOX_NETWORK_DISABLED");
+    state.environment.remove("CODEX_THREAD_ID");
+    state.environment.remove("CODEX_CI");
+
+    configureProvider(state, provider, options);
 
     // Codex and Hermes are driven one structured turn at a time. There is
     // deliberately no full-screen TUI process to leak terminal control
@@ -373,25 +403,34 @@ bool SessionManager::startHermesTurn(const QString &sessionId, const QString &pr
     connect(process, &QProcess::readyReadStandardOutput, this, [this, sessionId, process]() {
         consumeHermesOutput(sessionId, process->readAllStandardOutput());
     });
-    connect(process, &QProcess::readyReadStandardError, this, [this, sessionId, process]() {
+    // Capture the Hermes session id as soon as it appears on stderr, so a
+    // crash mid-turn doesn't lose it (M3).
+    auto captureSessionId = [this, sessionId]() {
         auto current = m_sessions.find(sessionId);
-        if (current != m_sessions.end())
-            current.value().stderrBuffer += QString::fromUtf8(process->readAllStandardError());
+        if (current == m_sessions.end()) return;
+        const QString sid = extractHermesSessionId(current.value().stderrBuffer);
+        if (!sid.isEmpty() && sid != current.value().codexThreadId) {
+            current.value().codexThreadId = sid;
+            current.value().record.codexThreadId = sid;
+            emit codexThreadIdReceived(sessionId, sid);
+        }
+    };
+    connect(process, &QProcess::readyReadStandardError, this, [this, sessionId, process, captureSessionId]() {
+        auto current = m_sessions.find(sessionId);
+        if (current == m_sessions.end()) return;
+        current.value().stderrBuffer += QString::fromUtf8(process->readAllStandardError());
+        captureSessionId();
     });
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-            [this, sessionId, process](int exitCode, QProcess::ExitStatus) {
+            [this, sessionId, process, captureSessionId](int exitCode, QProcess::ExitStatus) {
         consumeHermesOutput(sessionId, process->readAllStandardOutput(), true);
         auto current = m_sessions.find(sessionId);
-        if (current != m_sessions.end())
-            current.value().stderrBuffer += QString::fromUtf8(process->readAllStandardError());
-        // Capture the hermes session id from stderr so later turns resume.
-        if (current != m_sessions.end()) {
-            const QString sid = extractHermesSessionId(current.value().stderrBuffer);
-            if (!sid.isEmpty() && sid != current.value().codexThreadId) {
-                current.value().codexThreadId = sid;
-                emit codexThreadIdReceived(sessionId, sid);
-            }
+        if (current == m_sessions.end()) {  // L1: session already gone
+            process->deleteLater();
+            return;
         }
+        current.value().stderrBuffer += QString::fromUtf8(process->readAllStandardError());
+        captureSessionId();
         const QString stderrText = current.value().stderrBuffer.trimmed();
         current.value().process = nullptr;
         process->deleteLater();
@@ -436,10 +475,7 @@ void SessionManager::consumeHermesOutput(const QString &sessionId,
     // (Hermes normally prints that to stderr, but we guard against leakage).
     QString text = it.value().jsonBuffer;
     it.value().jsonBuffer.clear();
-    if (!text.endsWith('\n')) text += '\n';
-    const int idLine = text.indexOf("session_id:");
-    if (idLine >= 0) text.remove(idLine, text.length() - idLine);
-    text = text.trimmed();
+    text = stripTrailingHermesSessionLine(text).trimmed();
     if (text.isEmpty()) return;
     emit assistantMessageReceived(sessionId, text);
 }
@@ -463,14 +499,15 @@ bool SessionManager::stopSession(const QString &sessionId) {
     return true;
 }
 
-bool SessionManager::reconnectSession(const SessionRecord &record) {
+bool SessionManager::reconnectSession(const SessionRecord &record, const QVariantMap &overrides) {
     if (m_sessions.contains(record.id)) return true;
 
-    // Structured Codex and Hermes sessions with a thread/session ID can be
-    // reconnected; everything else (PTY providers) cannot.
-    const bool isCodex = record.provider == "codex";
+    // Structured Codex (incl. remote llama.cpp) and Hermes sessions with a
+    // thread/session ID can be reconnected; PTY providers cannot.
+    const bool isCodex = record.provider == "codex" || record.provider == "remote_llamacpp";
     const bool isHermes = record.provider == "hermes";
     if ((!isCodex && !isHermes) || record.codexThreadId.isEmpty()) return false;
+    if (record.provider == "remote_llamacpp" && record.options.isEmpty()) return false;
 
     SessionState state;
     state.record = record;
@@ -483,7 +520,15 @@ bool SessionManager::reconnectSession(const SessionRecord &record) {
     state.environment.remove("CODEX_THREAD_ID");
     state.environment.remove("CODEX_CI");
 
-    if (isCodex) {
+    if (!record.options.isEmpty()) {
+        // Rebuild through the same code as startSession (model, provider,
+        // reasoning, toolsets, history MCP, ...). Overrides carry values that
+        // are deliberately not persisted, such as API keys.
+        QVariantMap options = record.options;
+        for (auto it = overrides.cbegin(); it != overrides.cend(); ++it) options.insert(it.key(), it.value());
+        configureProvider(state, record.provider, options);
+    } else if (isCodex) {
+        // Legacy record (saved before options were persisted).
         state.structuredCodex = true;
         state.program = "codex";
         state.providerArgs << "-c"

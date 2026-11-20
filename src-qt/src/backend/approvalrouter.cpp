@@ -74,24 +74,20 @@ int ApprovalRouter::pendingCount() const {
 }
 
 QStringList ApprovalRouter::clearSession(const QString &sessionId) {
+    // Return only the ids cleared by THIS call (H5: the old code appended
+    // cleared.last() to an empty list — an assert / UB — and then returned
+    // every id ever resolved).
     QStringList cleared;
     auto it = m_pending.begin();
     while (it != m_pending.end()) {
         if (it.value().approval.sessionId == sessionId || it.value().targetSessionId == sessionId) {
+            cleared.append(it.key());
             m_resolved.insert(it.key());
             it = m_pending.erase(it);
-            cleared.append(cleared.last() + QString()); // placeholder
         } else {
             ++it;
         }
     }
-    // Re-collect cleared IDs properly
-    cleared.clear();
-    for (const auto &id : m_resolved) {
-        if (!m_pending.contains(id)) {
-            cleared.append(id);
-        }
-    }
-    emit pendingCountChanged(m_pending.size());
+    if (!cleared.isEmpty()) emit pendingCountChanged(m_pending.size());
     return cleared;
 }

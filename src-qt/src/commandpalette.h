@@ -6,14 +6,14 @@
 #include <QListWidget>
 
 struct PaletteAction {
-    QString id;        // stable identifier, e.g. "new-session"
-    QString label;     // display text, e.g. "New Session"
+    QString id;        // stable identifier, e.g. "new-session" or "/model"
+    QString label;     // display text, e.g. "Model" or "New Session"
     QString shortcut;  // hint, e.g. "Ctrl+N"
 };
 
-// A compact, searchable action palette. Type to filter; Enter runs the
-// highlighted action; Esc closes. Modeled on the Hermes / IDE command
-// palettes so common session controls are reachable without hunting menus.
+// A compact, searchable action palette (Ctrl+K). Lists app actions plus the
+// Hermes slash commands the session exposes (/model, /context, /tools, …).
+// Type to filter; Enter runs the highlighted action; Esc closes.
 class CommandPalette : public QWidget {
     Q_OBJECT
 
@@ -34,6 +34,9 @@ public slots:
 private:
     void setupUI();
     void refreshList();
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
     QWidget *m_overlay = nullptr;
     QLineEdit *m_filter = nullptr;

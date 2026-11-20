@@ -20,6 +20,8 @@ private slots:
     void testDuplicateReject();
     void testResolveNonExistent();
     void testDoubleResolve();
+    void testClearSession_withPending();
+    void testClearSession_returnsOnlyThisCall();
 
 private:
     ApprovalRouter *m_router;
@@ -228,6 +230,32 @@ void TestApprovalRouter::testDoubleResolve() {
     m_router->registerApproval(req);
     QVERIFY(m_router->resolve("double-resolve", true));
     QVERIFY(!m_router->resolve("double-resolve", false)); // double resolve fails
+}
+
+// H5 regression: clearSession with a pending approval used to assert
+// (cleared.last() on an empty list) and returned every id ever resolved.
+void TestApprovalRouter::testClearSession_withPending() {
+    ApprovalRequest a; a.id = "a1"; a.sessionId = "s1"; a.command = "rm"; a.timestamp = 1;
+    ApprovalRequest b; b.id = "b1"; b.sessionId = "s2"; b.command = "ls"; b.timestamp = 2;
+    QVERIFY(m_router->registerApproval(a));
+    QVERIFY(m_router->registerApproval(b));
+    QSignalSpy countSpy(m_router, &ApprovalRouter::pendingCountChanged);
+    const QStringList cleared = m_router->clearSession("s1");
+    QCOMPARE(cleared, QStringList{"a1"});
+    QCOMPARE(m_router->pendingCount(), 1);
+    QVERIFY(m_router->has("b1"));
+    QCOMPARE(countSpy.count(), 1);
+    QVERIFY(!m_router->resolve("a1", true));  // cleared counts as resolved
+}
+
+void TestApprovalRouter::testClearSession_returnsOnlyThisCall() {
+    ApprovalRequest a; a.id = "old"; a.sessionId = "s1"; a.command = "x"; a.timestamp = 1;
+    QVERIFY(m_router->registerApproval(a));
+    QVERIFY(m_router->resolve("old", true));
+    ApprovalRequest b; b.id = "new"; b.sessionId = "s1"; b.command = "y"; b.timestamp = 2;
+    QVERIFY(m_router->registerApproval(b));
+    QCOMPARE(m_router->clearSession("s1"), QStringList{"new"});
+    QCOMPARE(m_router->clearSession("s1"), QStringList{});
 }
 
 QTEST_MAIN(TestApprovalRouter)

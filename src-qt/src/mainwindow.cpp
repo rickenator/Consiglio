@@ -540,6 +540,20 @@ bool MainWindow::startSession(const QString &provider, const QString &repoDir,
     evt.sessionId = sessionId;
     evt.timestamp = QDateTime::currentMSecsSinceEpoch();
     addTimelineEvent(evt);
+    if (provider == "hermes") {
+        // Be explicit: one-shot `hermes chat -q` turns have no approval
+        // channel back to Consiglio (H4). Hermes applies its own policy.
+        EventModel::EventItem note;
+        note.type = EventModel::SystemEvent;
+        note.content = options.value("yolo", false).toBool()
+            ? tr("Hermes is running with --yolo: dangerous commands run without approval.")
+            : tr("Hermes applies its own approval policy (approvals.* in its config; one-shot "
+                 "turns deny dangerous commands by default). Consiglio can't approve commands "
+                 "for these turns — use Consiglio · Hermes (src-hermes) for interactive approvals.");
+        note.sessionId = sessionId;
+        note.timestamp = evt.timestamp;
+        addTimelineEvent(note);
+    }
     return true;
 }
 
@@ -698,9 +712,21 @@ void MainWindow::onSessionSelected(const QString &sessionId) {
     if (!m_sessionManager.hasSession(sessionId)) {
         const auto allSessions = m_database.sessions();
         for (const auto &record : allSessions) {
-            if (record.id == sessionId && m_sessionManager.reconnectSession(record)) {
-                break;
+            if (record.id != sessionId) continue;
+            // Values that are deliberately not persisted with the session
+            // (secrets, install paths) are supplied fresh (M2).
+            QVariantMap overrides;
+            overrides["userName"] = m_settings.value().userName;
+            const QString historyMcpScript = QCoreApplication::applicationDirPath()
+                + "/consiglio_history_mcp.py";
+            if (QFileInfo::exists(historyMcpScript)) {
+                overrides["historyMcpScript"] = historyMcpScript;
+                overrides["historyDatabasePath"] = m_database.databasePath();
             }
+            if (record.provider == "remote_llamacpp" || record.provider == "llama-cpp")
+                overrides["apiKey"] = m_settings.value().remoteLlamaCpp.apiKey;
+            m_sessionManager.reconnectSession(record, overrides);
+            break;
         }
     }
 
@@ -721,6 +747,7 @@ void MainWindow::onSessionSelected(const QString &sessionId) {
 
 void MainWindow::onSessionStoppedFromList(const QString &sessionId) {
     m_sessionManager.stopSession(sessionId);
+    m_approvalRouter.clearSession(sessionId);  // drop its pending approvals (H5 hook)
     if (m_activeSessionId == sessionId) {
         m_activeSessionId.clear();
     }
@@ -800,6 +827,7 @@ void MainWindow::onPaletteAction(const QString &id) {
     else if (id == "stop-session") {
         if (!m_activeSessionId.isEmpty()) {
             m_sessionManager.stopSession(m_activeSessionId);
+            m_approvalRouter.clearSession(m_activeSessionId);
             m_activeSessionId.clear();
             updateStatusBarSessionState();
         }
@@ -819,7 +847,9 @@ void MainWindow::onHermesOptions() {
         "lastWorkspace", QDir::homePath()).toString();
     // If there's an active hermes session, re-apply options to it on next turn.
     // For now, open the dialog; starting a new hermes session uses these values.
-    HermesOptionsDialog dialog(initialWorkspace, {}, this);
+    // Seed with the saved options so re-opening doesn't wipe them (L4).
+    HermesOptionsDialog dialog(initialWorkspace,
+                               m_database.preference("hermes/sessionOptions").toMap(), this);
     if (dialog.exec() == QDialog::Accepted) {
         // Persist the chosen options so the next hermes session reuses them.
         QVariantMap opts = dialog.options();

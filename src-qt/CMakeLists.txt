@@ -134,6 +134,21 @@ target_link_libraries(test_appdatabase PRIVATE
     Qt5::Core Qt5::Sql Qt5::Test ConsiglioBackend)
 add_test(NAME AppDatabaseTests COMMAND test_appdatabase)
 
+add_executable(test_hermessession tests/test_hermessession.cpp)
+target_link_libraries(test_hermessession PRIVATE Qt5::Core Qt5::Test ConsiglioBackend)
+add_test(NAME HermesSessionTests COMMAND test_hermessession)
+
+add_executable(test_hermesui
+    tests/test_hermesui.cpp
+    src/hermesoptionsdialog.cpp
+    src/hermesoptionsdialog.h
+    src/commandpalette.cpp
+    src/commandpalette.h
+)
+target_include_directories(test_hermesui PRIVATE src)
+target_link_libraries(test_hermesui PRIVATE Qt5::Core Qt5::Widgets Qt5::Test ConsiglioBackend)
+add_test(NAME HermesUiTests COMMAND test_hermesui)
+
 add_test(NAME ConsiglioHistoryMcpTests
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_consiglio_history_mcp.py
             ${CMAKE_CURRENT_BINARY_DIR}/consiglio_history_mcp.py)

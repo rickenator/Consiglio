@@ -11,7 +11,37 @@ private slots:
     void persistsPreferences();
     void groupsSessionsAndEventsByProject();
     void marksAbandonedRunningSessions();
+    void persistsSessionOptions();
 };
+
+// M2: launch options are stored with the session so reconnect can rebuild it.
+void TestAppDatabase::persistsSessionOptions() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.path() + "/consiglio.sqlite";
+    {
+        AppDatabase database(path);
+        QVERIFY2(database.isOpen(), qPrintable(database.lastError()));
+        SessionRecord session;
+        session.id = "hermes-1";
+        session.provider = "hermes";
+        session.status = "running";
+        session.repository = directory.path();
+        session.permissionMode = "provider-managed";
+        session.startedAt = 1;
+        session.lastActivity = 1;
+        session.options["model"] = "anthropic/x";
+        session.options["maxTurns"] = 7;
+        session.options["worktree"] = true;
+        QVERIFY2(database.upsertSession(session), qPrintable(database.lastError()));
+    }
+    AppDatabase reopened(path);
+    const auto records = reopened.sessions();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.first().options.value("model").toString(), QString("anthropic/x"));
+    QCOMPARE(records.first().options.value("maxTurns").toInt(), 7);
+    QCOMPARE(records.first().options.value("worktree").toBool(), true);
+}
 
 void TestAppDatabase::persistsPreferences() {
     QTemporaryDir directory;

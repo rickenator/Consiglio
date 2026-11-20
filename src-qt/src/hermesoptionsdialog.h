@@ -24,6 +24,8 @@ public:
     // The assembled option map (keys match SessionManager expectations).
     QVariantMap options() const;
     QString workspace() const;
+    // Skip the --yolo confirmation prompt (already confirmed elsewhere).
+    void setYoloConfirmed(bool confirmed) { m_yoloConfirmed = confirmed; }
 
 private:
     void setupUI();
@@ -38,5 +40,6 @@ private:
     QLineEdit *m_profileEdit = nullptr;
     QLineEdit *m_maxTurnsEdit = nullptr;
     QCheckBox *m_yoloCheck = nullptr;
+    bool m_yoloConfirmed = false;
     QCheckBox *m_worktreeCheck = nullptr;
 };
