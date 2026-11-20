@@ -1,0 +1,24 @@
+📚 **Commands** (110 total, page 4/6)
+
+`/restart` -- Gracefully restart the gateway after draining active runs
+`/usage [reset [--force]]` -- Show token usage and rate limits; `reset` redeems a banked Codex limit reset
+`/login` -- Sign in with a Nous account (keeps your connectors)
+`/topup` -- Show your Nous balance and manage billing on the portal
+`/insights [days]` -- Show usage insights and analytics
+`/platform <pause|resume|list> [name]` -- Pause, resume, or list a failing gateway platform
+`/update` -- Update Hermes Agent to the latest version
+`/version` -- Show Hermes Agent version (alias: `/v`)
+`/debug [upload|nous upload|local]` -- Debug report (versions, config keys, error counts; no log text): shows the privacy notice; /debug upload shares links
+
+⚡ **Skill Commands**:
+`/architecture-diagram` — Dark-themed SVG architecture/cloud/infra diagrams as HTML.
+`/arxiv` — Search arXiv papers by keyword, author, category, or ID.
+`/ascii-video` — ASCII video: convert video/audio to colored ASCII MP4/GIF.
+`/baoyu-infographic` — Infographics: 21 layouts x 21 styles (信息图, 可视化).
+`/blocked-page-recovery` — Use when a fetch fails: 403/429, paywall, WAF, bot wall.
+`/claude-code` — Delegate coding to Claude Code CLI (features, PRs).
+`/claude-design` — Design one-off HTML artifacts (landing, deck, prototype).
+`/codebase-inspection` — Inspect codebases w/ pygount: LOC, languages, ratios.
+`/codex` — Delegate coding to OpenAI Codex CLI (features, PRs).
+
+`/commands 3` ← prev | next → `/commands 5`

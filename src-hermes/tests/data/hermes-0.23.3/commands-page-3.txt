@@ -1,0 +1,24 @@
+📚 **Commands** (110 total, page 3/6)
+
+`/footer [on|off|status]` -- Toggle gateway runtime-metadata footer on final replies
+`/yolo` -- Toggle YOLO mode (skip all dangerous command approvals)
+`/approvals [manual|smart|off]` -- Show or set the persistent dangerous-command approval mode
+`/reasoning [level|show|hide|full|clamp] [--global]` -- Manage reasoning effort and display
+`/fast [normal|fast|auto|cold|ultrafast|status] [--global]` -- Fast mode — OpenAI Priority Processing / Anthropic Fast Mode (normal/fast/auto/cold/ultrafast)
+`/voice [on|off|tts|status]` -- Toggle voice mode
+`/busy [queue|steer|interrupt|status]` -- Control how messages behave while Hermes is working
+`/autoprune [on|off|later|status]` -- Turn automatic pruning of old sessions on or off
+`/memory [pending|approve|reject|approval] [id|on|off]` -- Review pending memory writes / toggle the approval gate
+`/bundles` -- List skill bundles (aliases /<name> for multiple skills)
+`/learn <what to learn from>` -- Learn a reusable skill from anything you describe (dirs, URLs, this chat, notes)
+`/init [notes]` -- Generate or update AGENTS.md project instructions from a repo scan
+`/suggestions [accept|dismiss N | catalog]` -- Review suggested automations (accept/dismiss) (alias: `/suggest`)
+`/blueprint [name] [slot=value ...]` -- Set up an automation from a blueprint template (alias: `/bp`)
+`/curator [subcommand]` -- Background skill maintenance (status, run, pin, archive, list-archived)
+`/kanban [subcommand]` -- Multi-profile collaboration board (tasks, links, comments)
+`/reload-mcp` -- Reload MCP servers from config
+`/reload-skills` -- Re-scan ~/.hermes/skills/ for newly installed or removed skills
+`/commands [page]` -- Browse all commands and skills (paginated)
+`/help [skills|<filter>]` -- Show available commands (/help skills lists skill commands, /help <text> filters)
+
+`/commands 2` ← prev | next → `/commands 4`

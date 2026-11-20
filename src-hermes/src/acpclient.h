@@ -48,6 +48,43 @@ public:
     struct SlashCommand {
         QString name;         // e.g. "model"
         QString description;  // e.g. "Show current model and provider"
+        QString hint;         // input.hint, e.g. "model name to switch to" ("" = no input)
+    };
+
+    // A session configuration option (ACP configOptions), e.g. the model,
+    // reasoning effort or edit-approval mode. Rendered generically: the UI
+    // never assumes which ids exist, so options a newer Hermes adds appear on
+    // their own and options it drops disappear.
+    struct ConfigChoice {
+        QString value;
+        QString name;
+        QString description;
+        QString group;        // group label for grouped selects ("" = ungrouped)
+    };
+    struct ConfigOption {
+        QString id;
+        QString name;
+        QString description;
+        QString category;     // "mode", "model", "thought_level", "other", … (free-form)
+        QString type;         // "select" is the only type rendered as a picker
+        QString currentValue;
+        QList<ConfigChoice> choices;
+    };
+    // Legacy ACP session modes (used only when the agent sends no "mode"
+    // config option — the spec prefers configOptions).
+    struct SessionMode {
+        QString id;
+        QString name;
+        QString description;
+    };
+    // initialize.authMethods — how the agent can be set up (e.g. Hermes's
+    // "hermes-setup", a terminal command that runs the provider wizard).
+    struct AuthMethod {
+        QString id;
+        QString name;
+        QString description;
+        QString type;         // "terminal", "agent", … (free-form)
+        QStringList args;     // for type == "terminal": args to pass to the agent binary
     };
 
     // A previously-saved Hermes session (from session/list).
@@ -80,6 +117,11 @@ public:
     // Send a user prompt to the active session. Returns false if no session
     // is ready or a turn is already in flight. Streams until turnCompleted().
     bool sendPrompt(const QString &text);
+
+    // Ask the agent to stop the turn in flight (session/cancel). The turn then
+    // completes with stopReason "cancelled"; the session stays open.
+    bool cancelTurn();
+    void setCancelGrace(int ms);   // how long to wait for the agent to confirm (default 8 s)
 
     // End the active session (client-side) but keep the process warm so the
     // session list can be refreshed immediately. Emits sessionStopped().
@@ -132,7 +174,23 @@ public:
     // else PATH lookup, else the bare name for the OS to resolve.
     static QString resolveExecutable(const QString &requested = QString());
 
+    // Run a slash command without showing it in the conversation (used to
+    // discover Hermes's full command list with "/commands N"). Queued behind
+    // any turn in flight; a user prompt sent meanwhile waits for it. Emits
+    // quietCommandFinished(). Returns false when no session is live.
+    bool runQuietCommand(const QString &text);
+    bool hasQuietWork() const;
+
+    // Session configuration (ACP session/set_config_option, session/set_mode).
+    QList<ConfigOption> configOptions() const;
+    QList<SessionMode> sessionModes() const;
+    QString currentModeId() const;
+    bool setConfigOption(const QString &configId, const QString &value);
+    bool setMode(const QString &modeId);
+    QList<AuthMethod> authMethods() const;
+
     QString sessionId() const;
+    QString sessionCwd() const;
     QStringList availableModels() const;
     QList<SlashCommand> slashCommands() const;
     int contextUsed() const;
@@ -176,13 +234,20 @@ signals:
     void agentVersionChanged(const QString &oldVersion, const QString &newVersion);
     // After a relaunch, the previously active session was re-opened.
     void sessionRestored(const QString &sessionId);
+    // A runQuietCommand() finished: `output` is the agent's reply text.
+    void quietCommandFinished(const QString &command, const QString &output, bool ok);
+    void configOptionsChanged();
+    void modesChanged();
+    // set_config_option / set_mode was rejected; the previous value stands.
+    void configChangeFailed(const QString &configId, const QString &message);
 
 private slots:
     void onStdout();
     void onProcessFinished(int code, QProcess::ExitStatus status);
 
 private:
-    enum class ReqKind { Initialize, NewSession, ResumeSession, LoadSession, ListSessions, Prompt };
+    enum class ReqKind { Initialize, NewSession, ResumeSession, LoadSession, ListSessions, Prompt,
+                         QuietPrompt, SetConfigOption, SetMode };
 
     bool launchInternal();
     void stopProcess();
@@ -201,6 +266,11 @@ private:
     void cancelPendingPermissions(bool notifyAgent);
     void scheduleRestart();
     bool openSession(const QString &sessionId, const QString &cwd, bool restoring);
+    bool dispatchPrompt(const QString &text, bool quiet);
+    void pumpQuietQueue();
+    void finishQuiet(bool ok);
+    void parseSessionConfig(const QJsonObject &result);
+    void parseConfigOptions(const QJsonArray &options);
     static QString idKey(const QJsonValue &id);
 
     QPointer<QProcess> m_proc;
@@ -218,6 +288,22 @@ private:
     QString m_sessionCwd;
     QStringList m_models;
     QList<SlashCommand> m_commands;
+    QList<ConfigOption> m_configOptions;
+    QList<SessionMode> m_modes;
+    QString m_currentMode;
+    QList<AuthMethod> m_authMethods;
+    // Pending optimistic config changes: request id -> (configId, previous, new).
+    struct ConfigChange { QString id; QString previous; QString value; bool mode = false; };
+    QMap<QString, ConfigChange> m_configChanges;
+
+    // Quiet (hidden) slash commands.
+    QStringList m_quietQueue;
+    QString m_quietCommand;
+    QString m_quietOutput;
+    int m_quietReqId = -1;
+    QString m_deferredPrompt;          // user prompt waiting for a quiet command
+    bool m_hasDeferredPrompt = false;
+    int m_cancelGraceMs = 8000;
     int m_contextUsed = 0;
     int m_contextSize = 0;
 

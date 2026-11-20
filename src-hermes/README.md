@@ -13,10 +13,76 @@ cmake --build src-hermes/build -j
 cd src-hermes/build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 ```
 
-`build/` is ignored (`src-hermes/.gitignore`). `test_acpclient` drives a scripted ACP agent
+`build/` is ignored (`src-hermes/.gitignore`). Three suites run under `ctest`:
+
+- `test_acpclient` drives a scripted ACP agent
 (`tests/fake_hermes_acp.py`, needs `python3`) through request-vs-response handling, the
 permission round-trip, error recovery, protocol drift and the update-and-restart path. The
 live test against a real `hermes` runs only when one is on `PATH`.
+- `test_commandcatalog` parses real `/commands` pages captured from Hermes v0.23.3
+  (`tests/data/`), and covers merging, removal after an update, the per-version cache,
+  `hermes config show` and secret masking.
+- `test_mainwindow` runs the window offscreen against the fake agent. It checks that every
+  discovered command is in the menus and palette, that a command added by an update
+  appears, that every control has a tooltip and accessible name, that `/goal` is handled
+  like any other command, the config pickers, Stop and the disconnected state.
+
+`uitour` is a screenshot tour, not a test:
+`QT_QPA_PLATFORM=offscreen ./uitour --out DIR [--theme light|dark] [--real]`. Without
+`--real` it uses the fake agent. With `--real` it uses the `hermes` on `PATH`, which
+needs a configured model provider.
+
+## The interface
+
+```
+ menu bar: File · Session · Hermes · View · Help
+ toolbar:  sidebar · new · model ▾ · reasoning ▾ · approvals ▾ ……………  Commands  ⚙
+ left rail: workspace, New Session, current and recent sessions (filterable)
+ centre:   banner · conversation · empty state · composer ("/" completes commands)
+ status:   ● state · Hermes version … model · context bar · turn timer · tokens
+```
+
+- **Every Hermes command is reachable in three ways:** from the menus, from the
+  **command palette** (Ctrl+K, fuzzy search over names, aliases and descriptions) and
+  from the composer (type `/`).
+  - The **Hermes** menu has one submenu per group: Model & Behavior; Tools, Skills &
+    Memory; Planning & Automation (`/goal`, `/loop`, `/heartbeat`, `/plan`…); Info &
+    Diagnostics; Gateway & Account; Skills; More.
+  - Session commands (`/undo`, `/retry`, `/compress`, `/branch`…) are also listed
+    in the **Session** menu.
+  - No command gets special treatment. `/goal` is handled the same way as the rest.
+  - A command with fixed choices (`[on|off|status]`) gets a submenu with those choices.
+  - A command that takes text opens a small form that shows the exact command line
+    before it runs.
+- **Session settings** that Hermes reports as ACP `configOptions` (model, reasoning
+  effort, approval policy, plus anything a future Hermes adds) become toolbar pickers.
+  They are also listed under Settings → Session. When the window is narrow, the
+  secondary pickers step out of the toolbar first.
+- **Setup and configuration** are under Settings → Hermes Agent and Settings →
+  Configuration:
+  - executable resolution;
+  - health and updates (`hermes doctor`, `hermes status`, `hermes update --check`, `hermes update`);
+  - provider setup (`hermes setup`, `hermes model`, run in a terminal);
+  - updates;
+  - `hermes config show` rendered as sections, and `hermes config set`.
+  API keys are never displayed.
+- Light, dark and system themes, Ctrl+= / Ctrl+- zoom, and a shortcut on every common
+  action. Every control has a tooltip and an accessible name.
+
+### Commands come from Hermes, not from this repo
+
+The command list is discovered from the running agent every time:
+
+1. The ACP `available_commands_update` list.
+2. Hermes's own paged registry. `/commands 1…N` is run quietly in the background and
+   never shown in the chat; Hermes answers registry commands without a model turn.
+
+The result is cached per Hermes version, so the menus are populated at the next launch
+before discovery finishes. A version change, or **Hermes → Refresh Command List**,
+re-runs discovery. After a `hermes update`, new commands appear and removed ones
+disappear. Only presentation is static: group, icon and friendly label for known
+names. An unknown command still appears, under **More**, with a generic icon and a
+label derived from its name.
 
 ## Hermes updates itself — how the client copes
 
