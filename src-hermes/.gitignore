@@ -1,0 +1,3 @@
+# CMake build trees and binaries are never committed (audit M11).
+build/
+build-*/
