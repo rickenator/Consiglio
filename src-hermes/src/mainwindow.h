@@ -179,6 +179,8 @@ private:
     QList<QAction *> m_configActions;        // toolbar widgets for combos
     QHash<QString, QComboBox *> m_configCombos;
     QHash<QString, QAction *> m_actions;     // by id
+    bool m_inResponsive = false;
+    bool m_responsivePending = false;
     bool m_railAutoHidden = false;           // rail hidden because the window is narrow
 
     // Status bar widgets.

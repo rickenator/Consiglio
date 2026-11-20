@@ -17,6 +17,8 @@
 #include <QFileDialog>
 #include <QScopedPointer>
 #include <QStyle>
+#include <QStyleOptionComboBox>
+#include <QStylePainter>
 #include <functional>
 #include <QDir>
 #include <QGuiApplication>
@@ -671,6 +673,33 @@ void MainWindow::rebuildCommandMenus() {
     updateActionStates();
 }
 
+namespace {
+// A toolbar picker that elides its current text ("Custom endpoint · qwen2.5…")
+// instead of clipping it under the arrow when Hermes reports a long name.
+class ElidedCombo : public QComboBox {
+public:
+    using QComboBox::QComboBox;
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QStylePainter p(this);
+        QStyleOptionComboBox opt;
+        initStyleOption(&opt);
+        p.drawComplexControl(QStyle::CC_ComboBox, opt);
+        const QRect field = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
+        const int iconW = opt.currentIcon.isNull() ? 0 : opt.iconSize.width() + 6;
+        opt.currentText = opt.fontMetrics.elidedText(opt.currentText, Qt::ElideRight, qMax(0, field.width() - iconW));
+        p.drawControl(QStyle::CE_ComboBoxLabel, opt);
+    }
+};
+// Hermes reports some choices as bare lowercase words ("medium"); title-case
+// those for display. Identifiers (models, paths) are left alone.
+QString displayChoice(const QString &s) {
+    if (s.isEmpty() || s != s.toLower()) return s;
+    for (const QChar c : s) if (!c.isLetter() && c != QLatin1Char(' ')) return s;
+    return s.at(0).toUpper() + s.mid(1);
+}
+}  // namespace
+
 void MainWindow::rebuildConfigCombos() {
     if (!m_toolbar) return;
     for (QAction *a : qAsConst(m_configActions)) { m_toolbar->removeAction(a); }
@@ -684,7 +713,7 @@ void MainWindow::rebuildConfigCombos() {
                         const QList<AcpClient::ConfigChoice> &choices, const QString &current,
                         std::function<void(const QString &)> apply) {
         if (choices.isEmpty()) return;
-        auto *combo = new QComboBox(m_toolbar);
+        auto *combo = new ElidedCombo(m_toolbar);
         combo->setObjectName(QStringLiteral("toolbarCombo"));
         combo->setProperty("configId", key);
         combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
@@ -704,7 +733,7 @@ void MainWindow::rebuildConfigCombos() {
                 if (combo->count() > 0) combo->insertSeparator(combo->count());
                 lastGroup = c.group;
             }
-            combo->addItem(itemIcon, c.name.isEmpty() ? c.value : c.name, c.value);
+            combo->addItem(itemIcon, displayChoice(c.name.isEmpty() ? c.value : c.name), c.value);
             const int i = combo->count() - 1;
             QString itemTip = c.description;
             if (!c.group.isEmpty()) itemTip = c.group + (itemTip.isEmpty() ? QString() : QStringLiteral(" — ") + itemTip);
@@ -1488,7 +1517,9 @@ void MainWindow::updateGoalButton() {
     }
     const QFontMetrics fm(m_goalButton->font());
     const int goalWidth = width() < t.px(900) ? t.px(140) : t.px(210);
-    m_goalButton->setText(fm.elidedText(text, Qt::ElideRight, goalWidth));
+    const QString shown = fm.elidedText(text, Qt::ElideRight, goalWidth);
+    const bool resized = m_goalButton->text() != shown;
+    m_goalButton->setText(shown);
     const QColor iconColor = state == QLatin1String("paused") && has ? t.tokens().warning
                            : state == QLatin1String("done") && has ? t.tokens().success
                            : t.tokens().accentText;
@@ -1502,6 +1533,12 @@ void MainWindow::updateGoalButton() {
         m_goalButton->style()->polish(m_goalButton);
     }
     m_goalButton->setEnabled(m_conn == Conn::Connected);
+    // A longer goal label needs toolbar room: re-fit the chrome (queued, so
+    // updateResponsive() → updateGoalButton() can't recurse).
+    if (resized && !m_inResponsive && !m_responsivePending) {
+        m_responsivePending = true;
+        QTimer::singleShot(0, this, [this]() { m_responsivePending = false; updateResponsive(); });
+    }
 }
 
 void MainWindow::updateActionStates() {
@@ -1624,6 +1661,8 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
 
 void MainWindow::updateResponsive() {
     if (!m_rail || !m_toolbar) return;
+    m_inResponsive = true;
+    struct Reset { bool &flag; ~Reset() { flag = false; } } reset{m_inResponsive};
     Theme &t = theme();
     const int w = width();
     // The sidebar steps aside when the window gets narrow (the user's choice is restored

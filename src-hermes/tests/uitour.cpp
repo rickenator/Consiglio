@@ -321,6 +321,11 @@ int main(int argc, char **argv) {
         settle(500);
         shot(&failed, "failed");
     }
+    if (real) {
+        // Leave the real Hermes tidy: stop any goal continuation, clear the goal.
+        if (!idle(w)) { w.action(QStringLiteral("app:stop"))->trigger(); waitFor([&]() { return idle(w); }, 30000); }
+        runAndWait(w, QStringLiteral("/goal clear"), 30000);
+    }
     g_log << "Done: " << g_n << " screenshots\n";
     return 0;
 }
