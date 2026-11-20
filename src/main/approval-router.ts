@@ -130,3 +130,18 @@ export class AgentApprovalRouter {
 }
 
 export const agentApprovalRouter = new AgentApprovalRouter();
+
+/**
+ * Resolve an approval through the router when it knows the id. Returns
+ * undefined when the router has never seen it (a legacy, store-only
+ * approval), so callers can fall back without double-resolving.
+ */
+export async function resolveThroughRouter(
+  router: Pick<AgentApprovalRouter, 'has' | 'resolve'>,
+  approvalId: string,
+  approved: boolean,
+): Promise<boolean | undefined> {
+  if (!router.has(approvalId)) return undefined;
+  const result = await router.resolve(approvalId, approved);
+  return result.ok;
+}

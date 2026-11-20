@@ -114,6 +114,16 @@ export class CodexAdapter implements AgentAdapter {
     const sessionId = options.sessionId || `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const state = this.createSessionState(sessionId, options);
 
+    // Relaunching an id we already track (reconnect) must not leave the old
+    // Codex process running behind the replaced state (C1).
+    const previous = CodexAdapter.sessions.get(sessionId);
+    if (previous && previous !== state) {
+      try { previous.pty?.kill(); } catch { /* already gone */ }
+      previous.pty = null;
+      previous.responseResolve?.('');
+      previous.responseResolve = null;
+    }
+
     // Creating a session must NOT run the agent. `codex exec` with no prompt
     // exits immediately ("No prompt provided…"), so spawning here painted a
     // failure into every brand-new task before the user typed anything.

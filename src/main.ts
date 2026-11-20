@@ -8,6 +8,8 @@ import { resolveCodexCommand, type ExecutableCommand } from './main/platform';
 import { detectAgentReadiness, type AgentId, type ResolvedProbeCommand } from './main/agent-readiness';
 import { configureManagedAgentEnvironment, installMissingAgentFrontends, type AgentInstallResult, type BootstrapProgress } from './main/startup-bootstrap';
 import { CodexAdapter, getAdapter } from './main/adapters';
+import { agentApprovalRouter, resolveThroughRouter } from './main/approval-router';
+import { createReconnectGate, ensureSessionLive } from './main/session-reconnect';
 import { DiscussionSession } from '@/main/discussion-session';
 import path from 'path';
 import fs from 'fs';
@@ -1426,9 +1428,12 @@ function getPendingApprovals(sessionId?: string) {
     .sort((left, right) => right.timestamp - left.timestamp);
 }
 
-function approveCommand(approvalId: string) {
+async function approveCommand(approvalId: string) {
+  // Route to the adapter that is waiting on this approval, if any (M8).
+  const routed = await resolveThroughRouter(agentApprovalRouter, approvalId, true);
   const approval = approvals.get(approvalId);
-  if (!approval) return false;
+  if (!approval) return routed === true;
+  if (routed === false) return false;
   approval.status = 'approved';
   approvals.set(approvalId, approval);
   saveStore();
@@ -1436,9 +1441,11 @@ function approveCommand(approvalId: string) {
   return true;
 }
 
-function rejectCommand(approvalId: string) {
+async function rejectCommand(approvalId: string) {
+  const routed = await resolveThroughRouter(agentApprovalRouter, approvalId, false);
   const approval = approvals.get(approvalId);
-  if (!approval) return false;
+  if (!approval) return routed === true;
+  if (routed === false) return false;
   approval.status = 'rejected';
   approvals.set(approvalId, approval);
   saveStore();
@@ -1971,9 +1978,13 @@ function stopSession(sessionId: string) {
   return true;
 }
 
-async function reconnectSession(sessionId: string) {
+// Concurrent reconnects of one task share a single attempt (C1).
+const reconnectSession = createReconnectGate(reconnectSessionOnce);
+
+async function reconnectSessionOnce(sessionId: string): Promise<boolean> {
   const record = records.get(sessionId);
-  if (!record || sessions.has(sessionId)) return false;
+  if (!record) return false;
+  if (sessions.has(sessionId)) return true; // already live: nothing to do
   const branch = record.branch || getBranch(record.repository);
   const provider = record.provider || appSettings.defaultProvider;
   const providerConfig = resolveProviderConfig(provider, {
@@ -2086,10 +2097,16 @@ async function sendSessionPrompt(sessionId: string, input: string) {
     return true;
   }
 
-  // Delegate prompt sending to the adapter
-  if (state?.pty) return false; // PTY is busy (agent is responding)
-  const adapter = activeAdapter;
-  if (!adapter) return false;
+  // A recorded task that isn't live yet (e.g. after an app restart) is
+  // reconnected under its own id before the prompt is sent (C1).
+  const live = await ensureSessionLive(sessionId, {
+    isLive: id => sessions.has(id),
+    hasRecord: id => records.has(id),
+    reconnect: reconnectSession,
+  });
+  if (!live) return false;
+  if (sessions.get(sessionId)?.pty) return false; // PTY is busy (agent is responding)
+  const adapter = activeAdapter ?? getOrCreateAdapter('codex');
   return adapter.sendPrompt(sessionId, prompt);
 }
 
