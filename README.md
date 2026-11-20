@@ -19,6 +19,36 @@
   </p>
 </div>
 
+<p align="center">
+  <img src="docs/screenshots/hero-chat-dark.png" width="860" alt="Consiglio's native Hermes client in the dark theme, showing a live session answering /status">
+  <br>
+  <sub>The native Hermes client (<a href="src-hermes/README.md"><code>src-hermes</code></a>) talking to a real Hermes agent.</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="docs/screenshots/chat-light.png" alt="A hello-world chat in the light theme"><br><sub><b>Chat</b>, light theme</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/hermes-menu-dark.png" alt="The Hermes menu with Model &amp; Behavior commands open"><br><sub><b>Hermes menu</b>: every slash command, grouped</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/palette-dark.png" alt="The command palette"><br><sub><b>Command palette</b> (Ctrl+K)</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="docs/screenshots/palette-search-light.png" alt="The command palette filtered to model commands"><br><sub><b>Palette search</b> across Hermes commands</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/settings-appearance-light.png" alt="Appearance settings: theme, interface size and text sizes"><br><sub><b>Settings</b>: theme and text sizes</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/settings-shortcuts-dark.png" alt="Keyboard shortcuts settings page"><br><sub><b>Keyboard shortcuts</b>, dark theme</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary>More screenshots</summary>
+<br>
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/tools-command-dark.png" alt="Hermes listing its tools in reply to /tools"><br><sub><b>/tools</b>: what the agent can use</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/session-menu-light.png" alt="The Session menu: branch, compress, export, queue, restore"><br><sub><b>Session menu</b>: branch, compress, export, restore</sub></td>
+  </tr>
+</table>
+</details>
+
 ---
 
 Consiglio wraps the Codex CLI in a native desktop workflow. It is designed for long-running work rather than disposable chats: tasks reconnect automatically, prompts and responses remain copyable, activity is visible, and repository files can be inspected without leaving the conversation.
