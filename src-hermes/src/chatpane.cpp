@@ -494,6 +494,25 @@ void ChatBlock::styleMarkdown() {
             for (int r = 0; r < table->rows(); ++r) {
                 for (int c = 0; c < table->columns(); ++c) {
                     QTextTableCell cell = table->cellAt(r, c);
+                    // Qt's markdown importer can leave an empty paragraph at the
+                    // top of the first cell; drop empty blocks in cells with text.
+                    for (int pass = 0; pass < 4; ++pass) {
+                        QTextBlock first = cell.firstCursorPosition().block();
+                        if (first.text().isEmpty() && first.next().isValid()
+                            && first.next().position() < cell.lastCursorPosition().position() + 1
+                            && cell.lastCursorPosition().block() != first) {
+                            QTextCursor del(first);
+                            del.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor);
+                            del.removeSelectedText();
+                        } else break;
+                    }
+                    if (r == 0) {
+                        QTextCursor hc = cell.firstCursorPosition();
+                        hc.setPosition(cell.lastCursorPosition().position(), QTextCursor::KeepAnchor);
+                        QTextCharFormat bold;
+                        bold.setFontWeight(QFont::DemiBold);
+                        hc.mergeCharFormat(bold);
+                    }
                     QTextCharFormat cf = cell.format();
                     cf.setVerticalAlignment(QTextCharFormat::AlignMiddle);
                     if (r == 0) cf.setBackground(tk.code);
@@ -985,8 +1004,10 @@ void ChatPane::updateSendButton() {
         ui::describe(m_sendBtn, tr("Stop"), ui::withShortcut(tr("Stop the current turn"), QKeySequence(Qt::Key_Escape)));
     } else {
         m_sendBtn->setProperty("mode", "send");
-        m_sendBtn->setIcon(t.icon("arrow-up", tk.accentText));
-        m_sendBtn->setEnabled(m_composerEnabled && !m_input->toPlainText().trimmed().isEmpty());
+        const bool canSend = m_composerEnabled && !m_input->toPlainText().trimmed().isEmpty();
+        // A disabled QIcon mode would wash white-on-grey out; tint explicitly.
+        m_sendBtn->setIcon(t.icon("arrow-up", canSend ? tk.accentText : tk.textFaint));
+        m_sendBtn->setEnabled(canSend);
         ui::describe(m_sendBtn, tr("Send"), ui::withShortcut(tr("Send message"), QKeySequence(Qt::Key_Return)));
     }
     repolish(m_sendBtn);

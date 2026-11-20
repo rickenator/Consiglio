@@ -61,13 +61,16 @@ static void shot(QWidget *w, const QString &name) {
 }
 
 // The window with popup menus painted where they are on screen.
-static void shotWithPopups(QWidget *window, const QList<QWidget *> &popups, const QString &name) {
+// The offscreen screen is small, so Qt clamps popups; paint each one where it
+// would open on a real screen (`at`, window coordinates; null = where it is).
+static void shotWithPopups(QWidget *window, const QList<QPair<QWidget *, QPoint>> &popups, const QString &name) {
     settle(200);
     QImage img = window->grab().toImage();
     QPainter p(&img);
-    for (QWidget *popup : popups) {
+    for (const auto &pp : popups) {
+        QWidget *popup = pp.first;
         if (!popup || !popup->isVisible()) continue;
-        const QPoint at = window->mapFromGlobal(popup->mapToGlobal(QPoint(0, 0)));
+        const QPoint at = pp.second.isNull() ? window->mapFromGlobal(popup->mapToGlobal(QPoint(0, 0))) : pp.second;
         p.drawPixmap(at, popup->grab());
     }
     p.end();
@@ -99,14 +102,16 @@ static void runAndWait(MainWindow &w, const QString &line, int ms) {
 static void tourMenus(MainWindow &w) {
     // Goal menu from the Goal button.
     QToolButton *goal = w.goalButton();
+    const QPoint goalAt = goal->mapTo(&w, QPoint(0, goal->height()));
     w.goalMenu()->popup(goal->mapToGlobal(QPoint(0, goal->height())));
-    shotWithPopups(&w, {w.goalMenu()}, "goal-menu");
+    shotWithPopups(&w, {{w.goalMenu(), goalAt}}, "goal-menu");
     w.goalMenu()->hide();
 
     // Hermes menu with one group open.
     QMenuBar *bar = w.menuBar();
     QAction *hermesAction = w.hermesMenu()->menuAction();
     const QRect r = bar->actionGeometry(hermesAction);
+    const QPoint hermesAt = bar->mapTo(&w, r.bottomLeft());
     w.hermesMenu()->popup(bar->mapToGlobal(r.bottomLeft()));
     settle(150);
     QMenu *sub = nullptr;
@@ -116,19 +121,21 @@ static void tourMenus(MainWindow &w) {
     }
     if (!sub)
         for (QAction *a : w.hermesMenu()->actions()) if (a->menu()) { sub = a->menu(); subAction = a; break; }
+    QPoint subAt;
     if (sub) {
         w.hermesMenu()->setActiveAction(subAction);
         const QRect ar = w.hermesMenu()->actionGeometry(subAction);
+        subAt = hermesAt + QPoint(w.hermesMenu()->width() - 4, ar.top() - 4);
         sub->popup(w.hermesMenu()->mapToGlobal(QPoint(w.hermesMenu()->width() - 4, ar.top() - 4)));
     }
-    shotWithPopups(&w, {w.hermesMenu(), sub}, "hermes-menu");
+    shotWithPopups(&w, {{w.hermesMenu(), hermesAt}, {sub, subAt}}, "hermes-menu");
     if (sub) sub->hide();
     w.hermesMenu()->hide();
 
     // Session menu (app actions + Hermes session commands).
     const QRect sr = bar->actionGeometry(w.sessionMenu()->menuAction());
     w.sessionMenu()->popup(bar->mapToGlobal(sr.bottomLeft()));
-    shotWithPopups(&w, {w.sessionMenu()}, "session-menu");
+    shotWithPopups(&w, {{w.sessionMenu(), bar->mapTo(&w, sr.bottomLeft())}}, "session-menu");
     w.sessionMenu()->hide();
 }
 
@@ -234,11 +241,6 @@ int main(int argc, char **argv) {
     settle(500);
     g_log << "Catalog: " << w.catalog()->count() << " commands\n";
     shot(&w, "session-ready");
-    if (auto *in = w.findChild<QPlainTextEdit *>(QStringLiteral("composerInput"))) {
-        in->grab().save(g_out + "/composer-debug.png");
-        g_log << "  composer: ro=" << in->isReadOnly() << " ph='" << in->placeholderText() << "' len=" << in->toPlainText().size()
-              << " geo=" << in->width() << "x" << in->height() << " vis=" << in->isVisible() << " vp=" << in->viewport()->width() << "x" << in->viewport()->height() << " vpvis=" << in->viewport()->isVisible() << " empty=" << in->document()->isEmpty() << " blocks=" << in->document()->blockCount() << " chars=" << in->document()->characterCount() << " phc=" << in->palette().color(QPalette::PlaceholderText).name(QColor::HexArgb) << " base=" << in->palette().color(QPalette::Base).name(QColor::HexArgb) << " text=" << in->palette().color(QPalette::Text).name(QColor::HexArgb) << "\n";
-    }
 
     runAndWait(w, QStringLiteral("hello world"), real ? 180000 : 10000);
     shot(&w, "hello-world");
