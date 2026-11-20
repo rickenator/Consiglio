@@ -60,7 +60,7 @@ bool AppDatabase::ensureSchema() {
         "CREATE TABLE IF NOT EXISTS sessions ("
         "id TEXT PRIMARY KEY, provider TEXT NOT NULL, status TEXT NOT NULL, "
         "repository TEXT, branch TEXT, project_id TEXT, permission_mode TEXT, preferred_name TEXT, "
-        "started_at INTEGER NOT NULL, last_activity INTEGER NOT NULL)",
+        "codex_thread_id TEXT, started_at INTEGER NOT NULL, last_activity INTEGER NOT NULL)",
         "CREATE INDEX IF NOT EXISTS sessions_activity_idx "
         "ON sessions(last_activity DESC)",
         "CREATE TABLE IF NOT EXISTS events ("
@@ -77,10 +77,17 @@ bool AppDatabase::ensureSchema() {
     }
     query.exec("PRAGMA table_info(sessions)");
     bool hasProjectId = false;
+    bool hasCodexThreadId = false;
     while (query.next()) {
-        if (query.value(1).toString() == "project_id") hasProjectId = true;
+        const QString column = query.value(1).toString();
+        if (column == "project_id") hasProjectId = true;
+        if (column == "codex_thread_id") hasCodexThreadId = true;
     }
     if (!hasProjectId && !query.exec("ALTER TABLE sessions ADD COLUMN project_id TEXT")) {
+        m_lastError = query.lastError().text();
+        return false;
+    }
+    if (!hasCodexThreadId && !query.exec("ALTER TABLE sessions ADD COLUMN codex_thread_id TEXT")) {
         m_lastError = query.lastError().text();
         return false;
     }

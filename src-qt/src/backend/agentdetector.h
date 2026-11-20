@@ -41,6 +41,7 @@ private:
     void detectOllama();
     void detectLlamaCpp();
     void detectOpenInterpreter();
+    void detectHermes();
     void detectNetworkEndpoints();
     QString findExecutable(const QString &name) const;
     QString getVersion(const QString &path) const;

@@ -200,6 +200,33 @@ void AgentDetector::detectOpenInterpreter() {
     m_agents.append(info);
 }
 
+void AgentDetector::detectHermes() {
+    AgentInfo info;
+    info.id = "hermes";
+    info.name = "Hermes Agent";
+    info.installed = false;
+
+    auto path = findExecutable("hermes");
+    if (!path.isEmpty()) {
+        info.installed = true;
+        info.version = getVersion(path);
+        // Treat as authenticated when `hermes status` reports a configured model.
+        QProcess check;
+        check.start(path, {"status"});
+        if (check.waitForFinished(5000)) {
+            auto output = check.readAllStandardOutput();
+            info.authenticated = !output.contains("not configured") && !output.contains("no provider");
+        }
+        info.diagnostic = info.installed
+            ? (info.authenticated ? "Installed; ready to run sessions" : "Installed; check `hermes status`")
+            : "Not installed";
+    } else {
+        info.diagnostic = "Not installed";
+    }
+
+    m_agents.append(info);
+}
+
 void AgentDetector::detectNetworkEndpoints() {
     const QString platform = qEnvironmentVariable("QT_QPA_PLATFORM");
     if (platform == "offscreen" || platform == "minimal") {
@@ -336,6 +363,7 @@ void AgentDetector::startDetection() {
     detectOllama();
     detectLlamaCpp();
     detectOpenInterpreter();
+    detectHermes();
     detectNetworkEndpoints();
     emit detectionCompleted(m_agents);
 }

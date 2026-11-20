@@ -1,9 +1,8 @@
 #pragma once
 
+#include <QWidget>
 #include <QObject>
-#include <QStackedWidget>
 
-class QWidget;
 class SessionList;
 class EventTimeline;
 class ProjectPanel;
@@ -12,7 +11,7 @@ class PanelManager : public QObject {
     Q_OBJECT
 
 public:
-    explicit PanelManager(QStackedWidget *stack, QObject *parent = nullptr);
+    explicit PanelManager(QObject *parent = nullptr);
     ~PanelManager();
 
     void createPanels(QWidget *mainWindow);
@@ -22,7 +21,6 @@ public:
     ProjectPanel *projectsPanel() const { return m_projectsPanel; }
 
 private:
-    QStackedWidget *m_stack = nullptr;
     QWidget *createSessionsPanel();
     QWidget *createTimelinePanel();
     QWidget *createProjectsPanel();

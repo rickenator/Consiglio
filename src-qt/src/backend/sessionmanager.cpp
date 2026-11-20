@@ -42,6 +42,22 @@ QString normalizedUserName(const QVariantMap &options) {
     if (name.isEmpty()) name = "Dude";
     return name.left(80);
 }
+
+// Pulls the `session_id: <id>` value out of Hermes stderr output. Returns an
+// empty string when no id is present.
+QString extractHermesSessionId(const QString &stderrText) {
+    const int idx = stderrText.lastIndexOf("session_id:");
+    if (idx < 0) return {};
+    const QString rest = stderrText.mid(idx + QStringLiteral("session_id:").length());
+    int start = -1;
+    for (int i = 0; i < rest.length(); ++i) {
+        if (!rest.at(i).isSpace()) { start = i; break; }
+    }
+    if (start < 0) return {};
+    int end = start;
+    while (end < rest.length() && !rest.at(end).isSpace()) ++end;
+    return rest.mid(start, end - start);
+}
 }
 
 SessionManager::SessionManager(QObject *parent) : QObject(parent) {}
@@ -99,6 +115,35 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
         state.providerArgs << "-c"
                            << QString("sandbox_mode=%1").arg(
                                   tomlString(state.record.permissionMode));
+    } else if (provider == "hermes") {
+        // Hermes Agent is driven one structured turn at a time, mirroring the
+        // Codex pattern: `hermes chat -q <prompt>` for a new session, or
+        // `hermes chat --resume <sessionId> -q <prompt>` to continue. The
+        // final response arrives on stdout; the `session_id:` line and any
+        // banners arrive on stderr, which we parse separately.
+        state.program = "hermes";
+        state.structuredHermes = true;
+        // Only the per-turn options live here; the subcommand, `-q`, and the
+        // prompt are assembled in startHermesTurn so the prompt always sits
+        // directly after `-q` (argparse requires the value to follow the flag).
+        const QString model = options.value("model").toString();
+        if (!model.isEmpty()) state.providerArgs << "-m" << model;
+        const QString providerName = options.value("providerName").toString();
+        if (!providerName.isEmpty()) state.providerArgs << "--provider" << providerName;
+        const QString reasoning = options.value("reasoning").toString();
+        if (!reasoning.isEmpty()) state.providerArgs << "--reasoning" << reasoning;
+        const QString toolsets = options.value("toolsets").toString();
+        if (!toolsets.isEmpty()) state.providerArgs << "-t" << toolsets;
+        const QString skills = options.value("skills").toString();
+        if (!skills.isEmpty()) state.providerArgs << "-s" << skills;
+        const QString profile = options.value("profile").toString();
+        if (!profile.isEmpty()) state.providerArgs << "--profile" << profile;
+        const int maxTurns = options.value("maxTurns").toInt();
+        if (maxTurns > 0) state.providerArgs << "--max-turns" << QString::number(maxTurns);
+        if (options.value("yolo", false).toBool()) state.providerArgs << "--yolo";
+        if (options.value("worktree", false).toBool()) state.providerArgs << "--worktree";
+        // Keep the conversation quiet and machine-readable.
+        state.providerArgs << "-Q" << "--source" << "consiglio";
     } else if (provider == "remote_llamacpp") {
         state.program = "codex";
         state.structuredCodex = true;
@@ -152,9 +197,10 @@ QString SessionManager::startSession(const QString &provider, const QString &rep
         }
     }
 
-    // Codex is driven one structured turn at a time. There is deliberately no
-    // full-screen TUI process to leak terminal control sequences into the GUI.
-    if (state.structuredCodex) {
+    // Codex and Hermes are driven one structured turn at a time. There is
+    // deliberately no full-screen TUI process to leak terminal control
+    // sequences into the GUI.
+    if (state.structuredCodex || state.structuredHermes) {
         m_sessions.insert(sessionId, state);
         emit sessionStarted(sessionId, state.record);
         return sessionId;
@@ -311,6 +357,93 @@ void SessionManager::consumeCodexOutput(const QString &sessionId,
     }
 }
 
+bool SessionManager::startHermesTurn(const QString &sessionId, const QString &prompt) {
+    auto it = m_sessions.find(sessionId);
+    if (it == m_sessions.end() || !it.value().structuredHermes ||
+        (it.value().process && it.value().process->state() != QProcess::NotRunning)) return false;
+
+    auto *process = new QProcess(this);
+    it.value().process = process;
+    it.value().jsonBuffer.clear();   // reused as the stdout buffer for Hermes
+    it.value().stderrBuffer.clear();
+    process->setWorkingDirectory(it.value().workingDir);
+    process->setProcessEnvironment(it.value().environment);
+    process->setProcessChannelMode(QProcess::SeparateChannels);
+
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, sessionId, process]() {
+        consumeHermesOutput(sessionId, process->readAllStandardOutput());
+    });
+    connect(process, &QProcess::readyReadStandardError, this, [this, sessionId, process]() {
+        auto current = m_sessions.find(sessionId);
+        if (current != m_sessions.end())
+            current.value().stderrBuffer += QString::fromUtf8(process->readAllStandardError());
+    });
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this, sessionId, process](int exitCode, QProcess::ExitStatus) {
+        consumeHermesOutput(sessionId, process->readAllStandardOutput(), true);
+        auto current = m_sessions.find(sessionId);
+        if (current != m_sessions.end())
+            current.value().stderrBuffer += QString::fromUtf8(process->readAllStandardError());
+        // Capture the hermes session id from stderr so later turns resume.
+        if (current != m_sessions.end()) {
+            const QString sid = extractHermesSessionId(current.value().stderrBuffer);
+            if (!sid.isEmpty() && sid != current.value().codexThreadId) {
+                current.value().codexThreadId = sid;
+                emit codexThreadIdReceived(sessionId, sid);
+            }
+        }
+        const QString stderrText = current.value().stderrBuffer.trimmed();
+        current.value().process = nullptr;
+        process->deleteLater();
+        if (exitCode != 0) {
+            // Surface the tail of stderr (the real error), not the banner noise.
+            emit structuredErrorReceived(sessionId,
+                stderrText.isEmpty() ? QString("Hermes turn stopped with code %1").arg(exitCode)
+                                     : stderrText);
+        }
+    });
+    connect(process, &QProcess::errorOccurred, this,
+            [this, sessionId, process](QProcess::ProcessError) {
+        emit structuredErrorReceived(sessionId, process->errorString());
+    });
+
+    QStringList args;
+    args << "chat";
+    args += it.value().providerArgs;
+    if (!it.value().codexThreadId.isEmpty())
+        args << "--resume" << it.value().codexThreadId;
+    args << "-q" << prompt;
+    process->start(it.value().program, args);
+    if (!process->waitForStarted(5000)) {
+        const QString error = process->errorString();
+        it.value().process = nullptr;
+        process->deleteLater();
+        emit structuredErrorReceived(sessionId, error);
+        return false;
+    }
+    process->closeWriteChannel();
+    return true;
+}
+
+void SessionManager::consumeHermesOutput(const QString &sessionId,
+                                         const QByteArray &data, bool flush) {
+    auto it = m_sessions.find(sessionId);
+    if (it == m_sessions.end()) return;
+    it.value().jsonBuffer += QString::fromUtf8(data);
+    if (!flush) return;  // accumulate until the turn completes
+
+    // The final response is everything on stdout minus any `session_id:` line
+    // (Hermes normally prints that to stderr, but we guard against leakage).
+    QString text = it.value().jsonBuffer;
+    it.value().jsonBuffer.clear();
+    if (!text.endsWith('\n')) text += '\n';
+    const int idLine = text.indexOf("session_id:");
+    if (idLine >= 0) text.remove(idLine, text.length() - idLine);
+    text = text.trimmed();
+    if (text.isEmpty()) return;
+    emit assistantMessageReceived(sessionId, text);
+}
+
 bool SessionManager::stopSession(const QString &sessionId) {
     auto it = m_sessions.find(sessionId);
     if (it == m_sessions.end()) return false;
@@ -333,13 +466,15 @@ bool SessionManager::stopSession(const QString &sessionId) {
 bool SessionManager::reconnectSession(const SessionRecord &record) {
     if (m_sessions.contains(record.id)) return true;
 
-    // Only structured Codex sessions with a thread ID can be reconnected.
-    if (record.provider != "codex" || record.codexThreadId.isEmpty()) return false;
+    // Structured Codex and Hermes sessions with a thread/session ID can be
+    // reconnected; everything else (PTY providers) cannot.
+    const bool isCodex = record.provider == "codex";
+    const bool isHermes = record.provider == "hermes";
+    if ((!isCodex && !isHermes) || record.codexThreadId.isEmpty()) return false;
 
     SessionState state;
     state.record = record;
     state.record.status = "running";
-    state.structuredCodex = true;
     state.workingDir = !record.repository.isEmpty() && QDir(record.repository).exists()
         ? record.repository : QDir::currentPath();
     state.environment = QProcessEnvironment::systemEnvironment();
@@ -348,18 +483,25 @@ bool SessionManager::reconnectSession(const SessionRecord &record) {
     state.environment.remove("CODEX_THREAD_ID");
     state.environment.remove("CODEX_CI");
 
-    state.program = "codex";
-    state.providerArgs << "-c"
-                       << QString("sandbox_mode=%1").arg(tomlString(record.permissionMode));
+    if (isCodex) {
+        state.structuredCodex = true;
+        state.program = "codex";
+        state.providerArgs << "-c"
+                           << QString("sandbox_mode=%1").arg(tomlString(record.permissionMode));
+        const QString identityInstruction = QString(
+            "The user's preferred name is %1. Address the user as %1 when using a name, "
+            "and do not infer or substitute another name.").arg(record.preferredName);
+        state.providerArgs << "-c"
+                           << QString("developer_instructions=%1").arg(
+                                  tomlString(identityInstruction));
+    } else {
+        state.structuredHermes = true;
+        state.program = "hermes";
+        // Quiet, machine-readable turns; the prompt is added per turn.
+        state.providerArgs << "-Q" << "--source" << "consiglio";
+    }
 
-    const QString identityInstruction = QString(
-        "The user's preferred name is %1. Address the user as %1 when using a name, "
-        "and do not infer or substitute another name.").arg(record.preferredName);
-    state.providerArgs << "-c"
-                       << QString("developer_instructions=%1").arg(
-                              tomlString(identityInstruction));
-
-    // Restore the thread ID so subsequent commands use `codex exec resume`.
+    // Restore the thread/session ID so subsequent commands resume.
     state.codexThreadId = record.codexThreadId;
 
     m_sessions.insert(record.id, state);
@@ -381,6 +523,7 @@ bool SessionManager::sendCommand(const QString &sessionId, const QString &comman
     if (it == m_sessions.end()) return false;
     it.value().record.lastActivity = QDateTime::currentMSecsSinceEpoch();
     if (it.value().structuredCodex) return startCodexTurn(sessionId, command);
+    if (it.value().structuredHermes) return startHermesTurn(sessionId, command);
     if (!it.value().pty || !it.value().pty->isRunning()) return false;
     QString effectiveCommand = command;
     if (!it.value().identitySent) {

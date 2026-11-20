@@ -53,6 +53,10 @@ set(QT_SOURCES
     src/projectpanel.h
     src/approvaldialog.cpp
     src/approvaldialog.h
+    src/hermesoptionsdialog.cpp
+    src/hermesoptionsdialog.h
+    src/commandpalette.cpp
+    src/commandpalette.h
     src/models/sessionmodel.cpp
     src/models/eventmodel.cpp
     resources/icons.qrc

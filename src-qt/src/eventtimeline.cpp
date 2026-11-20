@@ -3,10 +3,15 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QScrollBar>
-#include <QLineEdit>
 #include <QTextDocument>
+#include <QTextEdit>
+#include <QtMath>
 
 namespace {
+
+// ─── Markdown + math rendering (shared by assistant bubbles) ──────────────
+// These helpers are unchanged from the previous timeline: they convert GitHub
+// markdown and common TeX into native rich text so the transcript reads cleanly.
 
 QString replaceMathExpressions(QString markdown, const QRegularExpression &pattern,
                                const QString &tokenPrefix, QVector<QString> &expressions) {
@@ -29,8 +34,6 @@ QString replaceMathExpressions(QString markdown, const QRegularExpression &patte
 QString mathHtml(QString expression) {
     expression = expression.toHtmlEscaped().trimmed();
 
-    // Handle common structural TeX before replacing individual symbols. This is
-    // intentionally small, deterministic native rendering rather than a web view.
     QRegularExpression fraction(R"(\\frac\{([^{}]*)\}\{([^{}]*)\})");
     while (expression.contains(fraction)) {
         expression.replace(fraction, "<span><sup>\\1</sup>&frasl;<sub>\\2</sub></span>");
@@ -75,7 +78,7 @@ QString markdownBody(const QString &source) {
     markdown = replaceMathExpressions(
         markdown, QRegularExpression(R"(\$\$([\s\S]*?)\$\$)"), "BLOCKMATH", blockMath);
     markdown = replaceMathExpressions(
-        markdown, QRegularExpression(R"(\\\((.*?)\\\))"), "INLINEMATH", inlineMath);
+        markdown, QRegularExpression(R"(\\\(.*?\\\))"), "INLINEMATH", inlineMath);
 
     QTextDocument document;
     document.setMarkdown(markdown, QTextDocument::MarkdownDialectGitHub);
@@ -92,7 +95,7 @@ QString markdownBody(const QString &source) {
         const QString equation = mathHtml(blockMath.at(i));
         const QString rendered = QString(
             "<div style='margin: 0.8em 0; padding: 0.8em; text-align: center; "
-            "background: #161b22; border: 1px solid #30363d; border-radius: 0.5em;'>"
+            "background: #161b22; border: 1px solid #30363d; border-radius: 0.5em;'> "
             "<span style=\"font-family: 'STIX Two Math', 'Cambria Math', serif;\">%1</span></div>")
             .arg(equation);
         body.replace(QRegularExpression(
@@ -109,7 +112,183 @@ QString markdownBody(const QString &source) {
     return body;
 }
 
+QString formatTimestamp(qint64 ms) {
+    if (ms == 0) return "";
+    return QDateTime::fromMSecsSinceEpoch(ms).toString("HH:mm:ss");
+}
+
 } // namespace
+
+// ─── MessageWidget ────────────────────────────────────────────────────────
+
+MessageWidget::MessageWidget(const EventModel::EventItem &event, QWidget *parent)
+    : QWidget(parent) {
+    build(event);
+}
+
+void MessageWidget::build(const EventModel::EventItem &event) {
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    const QString ts = formatTimestamp(event.timestamp);
+
+    switch (event.type) {
+        case EventModel::UserMessage: {
+            // Right-aligned bubble for the user's own prompt.
+            auto *row = new QHBoxLayout();
+            row->setContentsMargins(0, 0, 0, 0);
+            row->addStretch();
+            auto *bubble = new QLabel(event.content, this);
+            bubble->setObjectName("userBubble");
+            bubble->setWordWrap(true);
+            bubble->setAlignment(Qt::AlignTop | Qt::AlignRight);
+            bubble->setStyleSheet(R"(
+                QLabel#userBubble {
+                    background: #1f6feb; color: #ffffff;
+                    border-radius: 12px; padding: 10px 14px;
+                    font-family: 'Segoe UI', sans-serif;
+                }
+            )");
+            bubble->setMaximumWidth(UiMetrics::px(520));
+            row->addWidget(bubble, 0);
+            if (!ts.isEmpty()) {
+                auto *stamp = new QLabel(ts, this);
+                stamp->setStyleSheet("color: #484f58;");
+                stamp->setFont(UiMetrics::secondaryFont());
+                row->addWidget(stamp, 0);
+            }
+            outer->addLayout(row);
+            break;
+        }
+
+        case EventModel::AssistantMessage: {
+            // Left-aligned rich-text bubble. A read-only QTextEdit renders the
+            // GitHub markdown + math natively (and keeps the transcript testable).
+            auto *header = new QHBoxLayout();
+            header->setContentsMargins(0, 0, 0, 0);
+            auto *tag = new QLabel("AGENT", this);
+            tag->setStyleSheet("color: #3fb950; font-weight: 700;");
+            tag->setFont(UiMetrics::secondaryFont());
+            header->addWidget(tag);
+            if (!ts.isEmpty()) {
+                auto *stamp = new QLabel(ts, this);
+                stamp->setStyleSheet("color: #768390;");
+                stamp->setFont(UiMetrics::secondaryFont());
+                header->addWidget(stamp);
+            }
+            header->addStretch();
+            outer->addLayout(header);
+
+            auto *body = new QTextEdit(this);
+            body->setObjectName("assistantBody");
+            body->setReadOnly(true);
+            body->setFrameShape(QFrame::NoFrame);
+            body->setLineWrapMode(QTextEdit::WidgetWidth);
+            body->setStyleSheet(R"(
+                QTextEdit#assistantBody {
+                    background: transparent; border: none;
+                    color: #c9d1d9;
+                    font-family: 'Inter', 'Noto Sans', sans-serif;
+                }
+            )");
+            body->setHtml(markdownBody(event.content));
+            // Size to content so the bubble hugs the text.
+            body->document()->adjustSize();
+            const int docHeight = qRound(body->document()->size().height()) + 8;
+            body->setFixedHeight(qMax(docHeight, UiMetrics::px(24)));
+            outer->addWidget(body);
+            break;
+        }
+
+        case EventModel::CommandOutput: {
+            // Collapsible tool/command output block.
+            auto *row = new QHBoxLayout();
+            row->setContentsMargins(0, 0, 0, 0);
+            m_toggleBtn = new QPushButton("▸ tool output", this);
+            m_toggleBtn->setCursor(Qt::PointingHandCursor);
+            m_toggleBtn->setStyleSheet(R"(
+                QPushButton {
+                    background: #161b22; color: #8b949e; border: 1px solid #30363d;
+                    border-radius: 8px; padding: 6px 10px; text-align: left;
+                }
+                QPushButton:hover { background: #21262d; color: #c9d1d9; }
+            )");
+            row->addWidget(m_toggleBtn, 0);
+            if (!ts.isEmpty()) {
+                auto *stamp = new QLabel(ts, this);
+                stamp->setStyleSheet("color: #484f58;");
+                stamp->setFont(UiMetrics::secondaryFont());
+                row->addWidget(stamp);
+            }
+            row->addStretch();
+            outer->addLayout(row);
+
+            m_collapsibleBody = new QTextEdit(this);
+            m_collapsibleBody->setObjectName("toolOutput");
+            m_collapsibleBody->setReadOnly(true);
+            m_collapsibleBody->setFrameShape(QFrame::NoFrame);
+            m_collapsibleBody->setLineWrapMode(QTextEdit::WidgetWidth);
+            m_collapsibleBody->setPlainText(event.content);
+            m_collapsibleBody->setStyleSheet(R"(
+                QTextEdit#toolOutput {
+                    background: #161b22; border: 1px solid #30363d;
+                    border-radius: 8px; padding: 10px;
+                    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+                    color: #c9d1d9;
+                }
+            )");
+            outer->addWidget(m_collapsibleBody);
+
+            // Start collapsed by default so the conversation stays readable.
+            setCollapsed(true);
+            connect(m_toggleBtn, &QPushButton::clicked, this, [this]() {
+                setCollapsed(!m_collapsed);
+            });
+            break;
+        }
+
+        case EventModel::SystemEvent:
+        case EventModel::Error:
+        case EventModel::ApprovalRequest: {
+            const QString color = event.type == EventModel::Error ? "#f85149"
+                                    : event.type == EventModel::ApprovalRequest ? "#d29922"
+                                    : "#8b949e";
+            const QString label = event.type == EventModel::Error ? "ERROR"
+                                    : event.type == EventModel::ApprovalRequest ? "APPROVAL"
+                                    : "SYSTEM";
+            auto *row = new QHBoxLayout();
+            row->setContentsMargins(0, 0, 0, 0);
+            auto *tag = new QLabel(QString("[%1]").arg(label), this);
+            tag->setStyleSheet(QString("color: %1; font-weight: 700;").arg(color));
+            tag->setFont(UiMetrics::secondaryFont());
+            row->addWidget(tag);
+            auto *text = new QLabel(event.content, this);
+            text->setWordWrap(true);
+            text->setStyleSheet(QString("color: %1;").arg(color));
+            text->setFont(UiMetrics::secondaryFont());
+            row->addWidget(text, 1);
+            if (!ts.isEmpty()) {
+                auto *stamp = new QLabel(ts, this);
+                stamp->setStyleSheet("color: #484f58;");
+                stamp->setFont(UiMetrics::secondaryFont());
+                row->addWidget(stamp);
+            }
+            outer->addLayout(row);
+            break;
+        }
+    }
+}
+
+void MessageWidget::setCollapsed(bool collapsed) {
+    m_collapsed = collapsed;
+    if (m_collapsibleBody) m_collapsibleBody->setVisible(!collapsed);
+    if (m_toggleBtn) m_toggleBtn->setText(collapsed ? "▸ tool output" : "▾ tool output");
+}
+
+bool MessageWidget::isCollapsed() const { return m_collapsed; }
+
+// ─── EventTimeline ────────────────────────────────────────────────────────
 
 EventTimeline::EventTimeline(QWidget *parent) : QWidget(parent) {
     setupUI();
@@ -117,81 +296,82 @@ EventTimeline::EventTimeline(QWidget *parent) : QWidget(parent) {
 
 void EventTimeline::setupUI() {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(UiMetrics::panelMargin(), UiMetrics::panelMargin(),
-                                   UiMetrics::panelMargin(), UiMetrics::panelMargin());
-    mainLayout->setSpacing(UiMetrics::panelSpacing());
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    // Header
-    auto *headerLayout = new QHBoxLayout();
-    auto *titleLabel = new QLabel(tr("Timeline"), this);
-    titleLabel->setFont(UiMetrics::titleFont());
-    titleLabel->setStyleSheet("color: #f0f6fc;");
-    headerLayout->addWidget(titleLabel);
-    mainLayout->addLayout(headerLayout);
-
-    // Text edit for events
-    m_textEdit = new QTextEdit(this);
-    m_textEdit->setReadOnly(true);
-    m_textEdit->setStyleSheet(R"(
-        QTextEdit {
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 14px;
-            padding: 24px;
-            font-family: 'JetBrains Mono', 'Fira Code', monospace;
-        }
+    // Scrollable conversation area.
+    m_scroll = new QScrollArea(this);
+    m_scroll->setObjectName("conversationScroll");
+    m_scroll->setWidgetResizable(true);
+    m_scroll->setFrameShape(QFrame::NoFrame);
+    m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_scroll->setStyleSheet(R"(
+        QScrollArea#conversationScroll { background: #0d1117; border: none; }
     )");
 
-    mainLayout->addWidget(m_textEdit);
+    m_messagesHost = new QWidget(this);
+    m_messagesLayout = new QVBoxLayout(m_messagesHost);
+    m_messagesLayout->setContentsMargins(
+        UiMetrics::panelMargin(), UiMetrics::panelMargin(),
+        UiMetrics::panelMargin(), UiMetrics::panelMargin());
+    m_messagesLayout->setSpacing(UiMetrics::px(14));
 
-    // Command input area
-    auto *inputLayout = new QHBoxLayout();
-    m_commandInput = new QLineEdit(this);
-    m_commandInput->setPlaceholderText(tr("Type a message or command…"));
+    m_emptyLabel = new QLabel(tr("No messages yet. Start a session and send a prompt."),
+                               m_messagesHost);
+    m_emptyLabel->setObjectName("emptyLabel");
+    m_emptyLabel->setAlignment(Qt::AlignCenter);
+    m_emptyLabel->setFont(UiMetrics::secondaryFont());
+    m_emptyLabel->setStyleSheet("color: #8b949e;");
+    m_messagesLayout->addWidget(m_emptyLabel, 0, Qt::AlignCenter);
+
+    m_scroll->setWidget(m_messagesHost);
+    mainLayout->addWidget(m_scroll, 1);
+
+    // Composer.
+    auto *composer = new QWidget(this);
+    composer->setObjectName("composer");
+    auto *composerLayout = new QHBoxLayout(composer);
+    composerLayout->setContentsMargins(
+        UiMetrics::panelMargin(), 0, UiMetrics::panelMargin(),
+        UiMetrics::panelMargin());
+    composerLayout->setSpacing(UiMetrics::px(10));
+
+    m_commandInput = new QLineEdit(composer);
+    m_commandInput->setObjectName("composerInput");
+    m_commandInput->setPlaceholderText(tr("Type a message…  ( / for commands )"));
     m_commandInput->setStyleSheet(R"(
-        QLineEdit {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 20px;
-            color: #c9d1d9;
+        QLineEdit#composerInput {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 12px; padding: 14px 18px; color: #c9d1d9;
+            font-family: 'Segoe UI', sans-serif;
         }
-        QLineEdit:focus { border-color: #58a6ff; }
+        QLineEdit#composerInput:focus { border-color: #58a6ff; }
     )");
-    inputLayout->addWidget(m_commandInput);
+    composerLayout->addWidget(m_commandInput, 1);
 
-    m_thinkingIndicator = new QLabel(this);
+    m_thinkingIndicator = new QLabel(composer);
     m_thinkingIndicator->setObjectName("thinkingIndicator");
     m_thinkingIndicator->setFont(UiMetrics::secondaryFont());
     m_thinkingIndicator->setStyleSheet(
         "color: #58a6ff; padding: 0 0.55em; font-weight: 600;");
     m_thinkingIndicator->setAccessibleName(tr("Agent is thinking"));
     m_thinkingIndicator->setVisible(false);
-    inputLayout->addWidget(m_thinkingIndicator);
+    composerLayout->addWidget(m_thinkingIndicator, 0);
 
-    m_sendBtn = new QPushButton(tr("Send"), this);
+    m_sendBtn = new QPushButton(tr("Send"), composer);
+    m_sendBtn->setObjectName("sendButton");
     m_sendBtn->setStyleSheet(R"(
-        QPushButton {
-            background: #238636;
-            color: white;
-            padding: 20px 32px;
-            border-radius: 12px;
-            font-weight: bold;
+        QPushButton#sendButton {
+            background: #238636; color: white; padding: 14px 26px;
+            border-radius: 12px; font-weight: bold;
         }
-        QPushButton:hover { background: #2ea043; }
+        QPushButton#sendButton:hover { background: #2ea043; }
+        QPushButton#sendButton:disabled { background: #484f58; color: #8b949e; }
     )");
-    inputLayout->addWidget(m_sendBtn);
+    composerLayout->addWidget(m_sendBtn, 0);
 
-    mainLayout->addLayout(inputLayout);
+    mainLayout->addWidget(composer);
 
-    // Empty state label
-    m_emptyLabel = new QLabel(tr("No events yet. Select a session to view its timeline."), this);
-    m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setFont(UiMetrics::secondaryFont());
-    m_emptyLabel->setStyleSheet("color: #8b949e;");
-    mainLayout->addWidget(m_emptyLabel);
-
-    // Connections
     connect(m_sendBtn, &QPushButton::clicked, this, &EventTimeline::onSendCommand);
     connect(m_commandInput, &QLineEdit::returnPressed, this, &EventTimeline::onSendCommand);
 
@@ -214,14 +394,22 @@ void EventTimeline::addEvent(const EventModel::EventItem &event) {
 }
 
 void EventTimeline::setEvents(const QList<EventModel::EventItem> &events) {
-    m_textEdit->clear();
-    for (const auto &event : events) appendEvent(event);
+    // Remove any previously appended message widgets (keep the empty-state label).
+    for (int i = m_messagesLayout->count() - 1; i >= 0; --i) {
+        auto *item = m_messagesLayout->itemAt(i);
+        if (!item) continue;
+        QWidget *w = item->widget();
+        if (w && w != m_emptyLabel) {
+            m_messagesLayout->removeItem(item);
+            w->deleteLater();
+        }
+    }
     m_emptyLabel->setVisible(events.isEmpty());
+    for (const auto &event : events) appendEvent(event);
 }
 
 void EventTimeline::clearEvents() {
-    m_textEdit->clear();
-    m_emptyLabel->setVisible(true);
+    setEvents({});
     emit eventsCleared();
 }
 
@@ -249,56 +437,15 @@ void EventTimeline::setThinking(bool thinking) {
     }
 }
 
-bool EventTimeline::isThinking() const {
-    return m_thinking;
-}
+bool EventTimeline::isThinking() const { return m_thinking; }
 
 void EventTimeline::appendEvent(const EventModel::EventItem &event) {
-    QString html;
-    auto ts = formatTimestamp(event.timestamp);
-    QString safeContent = event.content.toHtmlEscaped();
-    safeContent.replace("\n", "<br>");
-
-    switch (event.type) {
-        case EventModel::SystemEvent:
-            html = QString("<div style='color: #8b949e; margin: 4px 0;'><b>[SYSTEM]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(safeContent).arg(ts);
-            break;
-        case EventModel::UserMessage:
-            html = QString("<div style='margin: 6px 0;'><b style='color: #58a6ff;'>[YOU]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(safeContent).arg(ts);
-            break;
-        case EventModel::AssistantMessage:
-            html = QString(
-                "<div style=\"margin: 0.8em 0; padding: 0.8em; border-left: 3px solid #3fb950; "
-                "font-family: 'Inter', 'Noto Sans', sans-serif; line-height: 1.35; color: #c9d1d9;\">"
-                "<div><b style='color: #3fb950;'>[AGENT]</b> "
-                "<span style='color: #768390;'>%2</span></div>%1</div>")
-                       .arg(markdownBody(event.content), ts);
-            break;
-        case EventModel::CommandOutput:
-            html = QString("<pre style='background: #161b22; padding: 1em; border-radius: 0.5em; margin: 0.5em 0; color: #c9d1d9;'>%1</pre><span style='color: #768390;'>%2</span>")
-                       .arg(event.content.toHtmlEscaped()).arg(ts);
-            break;
-        case EventModel::Error:
-            html = QString("<div style='margin: 6px 0;'><b style='color: #f85149;'>[ERROR]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(safeContent).arg(ts);
-            break;
-        case EventModel::ApprovalRequest:
-            html = QString("<div style='margin: 6px 0;'><b style='color: #d29922;'>[APPROVAL]</b> %1 <span style='color: #484f58;'>%2</span></div>")
-                       .arg(safeContent).arg(ts);
-            break;
-    }
-
-    m_textEdit->append(html);
-
-    // Auto-scroll to bottom
-    auto *vbar = m_textEdit->verticalScrollBar();
-    vbar->setValue(vbar->maximum());
+    auto *widget = new MessageWidget(event, m_messagesHost);
+    m_messagesLayout->addWidget(widget);
+    scrollToBottom();
 }
 
-QString EventTimeline::formatTimestamp(qint64 ms) const {
-    if (ms == 0) return "";
-    auto dt = QDateTime::fromMSecsSinceEpoch(ms);
-    return dt.toString("HH:mm:ss");
+void EventTimeline::scrollToBottom() {
+    if (auto *vbar = m_scroll->verticalScrollBar())
+        vbar->setValue(vbar->maximum());
 }

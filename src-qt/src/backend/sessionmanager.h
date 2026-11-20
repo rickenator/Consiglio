@@ -63,6 +63,7 @@ private:
         QStringList providerArgs;
         QProcessEnvironment environment;
         bool structuredCodex = false;
+        bool structuredHermes = false;
         QString jsonBuffer;
         QString stderrBuffer;
         QString codexThreadId;
@@ -79,4 +80,6 @@ private:
     void onProcessError(QProcess::ProcessError error);
     bool startCodexTurn(const QString &sessionId, const QString &prompt);
     void consumeCodexOutput(const QString &sessionId, const QByteArray &data, bool flush = false);
+    bool startHermesTurn(const QString &sessionId, const QString &prompt);
+    void consumeHermesOutput(const QString &sessionId, const QByteArray &data, bool flush = false);
 };

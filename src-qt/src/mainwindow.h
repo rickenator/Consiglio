@@ -1,11 +1,11 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QStackedWidget>
 #include <QLabel>
 #include <QToolBar>
 #include <QStatusBar>
 #include <QSystemTrayIcon>
+#include <QStackedWidget>
 #include "backend/settings.h"
 #include "backend/agentdetector.h"
 #include "backend/sessionmanager.h"
@@ -15,7 +15,12 @@
 
 class PanelManager;
 class StartupWizard;
+class CommandPalette;
 
+// Chat-first main window. The center is a single conversation pane (the
+// EventTimeline) with a composer; the left is a collapsible session rail.
+// A command palette (Ctrl+K) and a rich status bar expose the same controls
+// you'd reach in a Hermes CLI session.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -57,28 +62,41 @@ private slots:
     void onCommandExecuted(const QString &command, const QString &workingDir);
     void onProjectSelected(const QString &projectId, const QString &projectName);
 
+    // New: palette + hermes options
+    void onPaletteAction(const QString &id);
+    void onHermesOptions();
+
 private:
     void setupUI();
     void setupMenuBar();
     void setupStatusBar();
     void setupTray();
+    void setupPalette();
     void loadSettings();
     void showStartupWizardIfNeeded();
     bool scanAndSelectProvider();
     bool startConfiguredSession();
     bool startSession(const QString &provider, const QString &workspace,
-                      const QString &sandboxMode);
+                      const QString &sandboxMode, const QVariantMap &extraOptions = {});
     void refreshSessionList();
     void refreshProjectList();
     void loadTimelineEvents(const QString &sessionId = {});
     void addTimelineEvent(const EventModel::EventItem &event);
     void sendCommandToActiveSession(const QString &command, const QString &workingDir);
     void updateStatusBarSessionState();
+    void toggleSidebar();
 
-    QStackedWidget *m_content = nullptr;
+    QWidget *m_sidebar = nullptr;
+    QWidget *m_mainContent = nullptr;
+    class QStackedWidget *m_railStack = nullptr;  // Sessions | Projects pages
     PanelManager *m_panelManager = nullptr;
+    CommandPalette *m_palette = nullptr;
     QLabel *m_approvalBadge = nullptr;
     QLabel *m_sessionStatusLabel = nullptr;
+    QLabel *m_providerLabel = nullptr;
+    QLabel *m_modelLabel = nullptr;
+    QLabel *m_workdirLabel = nullptr;
+    QLabel *m_permLabel = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     QMenu *m_trayMenu = nullptr;
 
@@ -94,4 +112,7 @@ private:
     QString m_selectedProjectId;
     QString m_selectedProjectName;
     QString m_selectedProjectWorkspace;
+    // Display-only: the model/provider of the active session for the status bar.
+    QString m_activeModel;
+    QString m_activeProvider;
 };
