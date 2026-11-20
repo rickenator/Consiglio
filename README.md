@@ -177,6 +177,32 @@ Hermes updates with `hermes update`, or from **Hermes → Check for Updates** in
 
 Saved sessions live in Hermes's own store (`~/.hermes/state.db`) and survive updates and restarts.
 
+## Testing safely
+
+Consiglio's session list comes from Hermes's own store (`$HERMES_HOME/state.db`, usually `~/.hermes/state.db`). If you have been using Hermes for a while, those conversations will appear when you open the native client — Consiglio does not keep a second copy, and it does not write to that database.
+
+To try the client without touching your real Hermes environment or Consiglio settings:
+
+```bash
+ConsiglioHermes --sandbox
+# or a specific folder:
+ConsiglioHermes --sandbox=$HOME/tmp/consiglio-sandbox
+# same thing via the environment:
+CONSIGLIO_SANDBOX=1 ConsiglioHermes
+```
+
+Sandbox mode points Consiglio's settings and `HERMES_HOME` at a throwaway folder (by default under your user cache: `consiglio-sandbox`). It never reads or writes `~/.hermes`, your usual config, or your shell profile. A **Sandbox** badge in the status bar shows that it is on.
+
+You can also point at a copy of Hermes, or a disposable data dir, without the full sandbox:
+
+```bash
+HERMES_BIN=/path/to/hermes HERMES_HOME=/tmp/hermes-test ConsiglioHermes
+# or:
+ConsiglioHermes --hermes /path/to/hermes
+```
+
+For a complete wall around the app, run it in a container or VM with the official Linux packages (the `.deb` or the AppImage) and do not mount your real `~/.hermes`.
+
 ## Everyday Workflow
 
 1. Launch `ConsiglioHermes` and pick a workspace folder (File → Choose Workspace Folder, Ctrl+O).

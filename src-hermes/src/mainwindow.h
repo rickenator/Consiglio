@@ -174,6 +174,7 @@ private:
     // Status bar widgets.
     ui::StatusDot *m_stateDot = nullptr;
     QLabel *m_stateLabel = nullptr;
+    QLabel *m_sandboxBadge = nullptr;
     QLabel *m_modelLabel = nullptr;
     QLabel *m_contextLabel = nullptr;
     QProgressBar *m_contextBar = nullptr;

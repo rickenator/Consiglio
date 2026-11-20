@@ -1,4 +1,5 @@
 #include "acpclient.h"
+#include "sessioncatalog.h"
 #include "hermessetup.h"
 
 #include <QCoreApplication>
@@ -331,16 +332,47 @@ bool AcpClient::openSession(const QString &sessionId, const QString &cwd, bool r
     return sendRequest(m_nextReqId++, method, params, kind);
 }
 
+void AcpClient::requestSessionPage(const QString &cursor) {
+    QJsonObject params;
+    // Do not send cwd. Hermes v0.23 session/list treats it as an exact-match
+    // filter and reads each row's cwd from model_config (often empty), so
+    // current sessions in state.db would be dropped.
+    if (!cursor.isEmpty()) params["cursor"] = cursor;
+    sendRequest(m_nextReqId++, "session/list", params, ReqKind::ListSessions);
+}
+
+void AcpClient::finishSessionList() {
+    m_listing = false;
+    const QList<SessionCatalog::Entry> store = SessionCatalog::readStore(SessionCatalog::defaultHermesHome());
+    QList<SessionCatalog::Entry> merged = SessionCatalog::merge(m_listedSessions, store);
+    QList<SessionInfo> out;
+    out.reserve(merged.size());
+    for (const auto &e : merged) {
+        SessionInfo info;
+        info.id = e.id;
+        info.title = e.title;
+        info.cwd = e.cwd;
+        info.updatedAt = e.updatedAt;
+        out.append(info);
+    }
+    m_listedSessions.clear();
+    emit sessionsListed(out);
+}
+
 bool AcpClient::listSessions(const QString &cwd) {
+    Q_UNUSED(cwd);
     if (!m_connected) return false;
+    m_listedSessions.clear();
     if (!canListSessions()) {
-        // Not advertised: report an empty list instead of calling it.
-        QTimer::singleShot(0, this, [this]() { emit sessionsListed({}); });
+        // Still merge the on-disk store so a pre-sessionCapabilities agent
+        // surfaces current Hermes sessions.
+        m_listing = true;
+        QTimer::singleShot(0, this, [this]() { finishSessionList(); });
         return true;
     }
-    QJsonObject params;
-    params["cwd"] = cwd;
-    return sendRequest(m_nextReqId++, "session/list", params, ReqKind::ListSessions);
+    m_listing = true;
+    requestSessionPage(QString());
+    return true;
 }
 
 bool AcpClient::sendPrompt(const QString &text) {
@@ -811,7 +843,9 @@ void AcpClient::handleResponse(const QJsonObject &msg) {
             emit errorOccurred(QStringLiteral("Hermes ACP initialize failed: %1").arg(text));
             return;
         case ReqKind::ListSessions:
-            if (code == kMethodNotFound) { emit sessionsListed({}); return; }
+            if (code == kMethodNotFound) { finishSessionList(); return; }
+            m_listing = false;
+            m_listedSessions.clear();
             emit errorOccurred(message);
             return;
         case ReqKind::NewSession:
@@ -894,17 +928,12 @@ void AcpClient::handleResponse(const QJsonObject &msg) {
     }
 
     case ReqKind::ListSessions: {
-        QList<SessionInfo> sessions;
-        for (const auto &s : result.value("sessions").toArray()) {
-            const auto so = s.toObject();
-            SessionInfo info;
-            info.id = so.value("sessionId").toString();
-            info.title = so.value("title").toString();
-            info.cwd = so.value("cwd").toString();
-            info.updatedAt = so.value("updatedAt").toString();
-            if (!info.id.isEmpty()) sessions.append(info);
-        }
-        emit sessionsListed(sessions);
+        QString cursor;
+        m_listedSessions += SessionCatalog::parseListResult(result, &cursor);
+        if (!cursor.isEmpty() && m_listedSessions.size() < 500)
+            requestSessionPage(cursor);
+        else
+            finishSessionList();
         break;
     }
 

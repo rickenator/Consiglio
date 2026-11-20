@@ -40,6 +40,18 @@ The packages themselves (the `.deb` has no maintainer scripts) never install or 
 `QT_QPA_PLATFORM=offscreen ./setuptour --out DIR [--theme light|dark] [--real]`
 (`--real` adds the two screens for the Hermes really installed on this machine, detected read-only).
 
+## Testing safely
+
+`ConsiglioHermes --sandbox` (or `CONSIGLIO_SANDBOX=1`, or `--sandbox=DIR`) runs the client
+against a throwaway folder for both Consiglio settings and `HERMES_HOME`. It does not read
+or write `~/.hermes`. A **Sandbox** badge is shown in the status bar. `HERMES_BIN` /
+`HERMES_HOME` and `--hermes` also work for a lighter override. See the top-level
+[README](../README.md#testing-safely).
+
+The session sidebar lists **current** Hermes sessions from `$HERMES_HOME/state.db` (and
+from `session/list`), newest first, read-only. It is not a separate Consiglio transcript
+store.
+
 ## Prerequisites (building from source)
 
 - **Hermes Agent**, installed with its official installer
@@ -62,7 +74,7 @@ cmake --build src-hermes/build -j
 cd src-hermes/build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 ```
 
-`build/` is ignored (`src-hermes/.gitignore`). Four suites run under `ctest` (on Windows,
+`build/` is ignored (`src-hermes/.gitignore`). Six suites run under `ctest` (on Windows,
 `ctest -LE posix` skips the two that drive the fake agent through a POSIX shell wrapper):
 
 - `test_acpclient` drives a scripted ACP agent
@@ -81,6 +93,11 @@ live test against a real `hermes` runs only when one is on `PATH`.
   **Use as it is** leaves every file, `HERMES_HOME` and the stored path untouched, that the
   installer only runs when chosen, the consent box for existing data, the separate copy's
   isolation, and that Windows doesn't offer one.
+- `test_sessioncatalog` parses `session/list` under camelCase, snake_case and Unix
+  timestamps, sorts newest-first, follows a paged list in the ACP suite, and checks that
+  a read-only look at `state.db` adds current Hermes sessions without writing the file.
+- `test_appsandbox` checks `--sandbox` / `CONSIGLIO_SANDBOX` parsing and that activation
+  never touches a planted real `~/.hermes`.
 
 `packaging/package.sh <linux|mac|win> <arch> <out>` builds the release packages
 (CPack `.deb`, linuxdeploy AppImage, macdeployqt `.dmg`, windeployqt `.zip`).

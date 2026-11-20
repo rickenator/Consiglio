@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "appsandbox.h"
 
 #include "commanddialog.h"
 #include "hermescli.h"
@@ -174,7 +175,8 @@ MainWindow::~MainWindow() { m_client.shutdown(); }
 
 void MainWindow::init(const Options &options) {
     setObjectName(QStringLiteral("mainWindow"));
-    setWindowTitle(tr("Consiglio · Hermes"));
+    setWindowTitle(AppSandbox::isActive() ? tr("Consiglio · Hermes — Sandbox")
+                                         : tr("Consiglio · Hermes"));
     setWindowIcon(QIcon(QStringLiteral(":/logo.svg")));
     m_executable = options.executable;
 
@@ -464,6 +466,17 @@ void MainWindow::setupStatusBar() {
     ll->setSpacing(theme().px(2));
     ll->addWidget(m_stateDot);
     ll->addWidget(m_stateLabel);
+    if (AppSandbox::isActive()) {
+        m_sandboxBadge = new QLabel(tr("Sandbox"), bar);
+        m_sandboxBadge->setObjectName(QStringLiteral("statusSandbox"));
+        m_sandboxBadge->setToolTip(tr("Test mode: Consiglio settings and Hermes data are in %1.\n"
+                                      "Your ~/.hermes and usual settings are not being used.")
+                                       .arg(AppSandbox::root()));
+        ui::describe(m_sandboxBadge, tr("Sandbox"),
+                     tr("Isolated test environment; the real Hermes home is not in use"));
+        ll->addSpacing(theme().px(8));
+        ll->addWidget(m_sandboxBadge);
+    }
     bar->addWidget(left, 1);
 
     m_modelLabel = new QLabel(bar);

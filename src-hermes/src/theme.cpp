@@ -629,6 +629,7 @@ QLabel#railActiveTitle { font-weight: 600; color: %text; background: transparent
 QLineEdit#railFilter { background: %window; }
 QListWidget#railSessions::item { padding: %p8px %p10px; margin: 1px 0; }
 QLabel#statusDot { background: transparent; }
+QLabel#statusSandbox { color: %accent; font-weight: 600; background: transparent; }
 )QSS");
 
     // Scaled sizes: %pNpx → px(N).

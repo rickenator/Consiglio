@@ -43,6 +43,7 @@ private slots:
     void protocolDriftIsTolerated();
     void resumeFallsBackToLoadSession();
     void legacyAgentWithoutCapabilities();
+    void listSessionsOmitsCwdAndFollowsPages();
     void staleUpdatesAfterStopAreDropped();
     void slashCommandsClearedOnReset();
     void sendPromptWithoutSessionFails();
@@ -58,6 +59,7 @@ private:
     QTemporaryDir *m_dir = nullptr;
     QByteArray m_savedPath;
     QByteArray m_savedHermesBin;
+    QByteArray m_savedHermesHome;
 };
 
 void AcpClientTest::initTestCase() {
@@ -166,6 +168,7 @@ void AcpClientTest::init() {
     m_dir = new QTemporaryDir();
     m_savedPath = qgetenv("PATH");
     m_savedHermesBin = qgetenv("HERMES_BIN");
+    m_savedHermesHome = qgetenv("HERMES_HOME");
     qunsetenv("HERMES_BIN");
     // The fake goes first on PATH so launch() with no argument resolves it,
     // exactly as a real install is resolved.
@@ -176,6 +179,9 @@ void AcpClientTest::cleanup() {
     qputenv("PATH", m_savedPath);
     if (m_savedHermesBin.isEmpty()) qunsetenv("HERMES_BIN");
     else qputenv("HERMES_BIN", m_savedHermesBin);
+    if (m_savedHermesHome.isEmpty()) qunsetenv("HERMES_HOME");
+    else qputenv("HERMES_HOME", m_savedHermesHome);
+    qunsetenv("FAKE_ACP_SESSIONS");
     delete m_dir;
     m_dir = nullptr;
 }
@@ -187,6 +193,8 @@ bool AcpClientTest::writeWrapper(const QString &version, const QString &caps, co
     const QString tmp = path + ".new";
     QFile f(tmp);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    // Isolate session-store reads from the machine's real ~/.hermes.
+    qputenv("HERMES_HOME", m_dir->path().toUtf8());
     QString script = "#!/bin/sh\n";
     if (body.isEmpty()) {
         script += QString("export FAKE_ACP_VERSION='%1'\nexport FAKE_ACP_CAPS='%2'\n"
@@ -510,6 +518,32 @@ void AcpClientTest::legacyAgentWithoutCapabilities() {
     QVERIFY(client.listSessions(m_dir->path()));
     QTRY_COMPARE_WITH_TIMEOUT(listed.count(), 1, 5000);
     QVERIFY(logHasMethod("session/list"));
+}
+
+void AcpClientTest::listSessionsOmitsCwdAndFollowsPages() {
+    REQUIRE_PYTHON();
+    qputenv("FAKE_ACP_SESSIONS", "pages");
+    QVERIFY(writeWrapper("1.0.0", "full"));
+    AcpClient client;
+    connectFresh(client);
+    QSignalSpy listed(&client, &AcpClient::sessionsListed);
+    QVERIFY(client.listSessions(QStringLiteral("/should/not/be/sent")));
+    QTRY_COMPARE_WITH_TIMEOUT(listed.count(), 1, 5000);
+    const auto sessions = listed.first().at(0).value<QList<AcpClient::SessionInfo>>();
+    QCOMPARE(sessions.size(), 2);
+    // Newest first, second page included.
+    QCOMPARE(sessions[0].id, QString("S-new"));
+    QCOMPARE(sessions[1].id, QString("S-old"));
+    QCOMPARE(sessions[1].title, QString("August"));
+    int lists = 0;
+    for (const auto &m : agentLog()) {
+        if (m.value("method").toString() != "session/list") continue;
+        ++lists;
+        const auto params = m.value("params").toObject();
+        QVERIFY2(!params.contains("cwd") || params.value("cwd").toString().isEmpty(),
+                 "session/list must not filter by cwd");
+    }
+    QCOMPARE(lists, 2);
 }
 
 void AcpClientTest::staleUpdatesAfterStopAreDropped() {

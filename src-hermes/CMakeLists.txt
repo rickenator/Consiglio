@@ -12,7 +12,7 @@ if(MSVC)
     add_compile_options(/utf-8)
 endif()
 
-find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Svg Test)
+find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Svg Sql Test)
 
 # ─── ACP backend + command catalog (no widgets; shared by app and tests) ───
 add_library(HermesAcp STATIC
@@ -22,10 +22,14 @@ add_library(HermesAcp STATIC
     src/commandcatalog.h
     src/hermessetup.cpp
     src/hermessetup.h
+    src/appsandbox.cpp
+    src/appsandbox.h
+    src/sessioncatalog.cpp
+    src/sessioncatalog.h
 )
 target_include_directories(HermesAcp PUBLIC src)
 target_compile_definitions(HermesAcp PUBLIC CONSIGLIO_HERMES_VERSION="${PROJECT_VERSION}")
-target_link_libraries(HermesAcp PUBLIC Qt5::Core)
+target_link_libraries(HermesAcp PUBLIC Qt5::Core Qt5::Sql)
 
 # ─── UI library (everything but main(); linked by the app, GUI tests and the
 #     screenshot tour) ─────────────────────────────────────────────────────
@@ -135,6 +139,14 @@ add_executable(test_hermessetup tests/test_hermessetup.cpp)
 target_link_libraries(test_hermessetup PRIVATE Qt5::Test HermesUi)
 add_test(NAME HermesSetupTests COMMAND test_hermessetup)
 set_tests_properties(HermesSetupTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_sessioncatalog tests/test_sessioncatalog.cpp)
+target_link_libraries(test_sessioncatalog PRIVATE Qt5::Test Qt5::Sql HermesAcp)
+add_test(NAME SessionCatalogTests COMMAND test_sessioncatalog)
+
+add_executable(test_appsandbox tests/test_appsandbox.cpp)
+target_link_libraries(test_appsandbox PRIVATE Qt5::Test HermesAcp)
+add_test(NAME AppSandboxTests COMMAND test_appsandbox)
 
 # The ACP and main-window suites drive the fake agent through a POSIX shell
 # wrapper, so they are labelled and skipped on Windows CI.
