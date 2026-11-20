@@ -8,6 +8,8 @@ import { resolveCodexCommand, type ExecutableCommand } from './main/platform';
 import { detectAgentReadiness, type AgentId, type ResolvedProbeCommand } from './main/agent-readiness';
 import { configureManagedAgentEnvironment, installMissingAgentFrontends, type AgentInstallResult, type BootstrapProgress } from './main/startup-bootstrap';
 import { CodexAdapter, getAdapter } from './main/adapters';
+import { agentApprovalRouter, resolveThroughRouter } from './main/approval-router';
+import { createReconnectGate, ensureSessionLive } from './main/session-reconnect';
 import { DiscussionSession } from '@/main/discussion-session';
 import path from 'path';
 import fs from 'fs';
@@ -56,6 +58,18 @@ const agentEmitters = {
   },
   emitTerminalOutput: (sessionId: string, data: string) => {
     terminalOutput(sessionId, data);
+  },
+  emitThreadId: (sessionId: string, threadId: string) => {
+    // The adapter learns the Codex thread id from `thread.started`; the record
+    // is the only thing that survives a restart, so persist it here.
+    const record = records.get(sessionId);
+    if (record && record.codexThreadId !== threadId) {
+      record.codexThreadId = threadId;
+      record.updated_at = Date.now();
+      saveStore();
+    }
+    const state = sessions.get(sessionId);
+    if (state) state.codexThreadId = threadId;
   },
 };
 
@@ -1260,7 +1274,6 @@ function terminalOutput(sessionId: string, data: string) {
   const state = sessions.get(sessionId);
   if (state) {
     state.terminalBuffer = (state.terminalBuffer + data).slice(-1_000_000);
-    consumeExecEvents(state, data);
   }
   mainWindow?.webContents.send('codex:terminal-output', { sessionId, data });
 }
@@ -1415,9 +1428,12 @@ function getPendingApprovals(sessionId?: string) {
     .sort((left, right) => right.timestamp - left.timestamp);
 }
 
-function approveCommand(approvalId: string) {
+async function approveCommand(approvalId: string) {
+  // Route to the adapter that is waiting on this approval, if any (M8).
+  const routed = await resolveThroughRouter(agentApprovalRouter, approvalId, true);
   const approval = approvals.get(approvalId);
-  if (!approval) return false;
+  if (!approval) return routed === true;
+  if (routed === false) return false;
   approval.status = 'approved';
   approvals.set(approvalId, approval);
   saveStore();
@@ -1425,9 +1441,11 @@ function approveCommand(approvalId: string) {
   return true;
 }
 
-function rejectCommand(approvalId: string) {
+async function rejectCommand(approvalId: string) {
+  const routed = await resolveThroughRouter(agentApprovalRouter, approvalId, false);
   const approval = approvals.get(approvalId);
-  if (!approval) return false;
+  if (!approval) return routed === true;
+  if (routed === false) return false;
   approval.status = 'rejected';
   approvals.set(approvalId, approval);
   saveStore();
@@ -1627,6 +1645,53 @@ function gitApplyHunk(repository: string, filePath: string, hunkId: number, reve
   }
 }
 
+/**
+ * Resolve the concrete endpoint a session will talk to. The adapter never reads
+ * app settings, so an unresolved provider reached it as model="" / base_url="/v1"
+ * and every local or LAN task failed on connect.
+ */
+function resolveProviderConfig(provider: Provider, options: SessionOptions) {
+  if (provider === 'remote_llamacpp') {
+    return {
+      baseUrl: options.remoteLlamaCpp?.baseUrl?.trim() || appSettings.remoteLlamaCpp.baseUrl,
+      model: options.remoteLlamaCpp?.model?.trim() || appSettings.remoteLlamaCpp.model,
+      apiKey: options.remoteLlamaCpp?.apiKey?.trim() || appSettings.remoteLlamaCpp.apiKey,
+    };
+  }
+  if (provider === 'ollama') {
+    return {
+      baseUrl: options.ollama?.baseUrl?.trim() || appSettings.ollama.baseUrl,
+      model: options.ollama?.model?.trim() || appSettings.ollama.model,
+      apiKey: options.ollama?.apiKey?.trim() || appSettings.ollama.apiKey,
+    };
+  }
+  if (provider === 'lan') {
+    const lanProvider = getLanProvider(options.selectedLanProviderId);
+    if (!lanProvider) throw new Error('No LAN provider configured');
+    return {
+      baseUrl: lanProviderBaseUrl(lanProvider),
+      model: lanProvider.model.trim() || appSettings.defaultModel?.trim() || '',
+      apiKey: lanProvider.apiKey || 'llama.cpp',
+      lanProvider,
+    };
+  }
+  if (provider === 'gpt56') return { model: 'gpt-5.6' };
+  return { model: options.defaultModel?.trim() || appSettings.defaultModel?.trim() || undefined };
+}
+
+/** Environment for the agent process: secrets applied, profile isolated when asked. */
+function buildSessionEnvironment(provider: Provider, sessionId: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  applySecretsToEnvironment(env, provider);
+  const isLocal = provider === 'remote_llamacpp' || provider === 'lan';
+  if (isLocal && appSettings.localProviderBehavior.isolateProfile) {
+    const profileHome = path.join(app.getPath('userData'), 'local-provider-profiles', sessionId);
+    fs.mkdirSync(profileHome, { recursive: true });
+    env.CODEX_HOME = profileHome;
+  }
+  return env;
+}
+
 async function startSession(options: SessionOptions) {
   const provider = options.provider || appSettings.defaultProvider;
   const repository = path.resolve(options.repository || defaultWorkspacePath());
@@ -1635,14 +1700,20 @@ async function startSession(options: SessionOptions) {
   }
   const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const branch = options.branch || getBranch(repository);
+  const providerConfig = resolveProviderConfig(provider, options);
+  const env = buildSessionEnvironment(provider, sessionId);
 
   // Delegate session lifecycle to the adapter
   const adapter = getOrCreateAdapter('codex');
   const session = await adapter.launch({
+    sessionId,
     repository,
     branch,
     agent: 'codex',
     provider,
+    providerConfig,
+    env,
+    localProviderBehavior: appSettings.localProviderBehavior,
     selectedLanProviderId: options.selectedLanProviderId,
     remoteLlamaCpp: options.remoteLlamaCpp,
     ollama: options.ollama,
@@ -1678,8 +1749,10 @@ async function startSession(options: SessionOptions) {
     repository: session.repository,
     branch: session.branch,
     provider,
-    model: undefined,
-    baseUrl: undefined,
+    // Persist the resolved endpoint: reconnect rebuilds the provider config from
+    // the record, so a missing model/baseUrl silently reconnects nowhere.
+    model: providerConfig.model,
+    baseUrl: providerConfig.baseUrl,
     selectedLanProviderId: options.selectedLanProviderId,
     codexThreadId: options.codexThreadId,
     status: 'running',
@@ -1905,19 +1978,36 @@ function stopSession(sessionId: string) {
   return true;
 }
 
-async function reconnectSession(sessionId: string) {
+// Concurrent reconnects of one task share a single attempt (C1).
+const reconnectSession = createReconnectGate(reconnectSessionOnce);
+
+async function reconnectSessionOnce(sessionId: string): Promise<boolean> {
   const record = records.get(sessionId);
-  if (!record || sessions.has(sessionId)) return false;
+  if (!record) return false;
+  if (sessions.has(sessionId)) return true; // already live: nothing to do
   const branch = record.branch || getBranch(record.repository);
   const provider = record.provider || appSettings.defaultProvider;
+  const providerConfig = resolveProviderConfig(provider, {
+    selectedLanProviderId: record.selectedLanProviderId,
+    remoteLlamaCpp: { baseUrl: record.baseUrl, model: record.model, apiKey: appSettings.remoteLlamaCpp.apiKey },
+    ollama: { baseUrl: appSettings.ollama.baseUrl, model: appSettings.ollama.model, apiKey: appSettings.ollama.apiKey },
+    defaultModel: record.model,
+  } as SessionOptions);
+  const env = buildSessionEnvironment(provider, sessionId);
 
-  // Delegate session lifecycle to the adapter
+  // Delegate session lifecycle to the adapter. sessionId is the stored record's
+  // id: minting a fresh one here orphaned the record and every renderer
+  // subscription, so the task looked dead the moment it was reconnected.
   const adapter = getOrCreateAdapter('codex');
   const session = await adapter.launch({
+    sessionId,
     repository: record.repository,
     branch,
     agent: 'codex',
     provider,
+    providerConfig,
+    env,
+    localProviderBehavior: appSettings.localProviderBehavior,
     selectedLanProviderId: record.selectedLanProviderId,
     remoteLlamaCpp: provider === 'remote_llamacpp'
       ? { baseUrl: record.baseUrl, model: record.model, apiKey: appSettings.remoteLlamaCpp.apiKey }
@@ -2007,10 +2097,16 @@ async function sendSessionPrompt(sessionId: string, input: string) {
     return true;
   }
 
-  // Delegate prompt sending to the adapter
-  if (state?.pty) return false; // PTY is busy (agent is responding)
-  const adapter = activeAdapter;
-  if (!adapter) return false;
+  // A recorded task that isn't live yet (e.g. after an app restart) is
+  // reconnected under its own id before the prompt is sent (C1).
+  const live = await ensureSessionLive(sessionId, {
+    isLive: id => sessions.has(id),
+    hasRecord: id => records.has(id),
+    reconnect: reconnectSession,
+  });
+  if (!live) return false;
+  if (sessions.get(sessionId)?.pty) return false; // PTY is busy (agent is responding)
+  const adapter = activeAdapter ?? getOrCreateAdapter('codex');
   return adapter.sendPrompt(sessionId, prompt);
 }
 

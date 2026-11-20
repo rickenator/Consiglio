@@ -39,7 +39,9 @@ export default function FileBrowser({ sessionId, onClose, onError }: Props) {
     }
     setLoading(true);
     try {
-      setPreview(await window.codexApi.readWorkspaceFile(sessionId, entry.path));
+      const result = await window.codexApi.readWorkspaceFile(sessionId, entry.path);
+      if (result.kind === 'image' && result.dataUrl) setPreview({ kind: 'image', path: result.path, dataUrl: result.dataUrl });
+      else if (result.kind === 'text' && result.text !== undefined) setPreview({ kind: 'text', path: result.path, text: result.text });
     } catch (error) {
       onError((error as Error).message);
     } finally {

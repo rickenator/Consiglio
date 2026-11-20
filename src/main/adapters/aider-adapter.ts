@@ -281,6 +281,7 @@ function parseAiderOutput(
 // ─── AiderAdapter Implementation ──────────────────────────────────────────────
 
 export class AiderAdapter implements AgentAdapter {
+  private emitters: any;
   static sessions = new Map<string, AiderSessionState>();
 
   constructor(emitters: EventEmitters) {

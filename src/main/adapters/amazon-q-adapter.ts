@@ -180,6 +180,7 @@ function parseAmazonQOutput(
 // ─── AmazonQAdapter Implementation ────────────────────────────────────────────
 
 export class AmazonQAdapter implements AgentAdapter {
+  private emitters: any;
   static sessions = new Map<string, AmazonQSessionState>();
 
   constructor(emitters: EventEmitters) {

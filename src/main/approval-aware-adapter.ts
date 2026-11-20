@@ -5,7 +5,7 @@ import type {
 } from './agent-adapter.ts';
 import { agentApprovalRouter } from './approval-router.ts';
 
-export type ApprovalAwareAgentId = 'codex';
+export type ApprovalAwareAgentId = import('./agent-readiness.ts').AgentId;
 export type AdapterCore = Omit<AgentAdapter, 'resolveApproval'> & Partial<Pick<AgentAdapter, 'resolveApproval'>>;
 
 interface PendingProtocolApproval {
