@@ -103,7 +103,7 @@ jobs:
         if: matrix.qt == 'apt'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qtbase5-dev qtbase5-dev-tools libqt5svg5-dev file dpkg-dev
+          sudo apt-get install -y --no-install-recommends qtbase5-dev qtbase5-dev-tools libqt5svg5-dev libqt5sql5-sqlite file dpkg-dev
           echo "QMAKE=/usr/lib/qt5/bin/qmake" >> "$GITHUB_ENV"
           echo "QT_SOURCE=Ubuntu 24.04 packages" >> "$GITHUB_ENV"
 
