@@ -7,6 +7,7 @@
 #include <QMap>
 #include <QPointer>
 #include <QVariant>
+#include "sessioncatalog.h"
 
 class QTimer;
 
@@ -111,8 +112,10 @@ public:
     // Re-open an existing session (from listSessions). Emits ready() when live.
     bool resumeSession(const QString &sessionId, const QString &cwd);
 
-    // List previously-saved sessions for cwd. Emits sessionsListed().
-    bool listSessions(const QString &cwd);
+    // List previously-saved Hermes sessions, newest first. The cwd argument
+    // is kept for callers but is not sent: filtering by workspace hid current
+    // sessions whose cwd is stored on a different column. Emits sessionsListed().
+    bool listSessions(const QString &cwd = QString());
 
     // Send a user prompt to the active session. Returns false if no session
     // is ready or a turn is already in flight. Streams until turnCompleted().
@@ -331,6 +334,12 @@ private:
     QString m_openingSessionId;
     bool m_openingNew = false;
     bool m_openingRestore = false;
+
+    // session/list pagination + merge with the read-only Hermes store.
+    QList<SessionCatalog::Entry> m_listedSessions;
+    bool m_listing = false;
+    void requestSessionPage(const QString &cursor);
+    void finishSessionList();
 };
 
 Q_DECLARE_METATYPE(AcpClient::PermissionRequest)

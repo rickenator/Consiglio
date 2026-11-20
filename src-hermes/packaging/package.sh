@@ -80,6 +80,11 @@ mac)
     app="$stage/Consiglio Hermes.app"
     macdeployqt="${MACDEPLOYQT:-$(command -v macdeployqt)}"
     "$macdeployqt" "$app" -always-overwrite
+    # Only the SQLite driver is used (read-only session listing). ODBC and
+    # PostgreSQL plugins that macdeployqt copies still point at Homebrew /
+    # Postgres.app paths and would fail the link check.
+    rm -f "$app/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib" \
+          "$app/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib"
     # macdeployqt misses @rpath dependencies of third-party dylibs (Homebrew's
     # libbrotlidec -> @rpath/libbrotlicommon, ...). Copy each missing one next
     # to the others and point every reference at the bundled copy.

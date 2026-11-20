@@ -387,14 +387,30 @@ def main():
             chunk(params.get("sessionId"), "replayed")
             respond(rid, {})
         elif method == "session/list":
-            sessions = [{"sessionId": "S-old", "title": "Old", "cwd": params.get("cwd", ""),
-                         "updatedAt": "2026-11-19T00:00:00Z"}]
-            if os.environ.get("FAKE_ACP_SESSIONS") == "many":
-                titles = ["Refactor the ACP transport", "Fix flaky bootstrap test", "Write release notes for 0.1",
-                          "Investigate context overflow", "Add dark theme tokens", "Profile startup time"]
-                sessions = [{"sessionId": "S-h%d" % i, "title": t, "cwd": params.get("cwd", "") or "/home/rick/consiglio",
-                             "updatedAt": "2026-11-%02dT1%d:00:00Z" % (19 - i, i)} for i, t in enumerate(titles)]
-            respond(rid, {"sessions": sessions})
+            mode = os.environ.get("FAKE_ACP_SESSIONS", "")
+            cursor = params.get("cursor") or params.get("nextCursor")
+            if mode == "pages":
+                page1 = [{"sessionId": "S-new", "title": "Current", "cwd": "/now",
+                          "updatedAt": "2026-11-20T12:00:00Z"}]
+                page2 = [{"session_id": "S-old", "title": "August", "cwd": "/legacy",
+                          "updated_at": "2026-08-19T12:00:00Z"}]
+                if not cursor:
+                    respond(rid, {"sessions": page1, "nextCursor": "S-new"})
+                else:
+                    respond(rid, {"sessions": page2})
+            elif mode == "snake":
+                respond(rid, {"sessions": [{"session_id": "S-snake", "title": "Snake",
+                                            "cwd": "/x", "updated_at": 1795147779.97}]})
+            else:
+                sessions = [{"sessionId": "S-old", "title": "Old", "cwd": params.get("cwd", ""),
+                             "updatedAt": "2026-11-19T00:00:00Z"}]
+                if mode == "many":
+                    titles = ["Refactor the ACP transport", "Fix flaky bootstrap test", "Write release notes for 0.1",
+                              "Investigate context overflow", "Add dark theme tokens", "Profile startup time"]
+                    sessions = [{"sessionId": "S-h%d" % i, "title": t,
+                                 "cwd": params.get("cwd", "") or "/home/rick/consiglio",
+                                 "updatedAt": "2026-11-%02dT1%d:00:00Z" % (19 - i, i)} for i, t in enumerate(titles)]
+                respond(rid, {"sessions": sessions})
         elif method == "session/prompt":
             text = "".join(b.get("text", "") for b in params.get("prompt", []))
             handle_prompt(rid, params.get("sessionId"), text)

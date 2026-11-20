@@ -80,6 +80,7 @@ private slots:
     void initTestCase() {
         QVERIFY(m_dir.isValid());
         qputenv("XDG_CONFIG_HOME", m_dir.filePath("config").toUtf8());
+        qputenv("HERMES_HOME", m_dir.filePath("hermes-home").toUtf8());
         QCoreApplication::setOrganizationName("AnivizaTest");
         QCoreApplication::setApplicationName("ConsiglioMainWindowTest");
         m_log = m_dir.filePath("acp.log");
