@@ -18,7 +18,9 @@ function launchOptions(sessionId: string, threadId?: string) {
     repository: '/tmp',
     agent: 'codex',
     provider: 'default',
-    codexPath: '/bin/true',
+    // Any existing executable works: launch() records state but never spawns
+    // without a prompt. process.execPath exists on every CI platform.
+    codexPath: process.execPath,
     codexThreadId: threadId,
   };
 }
