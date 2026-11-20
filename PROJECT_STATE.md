@@ -1,6 +1,14 @@
 # Consiglio Project State
 
-Last updated: 2026-08-02 10:26 PDT
+Last updated: 2026-11-19 PST (fix/production-hardening)
+
+> **Update 2026-11-19:** branch `fix/production-hardening` (off `slave`, fast-forwarded to
+> `update-1`) commits the previously uncommitted `src-qt` Hermes work and the `src-hermes`
+> ACP client, ports PR #63's session-lifecycle fix, and fixes audit findings C1, H1–H5, M1–M4,
+> M6–M8 (partly), M11, L1, L4, L7. Test counts on that branch: npm 81/81; Qt ctest 12/12;
+> Hermes `test_acpclient` 19 pass + 1 skip (the live test, without a `hermes` binary).
+> The "uncommitted and unpushed" note below is historical. Window-geometry restore was removed
+> in `e006116` (only the save remains), so the "window restore is clamped" note below is stale.
 
 This is the durable restart point for active Consiglio work. Update it after each
 material implementation, verification, commit, or newly discovered blocker.

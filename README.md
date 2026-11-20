@@ -44,7 +44,7 @@ Codex is powerful, but serious work rarely fits into one terminal session. Consi
 | **Files** | Browses the active workspace and previews text files and images in the app. |
 | **Providers** | Runs the normal Codex profile, GPT-5.6, Ollama, remote llama.cpp, or discovered LAN endpoints. |
 | **Secrets** | Encrypts API keys through Electron `safeStorage` and injects scoped environment variables into task processes. |
-| **Approvals** | Surfaces command approval requests with the command and affected paths. |
+| **Approvals** | Surfaces command approval requests with the command and affected paths, and routes desktop and mobile decisions back to the agent that is waiting on them. Codex `exec --json` turns and one-shot `hermes chat -q` turns don't emit approval requests; the Hermes ACP client (`src-hermes`) does. |
 | **Mobile companion** | Monitors sessions, sends prompts, reconnects or stops work, and handles approvals from Android or iOS. |
 
 ## Start Here
@@ -136,6 +136,12 @@ The following state survives a restart:
 - Unsent composer draft for each task
 
 If shutdown interrupts a response, Consiglio replaces the stale working state with a visible recovery message. Select **Continue task** to resume the same Codex thread instead of starting a disconnected conversation.
+
+Reconnecting a task reuses its original session id, so its history, subscriptions, and mobile view stay attached. Concurrent reconnects of the same task share one attempt. Sending a prompt to a recorded task that isn't live yet reconnects it first.
+
+### Hermes updates
+
+Hermes updates itself (`hermes update`). Consiglio never pins a Hermes path or version. It resolves `hermes` from `PATH` (or `HERMES_BIN`) each time it starts one. The Hermes ACP client negotiates from the agent's `initialize` response and tolerates unknown protocol fields and methods. If the agent exits, the client relaunches it and re-opens the active session. See [`src-hermes/README.md`](src-hermes/README.md).
 
 ## API Keys And MCP
 
