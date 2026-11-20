@@ -246,7 +246,8 @@ void MainWindow::setupMenuBar() {
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, tr("About Consiglio"),
             tr("<h2>Consiglio %1</h2>"
-               "<p>A native C++ desktop control plane for AI agents.</p>"
+               "<p>A native Qt desktop workspace for Hermes Agent, Codex and local models. "
+               "The primary Hermes client is Consiglio · Hermes (src-hermes).</p>"
                "<p>Qt5 / C++17</p>")
                 .arg(QApplication::applicationVersion()));
     });
@@ -837,7 +838,7 @@ void MainWindow::onPaletteAction(const QString &id) {
     else if (id == "toggle-sidebar") toggleSidebar();
     else if (id == "about") {
         QMessageBox::about(this, tr("About Consiglio"),
-            tr("<h2>Consiglio %1</h2><p>A native C++ desktop control plane for AI agents.</p>")
+            tr("<h2>Consiglio %1</h2><p>A native Qt desktop workspace for Hermes Agent, Codex and local models. The primary Hermes client is Consiglio · Hermes (src-hermes).</p>")
                 .arg(QApplication::applicationVersion()));
     }
 }

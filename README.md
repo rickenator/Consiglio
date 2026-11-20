@@ -1,23 +1,24 @@
 <div align="center">
   <img src="build/icons/128x128.png" width="96" height="96" alt="Consiglio icon">
   <h1>Consiglio</h1>
-  <p><strong>The desktop workspace for Codex tasks that outlive the terminal.</strong></p>
-  <p>Start typing immediately. Consiglio keeps your conversations, files, providers, drafts, and Codex threads ready after restarts and crashes.</p>
+  <p><strong>The desktop workspace for Hermes Agent sessions that outlive the terminal.</strong></p>
+  <p>A native client for <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>: every Hermes command in menus and a palette, streamed answers and tool calls, approvals you can see, and saved sessions you can pick up again after restarts and Hermes updates.</p>
   <p>
     <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-5ca8ff?style=flat-square">
-    <img alt="Electron" src="https://img.shields.io/badge/shell-Electron-9de4f2?style=flat-square">
-    <img alt="React" src="https://img.shields.io/badge/UI-React-61dafb?style=flat-square">
-    <img alt="Platforms: Linux, Windows, macOS, Android, iOS" src="https://img.shields.io/badge/platforms-Desktop%20%7C%20Android%20%7C%20iOS-f5c542?style=flat-square">
+    <img alt="Agent: Hermes" src="https://img.shields.io/badge/agent-Hermes-8b5cf6?style=flat-square">
+    <img alt="Protocol: ACP" src="https://img.shields.io/badge/protocol-ACP-9de4f2?style=flat-square">
+    <img alt="Native client: Qt 5" src="https://img.shields.io/badge/client-Qt%205-41cd52?style=flat-square">
     <a href="https://github.com/rickenator/Consiglio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rickenator/Consiglio?style=flat-square&color=5ca8ff"></a>
   </p>
   <p>
-    <a href="https://github.com/rickenator/Consiglio/releases/latest"><strong>Download Consiglio</strong></a>
+    <a href="#start-here"><strong>Get started</strong></a>
     &nbsp;&middot;&nbsp;
-    <a href="#start-here">Install from source</a>
+    <a href="src-hermes/README.md">Hermes client guide</a>
     &nbsp;&middot;&nbsp;
     <a href="https://github.com/rickenator/Consiglio/issues">Report an issue</a>
   </p>
 </div>
+
 
 <p align="center">
   <img src="docs/screenshots/hero-chat-dark.png" width="860" alt="Consiglio's native Hermes client in the dark theme, showing a live session answering /status">
@@ -51,37 +52,165 @@
 
 ---
 
-Consiglio wraps the Codex CLI in a native desktop workflow. It is designed for long-running work rather than disposable chats: tasks reconnect automatically, prompts and responses remain copyable, activity is visible, and repository files can be inspected without leaving the conversation.
+Consiglio is a desktop workspace for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Its main client, **Consiglio · Hermes** ([`src-hermes`](src-hermes/README.md)), is a native Qt app. It runs `hermes acp` and talks to it over the Agent Client Protocol. It is built for long-running work rather than throwaway chats: sessions are saved by Hermes and can be resumed, the agent's activity stays visible, approvals are explicit, and a Hermes update doesn't strand you.
 
 ## Why Consiglio
 
-Codex is powerful, but serious work rarely fits into one terminal session. Consiglio adds the durable desktop layer: one place to resume tasks, see what the agent is doing, inspect its files, manage providers and credentials, and recover after a shutdown without reconstructing context.
+Hermes is powerful, but serious work rarely fits into one terminal session. Consiglio adds the desktop layer: one place to start and resume sessions, see what Hermes is doing, answer its approval requests, and change its settings, without memorizing slash commands.
 
-- **No workspace gate.** Open the app and type; the last task reconnects automatically.
-- **No mystery waiting.** Streaming activity, commands, errors, and working state remain visible.
-- **No lost thread.** Conversations, drafts, repository state, and Codex thread IDs survive restarts.
-- **No terminal juggling.** Tasks, file previews, images, providers, approvals, and secrets share one focused window.
+- **Every command, discoverable.** The menus, the command palette (Ctrl+K) and composer completion list every slash command the running Hermes reports, including ones added by an update.
+- **No mystery waiting.** Answers, reasoning, tool calls, context use, token counts and turn time stream as they happen.
+- **No lost thread.** Saved Hermes sessions are listed in the sidebar and resume where they left off.
+- **Approvals you can see.** When Hermes asks before running something dangerous, Consiglio shows exactly what it asked and sends back only an option Hermes offered.
+- **Survives updates.** Consiglio never pins a Hermes path or version. If the agent exits, it relaunches it and reopens your session.
 
-> Consiglio is an independent open-source desktop client. It requires a working Codex CLI installation and uses your existing Codex authentication and configuration.
+> Consiglio is an independent open-source client. Hermes Agent is a separate project by Nous Research. You install it, choose its model provider and update it with Hermes's own tools; Consiglio uses your existing Hermes configuration.
 
 ## What It Does
 
 | Surface | Behavior |
 | --- | --- |
-| **Conversation** | Streams prompts, responses, command activity, errors, and a clear working indicator. |
-| **Task rail** | Keeps multiple tasks available and reconnects the last selected task at startup. |
-| **Recovery** | Preserves Codex thread IDs, history, repository, provider, and per-task drafts across shutdowns and crashes. |
-| **Files** | Browses the active workspace and previews text files and images in the app. |
-| **Providers** | Runs the normal Codex profile, GPT-5.6, Ollama, remote llama.cpp, or discovered LAN endpoints. |
-| **Secrets** | Encrypts API keys through Electron `safeStorage` and injects scoped environment variables into task processes. |
-| **Approvals** | Surfaces command approval requests with the command and affected paths, and routes desktop and mobile decisions back to the agent that is waiting on them. Codex `exec --json` turns and one-shot `hermes chat -q` turns don't emit approval requests; the Hermes ACP client (`src-hermes`) does. |
-| **Mobile companion** | Monitors sessions, sends prompts, reconnects or stops work, and handles approvals from Android or iOS. |
+| **Conversation** | Streams answers, collapsible reasoning, tool calls and their output, with Markdown, tables and code. Every message can be copied. |
+| **Sessions** | The sidebar shows the workspace folder, the current session and recent Hermes sessions (filterable). They come from Hermes's own session store. |
+| **Commands** | Every Hermes slash command appears in the **Hermes** and **Session** menus, the palette and `/` completion. Commands with fixed choices get submenus; commands that take text open a small form that shows the exact command line. |
+| **Session settings** | Model, reasoning effort, approval mode and any other option Hermes reports become toolbar pickers and appear under Settings → Session. |
+| **Approvals** | Hermes's permission requests open a dialog. Closing it, stopping, or the agent exiting all answer "cancelled". |
+| **Setup and health** | Settings → Hermes Agent finds the executable, runs `hermes doctor`, `hermes status` and `hermes update`, and opens `hermes setup` / `hermes model` in a terminal. Settings → Configuration shows `hermes config show` (API keys are never displayed) and runs `hermes config set`. |
+| **Appearance** | Light, dark and system themes, interface zoom, adjustable text sizes, and a keyboard shortcut for every common action. |
 
 ## Start Here
 
-### Download
+### 1. Install Hermes Agent
 
-Install the latest release from the [Consiglio download page](https://github.com/rickenator/Consiglio/releases/latest):
+Use the official installer ([Hermes installation docs](https://hermes-agent.nousresearch.com/docs/getting-started/installation)):
+
+```bash
+# Linux, macOS, WSL2
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+iex (irm https://hermes-agent.nousresearch.com/install.ps1)
+```
+
+Then choose a model provider and check the install:
+
+```bash
+hermes setup      # full setup wizard (or: hermes model)
+hermes doctor
+```
+
+Consiglio uses whatever provider and model Hermes is configured with. It was developed and tested against Hermes v0.23.3, and it works out what each newer version supports when it connects.
+
+### 2. Build and run Consiglio · Hermes
+
+The native client needs CMake 3.16+, a C++17 compiler and Qt 5 (Core, Gui, Widgets, Svg, Test). On Debian or Ubuntu:
+
+```bash
+sudo apt install build-essential cmake qtbase5-dev libqt5svg5-dev
+git clone https://github.com/rickenator/Consiglio.git
+cd Consiglio
+cmake -S src-hermes -B src-hermes/build
+cmake --build src-hermes/build -j
+src-hermes/build/ConsiglioHermes
+```
+
+On macOS, install `cmake` and `qt@5` with Homebrew and add `-DCMAKE_PREFIX_PATH="$(brew --prefix qt@5)"` to the first `cmake` command. The client is developed and tested on Linux. There are no prebuilt packages of it yet: the [release downloads](https://github.com/rickenator/Consiglio/releases/latest) are the [Electron app](#optional-and-legacy-backends) below. Tests and the screenshot tour are described in [`src-hermes/README.md`](src-hermes/README.md).
+
+### 3. How Consiglio finds Hermes
+
+The executable is looked up every time the agent starts, in this order:
+
+1. a path set in Settings → Hermes Agent, or passed as `--hermes <path>`;
+2. `$HERMES_BIN`;
+3. `PATH`;
+4. the standard install locations: `~/.local/bin`, `~/.hermes/hermes-agent/venv/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `~/bin`.
+
+So an app opened from a desktop launcher still finds a Hermes installed in `~/.local/bin`, even when its `PATH` is shorter than a terminal's.
+
+### 4. Hermes updates itself
+
+Hermes updates with `hermes update`, or from **Hermes → Check for Updates** in Consiglio. Consiglio never pins a Hermes path or version:
+
+- it negotiates capabilities from each agent's `initialize` response and ignores protocol fields and methods it doesn't know;
+- the command list is fetched again from the running Hermes and cached per Hermes version, so new commands appear and removed ones disappear;
+- if the agent exits (for example during an update), an in-flight turn is reported as failed rather than replayed, and Consiglio relaunches the agent and reopens the active session. **Hermes → Restart Agent** (Ctrl+Shift+R) does the same on demand, which is how you pick up an update applied while the agent was idle.
+
+Saved sessions live in Hermes's own store (`~/.hermes/state.db`) and survive updates and restarts.
+
+## Everyday Workflow
+
+1. Launch `ConsiglioHermes` and pick a workspace folder (File → Choose Workspace Folder, Ctrl+O).
+2. Type a request and press Enter. Shift+Enter adds a newline; `/` completes commands.
+3. Watch reasoning, tool calls and the status bar (model, context, timer, tokens) while Hermes works. Stop with Ctrl+.
+4. Answer approval dialogs when Hermes asks before running something.
+5. Change the model, reasoning or approval mode from the toolbar, or run any command from the Hermes menu or the palette (Ctrl+K).
+6. Resume any earlier session from **Recent Sessions**.
+
+| Action | Shortcut |
+| --- | --- |
+| New session | Ctrl+N |
+| Command palette | Ctrl+K |
+| Stop response | Ctrl+. |
+| End session | Ctrl+Shift+W |
+| Choose workspace folder | Ctrl+O |
+| Toggle sidebar | Ctrl+B |
+| Focus message box | Ctrl+L |
+| Settings | Ctrl+, |
+| Restart Hermes Agent | Ctrl+Shift+R |
+| Zoom in / out / reset | Ctrl+= / Ctrl+- / Ctrl+0 |
+| Keyboard shortcuts | Ctrl+/ |
+
+## Architecture
+
+```text
+Consiglio
+├── src-hermes/                     Consiglio · Hermes: native Qt 5 client for Hermes Agent (primary)
+│   ├── src/acpclient.*             ACP client for `hermes acp` (JSON-RPC over stdio)
+│   ├── src/commandcatalog.*        slash-command discovery, cached per Hermes version
+│   ├── src/hermescli.*             executable resolution, doctor/status/update/config
+│   ├── src/mainwindow.* …          menus, palette, chat, sidebar, settings, themes
+│   └── tests/                      fake ACP agent, real /commands fixtures, offscreen UI tests
+├── src-qt/                         earlier Qt client: one-shot Hermes, Codex and local-model sessions
+├── src/ (+ bin/consiglio)          Electron app: Codex CLI + preview adapters (legacy, see below)
+└── mobile/                         Android/iOS companion for the Electron app
+```
+
+Consiglio · Hermes starts `hermes acp` as a child process with an argument list, never through a shell. It talks newline-delimited JSON-RPC over that process's stdin and stdout. It advertises no file-system or terminal capabilities to the agent and answers any agent request it doesn't implement with a JSON-RPC "method not found" error. Hermes runs the tools; Consiglio displays them and relays approvals.
+
+## FAQ
+
+**Do I need Codex, Node.js or Python?** Not for Consiglio · Hermes. You need Hermes Agent, which brings its own runtime, and Qt 5 to build the client. Codex and Open Interpreter are only used by the legacy Electron app.
+
+**Which model does it use?** Whichever one Hermes is configured with (`hermes model`, or the toolbar model picker). Consiglio doesn't store provider keys for Hermes; they stay in Hermes's own `~/.hermes/.env`.
+
+**Does it work after `hermes update`?** Yes. See [Hermes updates itself](#4-hermes-updates-itself).
+
+**A command I just got from an update is missing.** Use **Hermes → Refresh Command List**. If the agent was running during the update, restart it first (Ctrl+Shift+R).
+
+**Nothing happens when I send a prompt.** Check the status bar, then run `hermes doctor` and `hermes status` (both are also under Settings → Hermes Agent). A missing or misconfigured provider is the usual cause: run `hermes setup`.
+
+**Where are the downloads?** The [releases](https://github.com/rickenator/Consiglio/releases/latest) currently contain only the Electron app. Build Consiglio · Hermes from source as shown above.
+
+## Optional And Legacy Backends
+
+> [!NOTE]
+> Everything in this section is about the **Electron app** (`src/`, the packages on the releases page) and the earlier **Qt client** (`src-qt/`). These are still in the repository and still work, but they are no longer the primary way to use Consiglio. The Electron app does not run Hermes; it runs the Codex CLI, plus preview adapters for other coding-agent CLIs.
+
+### Qt client with one-shot Hermes (`src-qt`)
+
+`src-qt` (Qt 5 with Network, Concurrent and Sql, plus Python 3) can run Hermes sessions with `hermes chat -q` / `hermes chat --resume <id> -q`, along with Codex, Ollama and remote llama.cpp sessions. One-shot Hermes turns have no approval channel back to Consiglio. Hermes applies its own `approvals.*` policy, which denies dangerous commands in one-shot mode by default. For interactive approvals, use Consiglio · Hermes.
+
+```bash
+cmake -S src-qt -B src-qt/build && cmake --build src-qt/build -j && src-qt/build/Consiglio
+```
+
+### Electron app (Codex CLI)
+
+The Electron app wraps the Codex CLI: persistent tasks that reconnect at startup, a workspace file browser, encrypted secrets for providers and MCP servers, and a mobile companion.
+
+#### Download
 
 | Platform | Recommended package | Alternative |
 | --- | --- | --- |
@@ -89,271 +218,88 @@ Install the latest release from the [Consiglio download page](https://github.com
 | Windows x64 | Setup `.exe` | Portable `.exe` |
 | macOS Apple Silicon or Intel | `.dmg` | `.zip` |
 
-Every change is type-checked, tested, built, and packaged on Linux, Windows, and macOS. Release builds include native Intel and Apple Silicon macOS packages.
+From the [releases page](https://github.com/rickenator/Consiglio/releases/latest). Every change is type-checked, tested, built and packaged on Linux, Windows and macOS.
 
-### Requirements
+Supported platforms: Linux x64 (Debian/Ubuntu `.deb`, or the AppImage elsewhere), Windows 10 or 11 x64, and macOS 12 Monterey or newer on Intel or Apple Silicon.
 
-- A working `codex` executable on `PATH`
-- A supported 64-bit desktop platform:
-  - Debian/Ubuntu-compatible Linux x64 or another modern x64 distribution using the AppImage
-  - Windows 10 or 11 x64
-  - macOS 12 Monterey or newer on Intel or Apple Silicon
+#### From source
 
-Node.js 22 or newer and npm are required only when installing from source.
-
-### Android And iOS Companion
-
-The native Capacitor client lives in [`mobile/`](mobile/) and connects to a deliberately narrow bridge hosted by the desktop app. It can view sessions and timelines, send prompts, reconnect or stop tasks, and approve or reject pending commands. It cannot read secrets, change providers, browse arbitrary files, or execute arbitrary bridge commands. Successful pairings survive restarts through Android Keystore or iOS Keychain and can be forgotten locally or revoked from the desktop.
-
-The bridge is disabled by default, binds only to loopback, and is intended to sit behind an authenticated HTTPS tunnel or reverse proxy. The desktop **Mobile** dialog generates and encrypts a one-time pairing token, presents a scannable enrollment code, and provides explicit rotation and revocation controls. See [Mobile Companion](docs/MOBILE.md) for pairing, Android/iOS build commands, and the security model.
-
-### Install From Source
+Requires Node.js 22+ and npm:
 
 ```bash
-git clone https://github.com/rickenator/Consiglio.git
-cd Consiglio
 npm install
-npm run dev:all
+npm run dev:all        # run the app
+npm run verify         # typecheck, tests, build
 ```
 
-That command works in Bash, PowerShell, and Command Prompt. Linux and macOS users can optionally install the convenience launcher:
+`bin/consiglio` is a Linux/macOS launcher that builds the checkout and opens the Electron app (`ln -sf "$PWD/bin/consiglio" ~/bin/consiglio`). A packaged clean install creates a writable `Consiglio Workspace` folder in Documents, or in application data if Documents is protected.
 
-```bash
-mkdir -p ~/bin
-ln -sf "$PWD/bin/consiglio" ~/bin/consiglio
-```
+#### Codex and Open Interpreter front ends
 
-Make sure `~/bin` is on `PATH`, then launch from any directory:
+- **Finding Codex.** The app searches `CODEX_BIN`, `PATH`, npm's Windows shim directory and common macOS/Linux CLI locations, so it still finds Codex when launched from Finder, Launchpad or the Start menu.
+- **Installing missing front ends.** If Codex or Open Interpreter is missing at startup, the app installs it into its own application-data folder on Linux, macOS and Windows. Codex comes from npm (`npm install --prefix …`); Open Interpreter goes into an isolated Python venv. This needs npm, or Python 3.10–3.12, respectively. A valid `CODEX_BIN` or `OI_BIN` you set yourself is kept.
+- **Preview adapters.** Aider, Claude Code, Gemini, Copilot and Amazon Q adapters exist in `src/main/adapters/` as preview integrations. See [Release Readiness](docs/RELEASE_READINESS.md).
 
-```bash
-consiglio
-```
+#### Provider setup
 
-The launcher builds the current checkout and opens the Electron app. No workspace selection is required: Consiglio reconnects the last task when one exists. A packaged clean install creates a writable `Consiglio Workspace` folder in the operating system's Documents directory, with an application-data fallback when Documents is protected.
+On a clean install, the Electron app checks providers before creating the first task:
 
-## Everyday Workflow
+1. It prefers running llama.cpp or Ollama servers, including compatible endpoints found on the computer's local IPv4 networks. You confirm a discovered endpoint before any prompt is sent to it.
+2. A signed-in Codex CLI can be used for the Codex account route (Codex, GPT-5.6).
+3. If nothing usable responds, it shows a first-run setup screen instead of creating a broken conversation.
 
-1. Launch `consiglio`.
-2. Type a request and press Enter.
-3. Watch the working indicator and command activity while Codex runs.
-4. Open **Files** to inspect generated files, text, or images.
-5. Switch tasks from the left rail without losing conversation state.
+The conversation header and sidebar always show where prompts are going: provider, model, and endpoint or Codex account route. For remote llama.cpp, give the endpoint (for example `http://192.168.1.50:8081`) and model under **Providers**. The server must support the Responses API shape Codex expects; the placeholder API key `llama.cpp` can be replaced if the server needs authentication.
 
-Use `Shift+Enter` for a newline. Conversation text supports normal selection, copy, paste, and native right-click menus.
+#### Recovery
 
-## Automatic Provider Setup
+Task state is written to the user-data directory as work happens. Conversation and activity history, the Codex thread ID, repository and branch, provider/model/endpoint, creation time and the unsent draft all survive a restart. If shutdown interrupts a response, **Continue task** resumes the same Codex thread. Reconnecting a task reuses its session id, so history, subscriptions and the mobile view stay attached.
 
-On a clean installation, Consiglio verifies providers before creating the first task:
+#### API keys and MCP
 
-1. An installed and authenticated Codex CLI is used automatically.
-2. If Codex is not signed in, a running Ollama installation with a local model is used as the free fallback.
-3. Compatible llama.cpp and Ollama servers are discovered automatically by scanning the computer's active local IPv4 networks; the user explicitly confirms a discovered endpoint before prompts are sent to it.
-4. If nothing usable responds, Consiglio shows a first-run setup screen instead of creating a broken conversation.
+Open **Secrets** to add credentials. Values are encrypted with Electron `safeStorage`, the secrets file is readable only by the current OS user, and saved values are never sent back to the renderer. Provider keys under **Providers** use the same encryption. Storage is refused when Linux offers only the insecure `basic_text` fallback. Each credential can be scoped to all providers, Codex/OpenAI tasks, or local and LAN tasks, and it applies to the next turn.
 
-Discovered network endpoints are accepted only when their model API responds and returns at least one model. The active conversation header and sidebar always show where prompts are going: provider, model, and endpoint or Codex account route.
-
-## Crash And Shutdown Recovery
-
-Task state is written to Electron's user-data directory as work happens. On the next launch, Consiglio restores the selected task and reconnects it with the original Codex thread ID.
-
-The following state survives a restart:
-
-- Conversation and activity history
-- Codex thread ID
-- Repository and branch
-- Provider, model, and endpoint identity
-- Original task creation time
-- Unsent composer draft for each task
-
-If shutdown interrupts a response, Consiglio replaces the stale working state with a visible recovery message. Select **Continue task** to resume the same Codex thread instead of starting a disconnected conversation.
-
-Reconnecting a task reuses its original session id, so its history, subscriptions, and mobile view stay attached. Concurrent reconnects of the same task share one attempt. Sending a prompt to a recorded task that isn't live yet reconnects it first.
-
-### Hermes updates
-
-Hermes updates itself (`hermes update`). Consiglio never pins a Hermes path or version. It resolves `hermes` from `PATH` (or `HERMES_BIN`) each time it starts one. The Hermes ACP client negotiates from the agent's `initialize` response and tolerates unknown protocol fields and methods. If the agent exits, the client relaunches it and re-opens the active session. See [`src-hermes/README.md`](src-hermes/README.md).
-
-The native Hermes client (`src-hermes`) puts every Hermes slash command in its menus, its command palette (Ctrl+K) and composer completion. It reads that list from the running Hermes, so commands added by a Hermes update show up on their own. The toolbar has pickers for the session settings Hermes reports. Hermes setup, health checks, updates and `config.yaml` are under Settings.
-
-## API Keys And MCP
-
-Open **Secrets** in the conversation header to add credentials. Consiglio stores only encrypted values on disk, restricts the secrets file to the current OS user, and never sends saved values back to the renderer. A saved value can be replaced or removed, but not revealed.
-
-Provider-specific API keys entered under **Providers** use the same operating-system encryption before settings are written. Legacy plaintext provider keys are migrated on the next launch. Consiglio refuses credential storage when Linux exposes only Electron's insecure `basic_text` fallback; configure and unlock a supported system keyring first.
-
-Each credential can be scoped to:
-
-- All task providers
-- Codex and OpenAI tasks
-- Local and LAN model tasks
-
-Credential updates apply to subsequent Codex task processes, including the next turn in an existing task.
-
-### STDIO MCP Server
-
-Reference the saved environment variable in `~/.codex/config.toml`:
+Reference a saved variable from `~/.codex/config.toml`. The **MCP config** button copies these patterns with the right variable name:
 
 ```toml
-[mcp_servers.example]
+[mcp_servers.example]            # STDIO
 command = "example-mcp"
 env_vars = ["EXAMPLE_API_KEY"]
-```
 
-### Streamable HTTP MCP Server
-
-```toml
-[mcp_servers.example]
+[mcp_servers.example_http]       # Streamable HTTP
 url = "https://example.com/mcp"
 bearer_token_env_var = "EXAMPLE_API_KEY"
 ```
 
-The **MCP config** button beside a credential copies both patterns with the correct variable name.
+Local llama.cpp and LAN sessions use isolated Codex profiles by default, so the normal MCP server list stays out of them. If MCP can't see a key, check three things: the credential is enabled, the server references the exact variable, and the task uses a profile that includes that server. Then reconnect the task.
 
-> [!NOTE]
-> Local llama.cpp and LAN sessions use isolated Codex profiles by default. Isolation keeps the normal Codex MCP server list out of those sessions; injecting a key does not install or configure an MCP server.
+#### Approvals
 
-## Providers
+Command approval requests show the command and affected paths and route desktop and mobile decisions back to the waiting agent. Codex `exec --json` turns don't emit approval requests.
 
-### Codex
+#### Android and iOS companion
 
-Uses the normal Codex profile, authentication, model configuration, and MCP configuration from the host.
+The Capacitor client in [`mobile/`](mobile/) connects to a deliberately narrow bridge hosted by the Electron app. It can view sessions and timelines, send prompts, reconnect or stop tasks, and approve or reject pending commands. It cannot read secrets, change providers, browse arbitrary files or run arbitrary bridge commands. The bridge is off by default and binds only to loopback; put it behind an authenticated HTTPS tunnel or reverse proxy. See [Mobile Companion](docs/MOBILE.md).
 
-Consiglio searches `PATH`, `CODEX_BIN`, npm's standard Windows shim directory, and common macOS/Linux CLI locations. This lets an app opened from Finder, Launchpad, or the Windows Start menu find Codex even when the desktop environment has a smaller `PATH` than an interactive terminal.
+#### Packaging and releases
 
-### Remote llama.cpp
+`npm run package:host` builds native packages for the current OS (`package:linux`, `package:win`, `package:mac`). Pushing a version tag that matches `package.json`, or running the **Release Consiglio** workflow, publishes a release only after every platform package passes validation. Each release includes `SHA256SUMS.txt`, an SPDX SBOM and a Sigstore-backed attestation. Production releases need macOS Developer ID signing and notarization and Windows Authenticode signing; see [Releasing Consiglio](docs/RELEASING.md).
 
-Consiglio configures Codex's OpenAI-compatible provider automatically. Supply the endpoint and model in **Providers**. A typical endpoint is:
-
-```text
-http://192.168.1.50:8081
-```
-
-The server must support the Responses API shape expected by Codex. The default placeholder API key is `llama.cpp`; replace it only when the server requires authentication.
-
-### Ollama And LAN
-
-Ollama can be selected directly. Compatible llama.cpp servers can also be added manually or discovered on the local network from **Providers**.
-
-## Keyboard And Desktop Behavior
-
-| Action | Shortcut or behavior |
-| --- | --- |
-| New task | `Ctrl/Cmd+N` |
-| Send prompt | `Enter` |
-| Newline in prompt | `Shift+Enter` |
-| Restore task | Automatic at startup |
-| Window size | Remembered between launches |
-| Copy and paste | Native menu and standard platform shortcuts |
-
-## Development
-
-Run the complete desktop app:
-
-```bash
-npm run dev:all
-```
-
-Build all three application targets:
-
-```bash
-npm run build
-```
-
-Run the full local verification gate:
-
-```bash
-npm run verify
-```
-
-Build and synchronize both native mobile projects:
-
-```bash
-cd mobile
-npm ci
-npm run sync
-```
-
-The Android project is under `mobile/android`; the iOS Xcode project is under `mobile/ios/App`.
-
-## Packaging
-
-Build Linux packages with:
-
-```bash
-npm run package:linux
-```
-
-This produces an AppImage and a compressed Debian package. Linux is the primary desktop target.
-
-On Windows or macOS, use the corresponding host command:
+#### Electron architecture
 
 ```text
-npm run package:win
-npm run package:mac
+src/main.ts                     Electron main process: agent runner, persistence
+src/main/adapters/              Codex adapter (used) and preview adapters
+src/main/startup-bootstrap.ts   Codex / Open Interpreter installation into user data
+src/main/app-protocol.ts        bounded renderer protocol and path validation
+src/preload.ts                  narrow contextBridge API
+src/App.tsx, src/features/      React UI: task rail, timeline, files, secrets, mobile pairing
 ```
 
-`npm run package:host` selects the correct command for the current operating system. Native packages must be built on their target operating system; the release workflow coordinates those host-native builds.
-
-GitHub Actions also builds release packages for all supported desktop platforms:
-
-| Platform | Release artifacts |
-| --- | --- |
-| Linux x64 | AppImage and `.deb` |
-| Windows x64 | NSIS installer and portable `.exe` |
-| macOS x64 | DMG and ZIP |
-| macOS arm64 | DMG and ZIP |
-
-Push a version tag matching `package.json`, such as `v0.1.1`, or run the **Release Consiglio** workflow manually with that version. GitHub publishes a release only after every platform package passes validation, and includes `SHA256SUMS.txt` for all artifacts.
-
-Production releases also require Developer ID signing and notarization on macOS and Authenticode signing on Windows. The workflow refuses to publish when those credentials are absent or a signature cannot be verified. Each release includes an SPDX software bill of materials and a Sigstore-backed GitHub artifact attestation; see [Releasing Consiglio](docs/RELEASING.md) for the credential contract and verification commands.
-
-## Architecture
-
-```text
-Consiglio
-├── bin/consiglio                   durable launcher
-├── src/main.ts                     Electron process, Codex runner, persistence
-├── src/main/app-protocol.ts        bounded renderer protocol and path validation
-├── src/preload.ts                  narrow contextBridge API
-├── src/App.tsx                     desktop shell
-├── src/features/sessions/          task rail and conversation timeline
-├── src/features/files/             workspace browser and previews
-├── src/features/secrets/           encrypted credential manager
-├── src/main/lan-discovery.ts       local provider discovery
-└── tests/fixtures/codex-events/    protocol fixtures
-```
-
-The renderer never launches commands or reads credentials directly. Electron's main process owns Codex subprocesses, filesystem access, persistence, provider environment setup, and encryption. The preload bridge exposes a bounded IPC surface to React.
-
-Packaged builds serve renderer assets through Consiglio's private secure protocol rather than privileged `file://` pages. Electron production fuses disable Run-as-Node, Node option injection, command-line inspection, and loading application code outside the ASAR bundle; macOS and Windows additionally enforce Electron's embedded ASAR integrity check.
-
-## Troubleshooting
-
-### A prompt does nothing
-
-Open the task activity and copy the displayed error. Confirm that `codex` runs from a terminal and that the selected provider is reachable.
-
-```bash
-codex --version
-```
-
-### MCP cannot see a key
-
-Confirm all three parts independently:
-
-1. The credential is enabled in **Secrets**.
-2. The MCP server references the exact variable through `env_vars`, `bearer_token_env_var`, or `env_http_headers`.
-3. The task uses a Codex profile that contains that MCP server configuration.
-
-Restart or reconnect the task after changing MCP server configuration. Key presence and service/network reachability are separate checks.
-
-### A local provider loses MCP tools
-
-This is expected when local-provider isolation is enabled. Disable isolation only when the local model and provider can safely handle the configured MCP tool schemas.
+The renderer never launches commands or reads credentials. The main process owns subprocesses, file access, persistence, provider setup and encryption. Packaged builds serve the UI through a private secure protocol, and Electron fuses disable Run-as-Node, Node option injection, command-line inspection and loading code from outside the ASAR bundle. macOS and Windows also enforce ASAR integrity.
 
 ## Design Rule
 
-Consiglio must not become a toy abstraction over Codex. Every visual action should map to an inspectable task event, command, file operation, provider setting, or protocol message. Errors remain selectable and copyable so failures can be debugged from evidence rather than hidden behind generic UI states.
+Consiglio must not become a toy abstraction over the agent. Every visual action should map to something you can inspect: an agent command, a protocol message, a file operation or a setting. Errors stay selectable and copyable, so failures can be debugged from evidence rather than hidden behind generic UI states.
 
 ## License
 

@@ -1,5 +1,7 @@
 # Consiglio Qt5 Rewrite — Progress Diary
 
+> **Status:** historical diary of the `src-qt` client, which now also runs one-shot Hermes sessions (`hermes chat -q`). Consiglio's primary client is the Hermes ACP client in [`src-hermes`](../src-hermes/README.md); `src-qt` is an optional, legacy backend.
+
 **Started:** 2025-07-31  
 **Target:** Full native C++/Qt5 desktop app replacing Electron  
 **Status:** IN PROGRESS — M8: Testing (✅ DONE), M9: Real Agent Integration (TODO)

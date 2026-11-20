@@ -1,5 +1,7 @@
 # Consiglio — Evidence-Based Codebase Analysis
 
+> **Scope:** this document covers the **Electron app** (`src/`), one of Consiglio's optional, legacy backends, which runs the Codex CLI plus preview adapters for other coding-agent CLIs. Consiglio's primary client is now the native Hermes Agent client in [`src-hermes`](../src-hermes/README.md); see the [README](../README.md).
+
 > Generated from full source inspection. No assumptions used.
 
 ## 1. System Overview

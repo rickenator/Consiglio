@@ -5,6 +5,22 @@ driven over the Agent Client Protocol (`hermes acp`: newline-delimited JSON-RPC 
 It streams answers, reasoning, tool calls, context usage and slash commands, lists and
 resumes saved Hermes sessions, and shows Hermes's permission prompts as approval dialogs.
 
+This is Consiglio's primary client. The Electron app in `src/` and the earlier Qt client in
+`src-qt/` are optional, legacy backends; see the top-level [README](../README.md#optional-and-legacy-backends).
+
+## Prerequisites
+
+- **Hermes Agent**, installed with its official installer
+  (`curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` on Linux, macOS and WSL2;
+  `iex (irm https://hermes-agent.nousresearch.com/install.ps1)` on Windows). Then configure a
+  provider with `hermes setup` or `hermes model`, and check it with `hermes doctor`.
+- **CMake 3.16+, a C++17 compiler and Qt 5** (Core, Gui, Widgets, Svg, Test). On Debian/Ubuntu: `sudo apt install build-essential cmake qtbase5-dev libqt5svg5-dev`.
+  On macOS: `brew install cmake qt@5`, then pass `-DCMAKE_PREFIX_PATH="$(brew --prefix qt@5)"`
+  to CMake. The client is developed and tested on Linux.
+- `python3` only for the test suites, which use a scripted fake agent.
+
+Run it with `src-hermes/build/ConsiglioHermes [--hermes /path/to/hermes]`.
+
 ## Build and test
 
 ```sh
@@ -110,5 +126,5 @@ code until it exits, and work interrupted by a restart is not replayed. Saved se
 - **Restart after exit.** If the agent exits on its own (for example during an update), an
   in-flight turn is reported as failed and not replayed. The client then relaunches with
   backoff (re-resolving the executable), renegotiates, reports a version change, and re-opens
-  the active session. **File → Restart Hermes Agent** does the same on demand, which is how
+  the active session. **Hermes → Restart Agent** (Ctrl+Shift+R) does the same on demand, which is how
   you pick up an update applied while the agent was idle.

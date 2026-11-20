@@ -1,6 +1,6 @@
 # Consiglio Project State
 
-Last updated: 2026-11-19 PST (fix/production-hardening)
+Last updated: 2026-11-20 PST (docs/hermes-freshen)
 
 > **Update 2026-11-19:** branch `fix/production-hardening` (off `slave`, fast-forwarded to
 > `update-1`) commits the previously uncommitted `src-qt` Hermes work and the `src-hermes`
@@ -9,6 +9,13 @@ Last updated: 2026-11-19 PST (fix/production-hardening)
 > Hermes `test_acpclient` 19 pass + 1 skip (the live test, without a `hermes` binary).
 > The "uncommitted and unpushed" note below is historical. Window-geometry restore was removed
 > in `e006116` (only the save remains), so the "window restore is clamped" note below is stale.
+
+> **Update 2026-11-20:** Hermes Agent is the primary agent. The native ACP client in
+> `src-hermes` is Consiglio's main client; the Electron app (`src/`, Codex CLI) and
+> `src-qt` are optional, legacy backends. PR #66 added the Hermes GUI, #67 fixed the Electron
+> app's Codex/Open Interpreter bootstrap on macOS and Windows, and #68 added README
+> screenshots. The `src-qt` notes below (Codex sessions, the history MCP) describe that
+> legacy client.
 
 This is the durable restart point for active Consiglio work. Update it after each
 material implementation, verification, commit, or newly discovered blocker.

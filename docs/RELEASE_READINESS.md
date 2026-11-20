@@ -1,5 +1,7 @@
 # Consiglio Release Readiness Gate
 
+> **Scope:** this document covers the **Electron app** (`src/`), one of Consiglio's optional, legacy backends, which runs the Codex CLI plus preview adapters for other coding-agent CLIs. Consiglio's primary client is now the native Hermes Agent client in [`src-hermes`](../src-hermes/README.md); see the [README](../README.md).
+
 Consiglio is ready for a public multi-agent release only when every required row below has a recorded pass on the target operating system. Compilation alone does not qualify an adapter as supported.
 
 ## Automated gate
