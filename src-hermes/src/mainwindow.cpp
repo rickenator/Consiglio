@@ -223,7 +223,7 @@ void MainWindow::connectToHermes() {
     m_conn = Conn::Connecting;
     m_connError.clear();
     updateUiState();
-    const QString exe = !m_executable.isEmpty() ? m_executable : HermesCli::executableOverride();
+    const QString exe = !m_executable.isEmpty() ? m_executable : HermesSetup::launchExecutable();
     if (!m_client.launch(exe)) {
         m_conn = Conn::Failed;
         if (m_connError.isEmpty()) m_connError = tr("Couldn't start Hermes.");

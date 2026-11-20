@@ -3,6 +3,7 @@
 #include "acpclient.h"
 #include "fontsettings.h"
 #include "hermescli.h"
+#include "hermessetupdialog.h"
 #include "theme.h"
 #include "uiutil.h"
 
@@ -559,6 +560,21 @@ QWidget *SettingsDialog::buildAgent() {
     cl->addWidget(overrideRow);
     cl->addWidget(label(tr("Pinning a path stops Consiglio from following updates that move Hermes. "
                            "Takes effect on the next agent restart."), "faint", exe));
+    cl->addWidget(divider(exe));
+    auto *redetect = button(tr("Detect Hermes again…"), "search", tr("Show the first-run Hermes setup again: "
+                            "find an existing Hermes and choose how to use it"), exe);
+    cl->addWidget(settingRow(tr("First-run setup"),
+                             tr("Finds an existing Hermes and asks before installing or changing anything."),
+                             redetect, exe));
+    connect(redetect, &QPushButton::clicked, this, [this]() {
+        const auto env = HermesSetup::Environment::current();
+        HermesSetupDialog dlg(env, HermesSetup::detect(env), this);
+        if (dlg.exec() == QDialog::Accepted || dlg.savedChoice() != HermesSetup::Choice::None) {
+            m_override->setText(HermesCli::executableOverride());
+            refreshAgent();
+            emit executableChanged();
+        }
+    });
     connect(browse, &QPushButton::clicked, this, [this]() {
         const QString f = QFileDialog::getOpenFileName(this, tr("Choose the hermes executable"),
                                                        QFileInfo(HermesCli::executable()).absolutePath());

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Consiglio Hermes
+GenericName=Hermes Agent client
+Comment=Native desktop client for the Hermes Agent
+Exec=ConsiglioHermes %U
+Icon=consiglio-hermes
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=ConsiglioHermes

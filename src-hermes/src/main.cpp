@@ -2,6 +2,7 @@
 #include <QCommandLineParser>
 #include <QIcon>
 
+#include "hermessetupdialog.h"
 #include "mainwindow.h"
 #include "theme.h"
 
@@ -12,7 +13,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationName(QStringLiteral("Consiglio"));
     app.setApplicationDisplayName(QStringLiteral("Consiglio · Hermes"));
     app.setOrganizationName(QStringLiteral("Aniviza"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(QStringLiteral(CONSIGLIO_HERMES_VERSION));
     app.setWindowIcon(QIcon(QStringLiteral(":/logo.svg")));
 
     QCommandLineParser parser;
@@ -27,6 +28,10 @@ int main(int argc, char *argv[]) {
 
     // Style, palette, stylesheet and font all come from the theme tokens.
     Theme::instance().apply(&app);
+
+    // First run: find an existing Hermes and ask before anything is installed
+    // or changed. Skipped when --hermes names an executable explicitly.
+    if (!parser.isSet(hermesOpt)) HermesSetupDialog::runIfNeeded();
 
     MainWindow::Options options;
     options.executable = parser.value(hermesOpt);

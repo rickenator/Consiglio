@@ -452,7 +452,11 @@ QCheckBox::indicator, QRadioButton::indicator {
 QCheckBox::indicator { border-radius: %p4px; }
 QRadioButton::indicator { border-radius: %p8px; }
 QCheckBox::indicator:checked { background: %accent; border-color: %accent; image: url(%check); }
-QRadioButton::indicator:checked { background: %raised; border: %p5px solid %accent; }
+QRadioButton::indicator:checked {
+    border-color: %accent;
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+        stop:0 %raised, stop:0.36 %raised, stop:0.42 %accent, stop:1 %accent);
+}
 QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: %accent; }
 
 /* ── Lists, scroll bars, progress ─────────────────────── */
