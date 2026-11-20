@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes go to the latest code on the default branch and the latest published release. Keep the separately installed agent current too: Hermes Agent (`hermes update`) for Consiglio · Hermes, and the Codex CLI if you use the legacy Electron app.
+Security fixes go to the latest code on the default branch and the latest published release. Keep the separately installed agent current too (for Hermes, `hermes update`).
 
 ## Hermes Agent integration
 

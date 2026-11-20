@@ -2,7 +2,7 @@
 
 > **Scope:** the mobile companion pairs with the **Electron app** (`src/`), one of Consiglio's optional, legacy backends. The native Hermes client ([`src-hermes`](../src-hermes/README.md)) does not host the mobile bridge.
 
-Consiglio Mobile is one Capacitor client with native Android and iOS projects. The agent (the Codex CLI in the Electron app) still runs on the desktop, where the CLI, repositories, credentials, and operating-system security controls live. The phone is a focused remote surface for ongoing work.
+Consiglio Mobile is one Capacitor client with native Android and iOS projects. The agent still runs on the desktop, where the CLI, repositories, credentials, and operating-system security controls live. The phone is a focused remote surface for ongoing work.
 
 ## Available mobile actions
 

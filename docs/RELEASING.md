@@ -20,7 +20,7 @@ Never commit certificates, API keys, or passwords. Repository secret listings ex
 
 ## Release procedure
 
-1. Update `version` in `package.json` and `package-lock.json`.
+1. Update `version` in `package.json` and `package-lock.json` (`npm version <x.y.z> --no-git-tag-version`).
 2. Run `npm ci`, `npm run verify`, `npm audit --omit=dev --audit-level=high`, and the host package command.
 3. Commit and push the version change.
 4. Push a matching tag such as `v0.1.2`, or manually run **Release Consiglio** with that tag.
@@ -38,6 +38,16 @@ The workflow verifies that the requested tag exactly matches `package.json`. It 
 - creates a signed GitHub/Sigstore provenance attestation covering every file in the checksum manifest.
 
 Linux packages do not use an operating-system code-signing certificate. Their origin and integrity are covered by the checksum manifest and GitHub artifact attestation.
+
+## Unsigned releases (explicit opt-in)
+
+A tag push always fails closed when signing secrets are missing. To publish anyway, run **Release Consiglio** manually with the tag and tick **allow_unsigned**. Then:
+
+- macOS and Windows jobs whose secrets are missing build unsigned, un-notarized packages with the CI package commands, and log a warning;
+- every other check still runs: version match, verify, audit, package-internals validation, checksums, SBOM and provenance attestation;
+- if a platform's secrets *are* configured, that platform is still signed and its signature verified.
+
+Say so in the release notes. Unsigned macOS apps need right-click → Open (or `xattr -dr com.apple.quarantine`), and Windows SmartScreen will warn.
 
 ## Verify a downloaded release
 

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="build/icons/128x128.png" width="96" height="96" alt="Consiglio icon">
   <h1>Consiglio</h1>
-  <p><strong>The desktop workspace for Hermes Agent sessions that outlive the terminal.</strong></p>
+  <p><strong>The desktop workspace for agent sessions that outlive the terminal, built for agents such as Hermes.</strong></p>
   <p>A native client for <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>: every Hermes command in menus and a palette, streamed answers and tool calls, approvals you can see, and saved sessions you can pick up again after restarts and Hermes updates.</p>
   <p>
     <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-5ca8ff?style=flat-square">
@@ -52,7 +52,7 @@
 
 ---
 
-Consiglio is a desktop workspace for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Its main client, **Consiglio · Hermes** ([`src-hermes`](src-hermes/README.md)), is a native Qt app. It runs `hermes acp` and talks to it over the Agent Client Protocol. It is built for long-running work rather than throwaway chats: sessions are saved by Hermes and can be resumed, the agent's activity stays visible, approvals are explicit, and a Hermes update doesn't strand you.
+Consiglio is a desktop workspace for agents such as [Hermes Agent](https://github.com/NousResearch/hermes-agent). Its main client, **Consiglio · Hermes** ([`src-hermes`](src-hermes/README.md)), is a native Qt app. It runs `hermes acp` and talks to it over the Agent Client Protocol. It is built for long-running work rather than throwaway chats: sessions are saved by Hermes and can be resumed, the agent's activity stays visible, approvals are explicit, and a Hermes update doesn't strand you.
 
 ## Why Consiglio
 
@@ -172,8 +172,8 @@ Consiglio
 │   ├── src/hermescli.*             executable resolution, doctor/status/update/config
 │   ├── src/mainwindow.* …          menus, palette, chat, sidebar, settings, themes
 │   └── tests/                      fake ACP agent, real /commands fixtures, offscreen UI tests
-├── src-qt/                         earlier Qt client: one-shot Hermes, Codex and local-model sessions
-├── src/ (+ bin/consiglio)          Electron app: Codex CLI + preview adapters (legacy, see below)
+├── src-qt/                         earlier Qt client: one-shot Hermes and other agent sessions
+├── src/ (+ bin/consiglio)          Electron app for other CLI agents (legacy, see below)
 └── mobile/                         Android/iOS companion for the Electron app
 ```
 
@@ -181,7 +181,7 @@ Consiglio · Hermes starts `hermes acp` as a child process with an argument list
 
 ## FAQ
 
-**Do I need Codex, Node.js or Python?** Not for Consiglio · Hermes. You need Hermes Agent, which brings its own runtime, and Qt 5 to build the client. Codex and Open Interpreter are only used by the legacy Electron app.
+**Do I need Node.js, Python or another agent CLI?** Not for Consiglio · Hermes. You need Hermes Agent, which brings its own runtime, and Qt 5 to build the client. The other agent CLIs are only used by the legacy Electron app.
 
 **Which model does it use?** Whichever one Hermes is configured with (`hermes model`, or the toolbar model picker). Consiglio doesn't store provider keys for Hermes; they stay in Hermes's own `~/.hermes/.env`.
 
@@ -282,7 +282,7 @@ The Capacitor client in [`mobile/`](mobile/) connects to a deliberately narrow b
 
 #### Packaging and releases
 
-`npm run package:host` builds native packages for the current OS (`package:linux`, `package:win`, `package:mac`). Pushing a version tag that matches `package.json`, or running the **Release Consiglio** workflow, publishes a release only after every platform package passes validation. Each release includes `SHA256SUMS.txt`, an SPDX SBOM and a Sigstore-backed attestation. Production releases need macOS Developer ID signing and notarization and Windows Authenticode signing; see [Releasing Consiglio](docs/RELEASING.md).
+`npm run package:host` builds native packages for the current OS (`package:linux`, `package:win`, `package:mac`). Pushing a version tag that matches `package.json`, or running the **Release Consiglio** workflow, publishes a release only after every platform package passes validation. Each release includes `SHA256SUMS.txt`, an SPDX SBOM and a Sigstore-backed attestation. Signed releases need macOS Developer ID signing and notarization and Windows Authenticode signing. A tag push fails closed without them; a manual run can explicitly opt in to unsigned macOS and Windows packages. See [Releasing Consiglio](docs/RELEASING.md).
 
 #### Electron architecture
 

@@ -1,14 +1,13 @@
 {
   "name": "consiglio",
-  "version": "0.1.1",
-  "description": "Desktop workspace for Hermes Agent sessions that outlive the terminal, plus an Electron app for the Codex CLI and other coding-agent CLIs.",
+  "version": "0.2.0",
+  "description": "Desktop workspace for agent sessions that outlive the terminal, built for agents such as Hermes.",
   "keywords": [
     "hermes-agent",
     "hermes",
     "agent-client-protocol",
     "ai-agent",
     "desktop-app",
-    "codex",
     "electron",
     "qt"
   ],
@@ -76,7 +75,7 @@
       "category": "Development",
       "icon": "build/icons/icon.png",
       "synopsis": "Desktop workspace for coding-agent CLIs",
-      "description": "Consiglio's Electron app: a desktop workspace for the Codex CLI and other coding-agent CLIs, with persistent tasks, provider health checks, encrypted secrets and remote llama.cpp support. The native Hermes Agent client is built from src-hermes.",
+      "description": "Consiglio's Electron app: a desktop workspace for command-line coding agents, with persistent tasks, provider health checks, encrypted secrets and remote llama.cpp support. The native client for agents such as Hermes is built from src-hermes.",
       "syncDesktopName": true
     },
     "deb": {
