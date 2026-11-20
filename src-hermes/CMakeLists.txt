@@ -7,6 +7,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+# Sources are UTF-8 (UI strings use …, ·, —); MSVC needs to be told.
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Svg Test)
 
 # ─── ACP backend + command catalog (no widgets; shared by app and tests) ───
