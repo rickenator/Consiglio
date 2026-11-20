@@ -58,6 +58,7 @@ export interface InstallMissingAgentOptions {
 }
 
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+const PROBE_TIMEOUT_MS = 60 * 1000;
 const OUTPUT_LIMIT = 128 * 1024;
 
 function appendLimited(current: string, chunk: Buffer | string) {
@@ -387,6 +388,12 @@ async function installCodex(
   };
 }
 
+/**
+ * Open Interpreter (0.4.x) imports pkg_resources, which setuptools removed in
+ * 82, and Python 3.12+ venvs no longer ship setuptools at all.
+ */
+export const OPEN_INTERPRETER_REQUIREMENTS = ['open-interpreter', 'setuptools<81'] as const;
+
 async function installOpenInterpreter(
   userDataPath: string,
   platform: NodeJS.Platform,
@@ -418,12 +425,20 @@ async function installOpenInterpreter(
   }
   const install = await runner({
     command: managedOpenInterpreterPython(userDataPath, platform),
-    args: ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'open-interpreter'],
+    args: ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', ...OPEN_INTERPRETER_REQUIREMENTS],
     env,
     timeoutMs: INSTALL_TIMEOUT_MS,
   });
   const executable = managedOpenInterpreterExecutable(userDataPath, platform);
   if (install.exitCode === 0 && fileExists(executable)) {
+    // pip succeeding is not proof the entry point imports; check it starts.
+    const check = await runner({ command: executable, args: ['--version'], env, timeoutMs: PROBE_TIMEOUT_MS });
+    if (check.exitCode !== 0) {
+      return {
+        id: 'open-interpreter', attempted: true, installed: false,
+        diagnostic: `Open Interpreter was installed but does not start: ${commandOutput(check) || 'no output'}`,
+      };
+    }
     env.OI_BIN = executable;
     configureManagedAgentEnvironment(userDataPath, env, platform, fileExists);
     return {

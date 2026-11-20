@@ -145,6 +145,10 @@ for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
     assert.ok(pip);
     assert.equal(pip.command, managedOpenInterpreterPython(userDataPath, platform));
     assert.deepEqual(pip.args.slice(0, 3), ['-m', 'pip', 'install']);
+    assert.ok(pip.args.includes('setuptools<81'), 'pkg_resources must stay available');
+    // ...and the installed entry point is actually started once.
+    assert.ok(sim.calls.some(call => call.command === managedOpenInterpreterExecutable(userDataPath, platform)
+      && call.args[0] === '--version'));
 
     // Windows runs the native codex.exe (argv-only), not the codex.cmd shim.
     assert.equal(sim.env.CODEX_BIN, platform === 'win32'
@@ -153,6 +157,24 @@ for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
     assert.equal(sim.env.OI_BIN, managedOpenInterpreterExecutable(userDataPath, platform));
   });
 }
+
+test('an Open Interpreter that installs but does not start is reported', async () => {
+  const sim = simulatedInstall('linux', '/data');
+  const broken = managedOpenInterpreterExecutable('/data', 'linux');
+  const result = await installMissingAgentFrontends({
+    readiness: [readiness('codex', true), readiness('open-interpreter', false)],
+    userDataPath: '/data',
+    env: sim.env,
+    platform: 'linux',
+    runner: async request => request.command === broken
+      ? { exitCode: 1, stdout: '', stderr: "ModuleNotFoundError: No module named 'pkg_resources'", timedOut: false }
+      : sim.runner(request),
+    fileExists: sim.fileExists,
+  });
+  const oi = result.find(entry => entry.id === 'open-interpreter');
+  assert.equal(oi?.installed, false);
+  assert.match(String(oi?.diagnostic), /does not start.*pkg_resources/);
+});
 
 test('Windows npm runs as node.exe + npm-cli.js, or not at all', () => {
   const exists = (files: string[]) => (candidate: string) => files.includes(candidate);
