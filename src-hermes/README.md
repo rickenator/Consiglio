@@ -21,11 +21,11 @@ permission round-trip, error recovery, protocol drift and the update-and-restart
 live test against a real `hermes` runs only when one is on `PATH`.
 - `test_commandcatalog` parses real `/commands` pages captured from Hermes v0.23.3
   (`tests/data/`), and covers merging, removal after an update, the per-version cache,
-  goal-status lines, `hermes config show` and secret masking.
+  `hermes config show` and secret masking.
 - `test_mainwindow` runs the window offscreen against the fake agent. It checks that every
   discovered command is in the menus and palette, that a command added by an update
-  appears, that every control has a tooltip and accessible name, the Goal button, the
-  config pickers, Stop and the disconnected state.
+  appears, that every control has a tooltip and accessible name, that `/goal` is handled
+  like any other command, the config pickers, Stop and the disconnected state.
 
 `uitour` is a screenshot tour, not a test:
 `QT_QPA_PLATFORM=offscreen ./uitour --out DIR [--theme light|dark] [--real]`. Without
@@ -35,8 +35,8 @@ needs a configured model provider.
 ## The interface
 
 ```
- menu bar: File · Session · Goal · Hermes · View · Help
- toolbar:  sidebar · new · [◎ Goal ▾] · model ▾ · reasoning ▾ · approvals ▾ …  Commands  ⚙
+ menu bar: File · Session · Hermes · View · Help
+ toolbar:  sidebar · new · model ▾ · reasoning ▾ · approvals ▾ ……………  Commands  ⚙
  left rail: workspace, New Session, current and recent sessions (filterable)
  centre:   banner · conversation · empty state · composer ("/" completes commands)
  status:   ● state · Hermes version … model · context bar · turn timer · tokens
@@ -45,17 +45,15 @@ needs a configured model provider.
 - **Every Hermes command is reachable in three ways:** from the menus, from the
   **command palette** (Ctrl+K, fuzzy search over names, aliases and descriptions) and
   from the composer (type `/`).
-  - The **Hermes** menu has one submenu per group (Model & Behavior, Tools/Skills/Memory,
-    Info & Diagnostics, Gateway & Account, Skills, More).
-  - Session commands are added to the **Session** menu, and automation commands
-    (`/loop`, `/heartbeat`, `/queue`…) to the **Goal** menu.
+  - The **Hermes** menu has one submenu per group: Model & Behavior; Tools, Skills &
+    Memory; Planning & Automation (`/goal`, `/loop`, `/heartbeat`, `/plan`…); Info &
+    Diagnostics; Gateway & Account; Skills; More.
+  - Session commands (`/undo`, `/retry`, `/compress`, `/branch`…) are also listed
+    in the **Session** menu.
+  - No command gets special treatment. `/goal` is handled the same way as the rest.
   - A command with fixed choices (`[on|off|status]`) gets a submenu with those choices.
   - A command that takes text opens a small form that shows the exact command line
     before it runs.
-- **Goal** is a prominent split button.
-  - Clicking it opens the goal editor (text, draft contract, turn budget).
-  - Its arrow offers status, pause, resume, clear and the automation commands.
-  - The button shows the live goal and its state: active, paused, waiting or done.
 - **Session settings** that Hermes reports as ACP `configOptions` (model, reasoning
   effort, approval policy, plus anything a future Hermes adds) become toolbar pickers.
   They are also listed under Settings → Session. When the window is narrow, the

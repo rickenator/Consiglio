@@ -25,8 +25,8 @@ namespace ui { class StatusDot; }
 
 // The main window.
 //
-//   ┌ menu bar: File · Session · Goal · Hermes · View · Help ─────────────┐
-//   ├ toolbar: ☰ · New · [◎ Goal ▾] · model ▾ · reasoning ▾ · edits ▾ … ⌘K ⚙ ┤
+//   ┌ menu bar: File · Session · Hermes · View · Help ─────────────────────┐
+//   ├ toolbar: ☰ · New · model ▾ · reasoning ▾ · edits ▾ ……… Commands ⚙ ──┤
 //   │ rail │ banner / conversation / empty state                          │
 //   │      │ composer                                                      │
 //   └ status: ● state ………………… model · context ▬▬ · 0:04 · tokens ───────────┘
@@ -55,13 +55,10 @@ public:
     SessionRail *rail() const { return m_rail; }
     CommandPalette *palette() const { return m_palette; }
     QToolBar *toolbar() const { return m_toolbar; }
-    QToolButton *goalButton() const { return m_goalButton; }
-    QMenu *goalMenu() const { return m_goalMenu; }
     QMenu *hermesMenu() const { return m_hermesMenu; }
     QMenu *sessionMenu() const { return m_sessionMenu; }
     QList<QComboBox *> configCombos() const { return m_configCombos.values(); }
     QComboBox *configCombo(const QString &configId) const { return m_configCombos.value(configId); }
-    CommandCatalog::GoalStatus goalStatus() const { return m_goal; }
     QString stateText() const;
     QAction *action(const QString &id) const { return m_actions.value(id); }
     QStringList actionIds() const { return m_actions.keys(); }
@@ -74,11 +71,9 @@ public:
     bool runCommand(const QString &line);
     // What a menu item does: run directly, or open the command's dialog.
     void triggerCommand(const QString &name);
-    void openGoalDialog();
     SettingsDialog *openSettings(const QString &page = QString());
     // Build (but don't exec) dialogs — used by the screenshot tour.
     QDialog *createCommandDialog(const QString &name);
-    QDialog *createGoalDialog();
     void refreshCommands();
 
 protected:
@@ -139,14 +134,12 @@ private:
     void updateUiState();
     void updateEmptyState();
     void updateModelLabel();
-    void updateGoalButton();
     void updateActionStates();
     void rebuildCommandMenus();
     void rebuildConfigCombos();
     void rebuildPalette();
     void addCommandToMenu(QMenu *menu, const CommandCatalog::Command &cmd);
     void startDiscovery(bool force);
-    void refreshGoalStatus();
     void sendOrQueue(const QString &text, bool display);
     QString cwd() const;
     void beginTurnUi();
@@ -168,19 +161,14 @@ private:
 
     // Chrome.
     QToolBar *m_toolbar = nullptr;
-    QToolButton *m_goalButton = nullptr;
-    QMenu *m_goalMenu = nullptr;
     QMenu *m_sessionMenu = nullptr;
     QMenu *m_hermesMenu = nullptr;
     QMenu *m_recentMenu = nullptr;
     QList<QAction *> m_dynamicSessionActions;
-    QList<QAction *> m_dynamicGoalActions;
     QAction *m_configAnchor = nullptr;       // toolbar position for config combos
     QList<QAction *> m_configActions;        // toolbar widgets for combos
     QHash<QString, QComboBox *> m_configCombos;
     QHash<QString, QAction *> m_actions;     // by id
-    bool m_inResponsive = false;
-    bool m_responsivePending = false;
     bool m_railAutoHidden = false;           // rail hidden because the window is narrow
 
     // Status bar widgets.
@@ -205,11 +193,9 @@ private:
     QString m_lastCommand;   // slash command of the turn in flight ("" = prompt)
     QString m_pendingPrompt; // sent once the session being opened is ready
     bool m_pendingDisplay = true;
-    bool m_pendingGoalDialog = false;
     int m_sessionCount = 0;
     QString m_discoveredVersion;  // agent version the catalog was refreshed for this run
     int m_discoveryPages = 0;
-    CommandCatalog::GoalStatus m_goal;
     int m_filePickerColumn = 0; // cursor column where the "/" that opened the picker was typed
     bool m_filePickerRelative = false; // true when the user typed "./" (current directory)
     QMap<QString, QPointer<QDialog>> m_permissionDialogs; // open approval prompts by request key

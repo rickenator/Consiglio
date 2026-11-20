@@ -374,25 +374,6 @@ QToolButton::menu-arrow, QToolButton::menu-indicator {
     image: url(%chevron); width: %p12px; height: %p12px;
 }
 QToolButton::menu-indicator { subcontrol-position: right center; subcontrol-origin: padding; right: %p6px; }
-QToolButton#goalButton {
-    background: %accent; color: %accentText; font-weight: 600;
-    border: 1px solid %accent; padding: %p6px %p14px;
-}
-QToolButton#goalButton:hover { background: %accentHover; border-color: %accentHover; }
-QToolButton#goalButton:pressed { background: %accent; }
-QToolButton#goalButton:disabled { background: %hover; color: %textFaint; border-color: %border; }
-QToolButton#goalButton::menu-button { border-left: 1px solid rgba(255,255,255,0.28); }
-QToolButton#goalButton::menu-button:hover { background: rgba(255,255,255,0.14); }
-QToolButton#goalButton::menu-arrow { image: url(%chevronOnAccent); }
-QToolButton#goalButton[goalState="active"] { background: %success; border-color: %success; color: %accentText; }
-QToolButton#goalButton[goalState="parked"] { background: %success; border-color: %success; color: %accentText; }
-QToolButton#goalButton[goalState="paused"] { background: %warningSoft; border-color: %warning; color: %text; }
-QToolButton#goalButton[goalState="paused"]::menu-button { border-left: 1px solid %warning; }
-QToolButton#goalButton[goalState="done"] { background: %raised; border-color: %success; color: %text; }
-QToolButton#goalButton[goalState="done"]::menu-button { border-left: 1px solid %border; }
-QToolButton#goalButton[goalState="paused"]::menu-arrow, QToolButton#goalButton[goalState="done"]::menu-arrow { image: url(%chevron); }
-QToolButton#goalButton[goalState="paused"]:hover { background: %warningSoft; border-color: %warning; }
-QToolButton#goalButton[goalState="done"]:hover { background: %hover; }
 QLabel#toolbarLabel { color: %textMuted; padding: 0 %p2px 0 %p8px; }
 
 /* ── Buttons ───────────────────────────────────────────── */

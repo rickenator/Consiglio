@@ -1,5 +1,4 @@
-// Unit tests for command discovery (CommandCatalog), goal-status parsing,
-// `hermes config show` parsing and secret masking. Page fixtures are real
+// Unit tests for command discovery (CommandCatalog), `hermes config show` parsing and secret masking. Page fixtures are real
 // `/commands N` replies captured from Hermes Agent v0.23.3.
 #include "commandcatalog.h"
 #include "commanddialog.h"
@@ -165,51 +164,12 @@ private slots:
     }
 
     void staticPresentation() {
-        QCOMPARE(CommandCatalog::groupFor("goal", false), QString("goal"));
+        QCOMPARE(CommandCatalog::groupFor("goal", false), QString("automation"));   // one command among the others
         QCOMPARE(CommandCatalog::groupFor("model", false), QString("model"));
         QCOMPARE(CommandCatalog::groupFor("some-skill", true), QString("skills"));
         QCOMPARE(CommandCatalog::groupFor("never-heard-of-it", false), QString("more"));
         QVERIFY(!CommandCatalog::labelFor("undo").isEmpty());
         QCOMPARE(CommandCatalog::groups().first().id, QString("session"));
-    }
-
-    void parsesGoalStatus_data() {
-        QTest::addColumn<QString>("text");
-        QTest::addColumn<QString>("state");
-        QTest::addColumn<QString>("goal");
-        QTest::newRow("active") << "⊙ Goal (active, 2/20 turns): ship the release" << "active" << "ship the release";
-        QTest::newRow("paused") << "⏸ Goal (paused, 3/20 turns): ship it" << "paused" << "ship it";
-        QTest::newRow("done") << "✓ Goal done (judge: met): write docs" << "done" << "write docs";
-        QTest::newRow("parked") << "⏳ Goal (parked on pid 4242, 1/20 turns): wait for CI" << "parked" << "wait for CI";
-        QTest::newRow("none") << "No active goal. Set one with /goal <text>." << "none" << "";
-        QTest::newRow("set") << "⊙ Goal set (20-turn budget): write notes\nAfter each turn…" << "active" << "write notes";
-        QTest::newRow("pausedReply") << "⏸ Goal paused: write notes" << "paused" << "write notes";
-        QTest::newRow("resumed") << "▶ Goal resumed: write notes" << "active" << "write notes";
-        QTest::newRow("cleared") << "✓ Goal cleared." << "none" << "";
-    }
-    void parsesGoalStatus() {
-        QFETCH(QString, text);
-        QFETCH(QString, state);
-        QFETCH(QString, goal);
-        const auto st = CommandCatalog::parseGoalStatus(text);
-        QVERIFY(st.known);
-        QCOMPARE(st.state, state);
-        QCOMPARE(st.goal, goal);
-    }
-    void goalStatusIgnoresOtherText() {
-        QVERIFY(!CommandCatalog::parseGoalStatus("Hello, world!").known);
-    }
-
-    void goalDialogCommandLine() {
-        CommandCatalog::GoalStatus none;
-        GoalDialog d(none, true);
-        d.setGoalText("ship the release");
-        QCOMPARE(d.commandLine(), QString("/goal ship the release"));
-        d.setGoalText("pause the cron job before deploying");   // starts with a control word
-        QCOMPARE(d.commandLine(), QString("/goal -- pause the cron job before deploying"));
-        d.setDraft(true);
-        d.setGoalText("ship it");
-        QCOMPARE(d.commandLine(), QString("/goal draft ship it"));
     }
 
     void commandDialogPreview() {

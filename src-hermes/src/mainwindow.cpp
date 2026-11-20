@@ -69,11 +69,6 @@ QString relativeToCwd(const QString &base, const QString &path) {
     return result.join('/');
 }
 
-bool isGoalControl(const QString &line) {
-    return line == QLatin1String("/goal") || line.startsWith(QLatin1String("/goal "))
-        || line.startsWith(QLatin1String("/subgoal"));
-}
-
 } // namespace
 
 // ─── Permission dialog ────────────────────────────────────────────────────
@@ -327,18 +322,6 @@ void MainWindow::setupActions() {
     makeAction("app:workspace", tr("Choose &Workspace Folder…"), "folder-open", QKeySequence(Qt::CTRL | Qt::Key_O),
                tr("Pick the folder new sessions work in"));
 
-    makeAction("app:goal", tr("Set &Goal…"), "target", QKeySequence(Qt::CTRL | Qt::Key_G),
-               tr("Give Hermes a standing goal to work toward across turns"));
-    makeAction("app:goal-status", tr("Goal &Status"), "activity", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G),
-               tr("Ask Hermes for the current goal and its progress"));
-    makeAction("app:goal-show", tr("Show Goal &Details"), "eye", QKeySequence(),
-               tr("Show the goal, its contract and turn budget"));
-    makeAction("app:goal-pause", tr("&Pause Goal"), "circle-pause", QKeySequence(),
-               tr("Pause automatic work on the goal"));
-    makeAction("app:goal-resume", tr("&Resume Goal"), "circle-play", QKeySequence(),
-               tr("Resume automatic work on the goal"));
-    makeAction("app:goal-clear", tr("&Clear Goal"), "eraser", QKeySequence(),
-               tr("Clear the standing goal"));
 
     makeAction("app:palette", tr("&Command Palette…"), "command", QKeySequence(Qt::CTRL | Qt::Key_K),
                tr("Search every Hermes command and app action"));
@@ -359,17 +342,18 @@ void MainWindow::setupActions() {
     sidebar->setChecked(QSettings().value(QStringLiteral("view/sidebar"), true).toBool());
     makeAction("app:focus-composer", tr("&Focus Message Box"), "text-cursor-input", QKeySequence(Qt::CTRL | Qt::Key_L),
                tr("Move the cursor to the message box"));
-    makeAction("app:zoom-in", tr("Zoom &In"), "", QKeySequence::ZoomIn, tr("Make the interface larger"));
-    makeAction("app:zoom-out", tr("Zoom &Out"), "", QKeySequence::ZoomOut, tr("Make the interface smaller"));
+    makeAction("app:zoom-in", tr("Zoom &In"), "", QKeySequence(Qt::CTRL | Qt::Key_Equal), tr("Make the interface larger"));
+    makeAction("app:zoom-out", tr("Zoom &Out"), "", QKeySequence(Qt::CTRL | Qt::Key_Minus), tr("Make the interface smaller"));
     makeAction("app:zoom-reset", tr("&Actual Size"), "", QKeySequence(Qt::CTRL | Qt::Key_0), tr("Reset the interface size"));
     auto *themeGroup = new QActionGroup(this);
-    const struct { const char *id; const char *text; const char *icon; Theme::Mode mode; } modes[] = {
-        {"app:theme-system", QT_TR_NOOP("Match &System"), "monitor", Theme::Mode::System},
-        {"app:theme-light", QT_TR_NOOP("&Light"), "sun", Theme::Mode::Light},
-        {"app:theme-dark", QT_TR_NOOP("&Dark"), "moon", Theme::Mode::Dark},
+    const struct { const char *id; const char *text; const char *icon; Theme::Mode mode; const char *tip; } modes[] = {
+        {"app:theme-system", QT_TR_NOOP("Match &System"), "monitor", Theme::Mode::System,
+         QT_TR_NOOP("Follow the desktop's light or dark setting")},
+        {"app:theme-light", QT_TR_NOOP("&Light"), "sun", Theme::Mode::Light, QT_TR_NOOP("Use the light theme")},
+        {"app:theme-dark", QT_TR_NOOP("&Dark"), "moon", Theme::Mode::Dark, QT_TR_NOOP("Use the dark theme")},
     };
     for (const auto &m : modes) {
-        auto *a = makeAction(m.id, tr(m.text), m.icon, QKeySequence(), tr("Use the %1 theme").arg(tr(m.text).remove('&').toLower()));
+        auto *a = makeAction(m.id, tr(m.text), m.icon, QKeySequence(), tr(m.tip));
         a->setCheckable(true);
         a->setChecked(theme().mode() == m.mode);
         themeGroup->addAction(a);
@@ -412,15 +396,6 @@ void MainWindow::setupMenuBar() {
     m_sessionMenu->addAction(a("app:stop"));
     m_sessionMenu->addAction(a("app:end-session"));
 
-    m_goalMenu = bar->addMenu(tr("&Goal"));
-    m_goalMenu->setToolTipsVisible(true);
-    m_goalMenu->addAction(a("app:goal"));
-    m_goalMenu->addSeparator();
-    m_goalMenu->addAction(a("app:goal-status"));
-    m_goalMenu->addAction(a("app:goal-show"));
-    m_goalMenu->addAction(a("app:goal-pause"));
-    m_goalMenu->addAction(a("app:goal-resume"));
-    m_goalMenu->addAction(a("app:goal-clear"));
 
     m_hermesMenu = bar->addMenu(tr("&Hermes"));
     m_hermesMenu->setToolTipsVisible(true);
@@ -463,17 +438,6 @@ void MainWindow::setupToolbar() {
     m_toolbar->addAction(m_actions.value("app:new-session"));
     m_toolbar->addSeparator();
 
-    m_goalButton = new QToolButton(m_toolbar);
-    m_goalButton->setObjectName(QStringLiteral("goalButton"));
-    m_goalButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_goalButton->setPopupMode(QToolButton::MenuButtonPopup);
-    m_goalButton->setMenu(m_goalMenu);
-    m_goalButton->setCursor(Qt::PointingHandCursor);
-    m_goalButton->setIconSize(QSize(t.px(16), t.px(16)));
-    m_goalButton->setMaximumWidth(t.px(320));
-    connect(m_goalButton, &QToolButton::clicked, this, &MainWindow::openGoalDialog);
-    m_toolbar->addWidget(m_goalButton);
-    m_toolbar->addSeparator();
 
     // Config option pickers are inserted before this anchor.
     auto *spacer = new QWidget(m_toolbar);
@@ -486,7 +450,6 @@ void MainWindow::setupToolbar() {
         b->setText(tr("Commands"));
     }
     m_toolbar->addAction(m_actions.value("app:settings"));
-    updateGoalButton();
 }
 
 void MainWindow::setupStatusBar() {
@@ -581,12 +544,6 @@ void MainWindow::addCommandToMenu(QMenu *menu, const CommandCatalog::Command &cm
         a->setIcon(icon);
     };
 
-    if (name == QLatin1String("goal")) {
-        QAction *a = menu->addAction(tr("Goal Contract & Options…"));
-        finish(a);
-        connect(a, &QAction::triggered, this, &MainWindow::openGoalDialog);
-        return;
-    }
     const QStringList choices = cmd.choices();
     if (!choices.isEmpty() && !cmd.requiresArgs()) {
         QMenu *sub = menu->addMenu(icon, QString(cmd.label).replace(QLatin1Char('&'), QStringLiteral("&&")));
@@ -617,9 +574,7 @@ void MainWindow::addCommandToMenu(QMenu *menu, const CommandCatalog::Command &cm
 void MainWindow::rebuildCommandMenus() {
     if (!m_hermesMenu) return;
     for (QAction *a : qAsConst(m_dynamicSessionActions)) { m_sessionMenu->removeAction(a); a->deleteLater(); }
-    for (QAction *a : qAsConst(m_dynamicGoalActions)) { m_goalMenu->removeAction(a); a->deleteLater(); }
     m_dynamicSessionActions.clear();
-    m_dynamicGoalActions.clear();
 
     // Collect actions a menu gains so they can be removed on the next rebuild.
     auto track = [](QMenu *menu, QList<QAction *> &list, const std::function<void()> &build) {
@@ -635,20 +590,11 @@ void MainWindow::rebuildCommandMenus() {
             for (const auto &c : sessionCmds) addCommandToMenu(m_sessionMenu, c);
         });
     }
-    QList<CommandCatalog::Command> goalCmds;
-    for (const auto &c : m_catalog.commandsInGroup(QStringLiteral("goal")))
-        if (c.name != QLatin1String("goal")) goalCmds << c;
-    if (!goalCmds.isEmpty()) {
-        track(m_goalMenu, m_dynamicGoalActions, [&]() {
-            m_goalMenu->addSection(tr("Automation"));
-            for (const auto &c : goalCmds) addCommandToMenu(m_goalMenu, c);
-        });
-    }
 
     m_hermesMenu->clear();
     bool any = false;
     for (const auto &g : CommandCatalog::groups()) {
-        if (g.id == QLatin1String("session") || g.id == QLatin1String("goal")) continue;
+        if (g.id == QLatin1String("session")) continue;
         const auto cmds = m_catalog.commandsInGroup(g.id);
         if (cmds.isEmpty()) continue;
         QMenu *sub = m_hermesMenu->addMenu(theme().icon(g.icon), QString(g.title).replace(QLatin1Char('&'), QStringLiteral("&&")));
@@ -778,7 +724,7 @@ void MainWindow::rebuildPalette() {
         list << p;
     };
     const QString consiglio = tr("Consiglio");
-    for (const char *id : {"app:new-session", "app:goal", "app:stop", "app:end-session", "app:workspace",
+    for (const char *id : {"app:new-session", "app:stop", "app:end-session", "app:workspace",
                            "app:sidebar", "app:settings", "app:theme-light", "app:theme-dark",
                            "app:theme-system", "app:shortcuts"})
         app(id, consiglio);
@@ -820,11 +766,6 @@ void MainWindow::startDiscovery(bool force) {
     m_client.runQuietCommand(QStringLiteral("/commands 1"));
 }
 
-void MainWindow::refreshGoalStatus() {
-    if (!m_client.isReady() || !m_catalog.contains(QStringLiteral("goal"))) return;
-    m_client.runQuietCommand(QStringLiteral("/goal status"));
-}
-
 void MainWindow::onQuietCommandFinished(const QString &command, const QString &output, bool ok) {
     if (command.startsWith(QLatin1String("/commands"))) {
         if (!ok) { m_discoveryPages = 0; return; }
@@ -833,7 +774,6 @@ void MainWindow::onQuietCommandFinished(const QString &command, const QString &o
             // Not a catalog page (an older/newer Hermes without /commands):
             // the ACP-advertised commands are all we have, and that's fine.
             m_discoveryPages = 0;
-            refreshGoalStatus();
             return;
         }
         const int next = m_catalog.addListedPage(page);
@@ -844,17 +784,7 @@ void MainWindow::onQuietCommandFinished(const QString &command, const QString &o
         }
         m_discoveryPages = 0;
         m_catalog.saveCache(m_client.agentVersion());
-        refreshGoalStatus();
         return;
-    }
-    if (command.startsWith(QLatin1String("/goal"))) {
-        if (!ok) return;
-        const auto status = CommandCatalog::parseGoalStatus(output);
-        if (status.known) {
-            m_goal = status;
-            updateGoalButton();
-            updateActionStates();
-        }
     }
 }
 
@@ -884,7 +814,6 @@ void MainWindow::sendOrQueue(const QString &text, bool display) {
     }
     if (display) m_chat->appendUserMessage(text);
     m_lastCommand = text.startsWith(QLatin1Char('/')) ? text.section(QLatin1Char(' '), 0, 0) : QString();
-    if (isGoalControl(text)) m_lastCommand = text;
     if (!m_client.sendPrompt(text)) {
         m_chat->appendNotice(tr("Couldn't send that to Hermes."), ChatBlock::Error);
         return;
@@ -903,36 +832,15 @@ QDialog *MainWindow::createCommandDialog(const QString &name) {
     return new CommandDialog(cmd, this);
 }
 
-QDialog *MainWindow::createGoalDialog() {
-    const bool draft = m_catalog.command(QStringLiteral("goal")).argsHint.contains(QLatin1String("draft"))
-                       || m_catalog.command(QStringLiteral("goal")).description.contains(QLatin1String("draft"), Qt::CaseInsensitive);
-    return new GoalDialog(m_goal, draft, this);
-}
-
 void MainWindow::triggerCommand(const QString &rawName) {
     QString name = rawName;
     if (name.startsWith(QLatin1Char('/'))) name.remove(0, 1);
     const CommandCatalog::Command cmd = m_catalog.command(name);
-    if (cmd.name == QLatin1String("goal") || name == QLatin1String("goal")) { openGoalDialog(); return; }
     if (cmd.name.isEmpty() || !cmd.takesArgs()) { runCommand(QLatin1Char('/') + (cmd.name.isEmpty() ? name : cmd.name)); return; }
     if (m_conn != Conn::Connected) { showToast(tr("Hermes isn't connected yet.")); return; }
     QScopedPointer<QDialog> dlg(createCommandDialog(cmd.name));
     if (dlg->exec() == QDialog::Accepted) {
         if (auto *cd = qobject_cast<CommandDialog *>(dlg.data())) runCommand(cd->commandLine());
-    }
-}
-
-void MainWindow::openGoalDialog() {
-    if (m_conn != Conn::Connected) { showToast(tr("Hermes isn't connected yet.")); return; }
-    if (!m_client.isReady()) {
-        m_pendingGoalDialog = true;
-        if (!m_opening) startNewSession();
-        return;
-    }
-    if (m_busy) { showToast(tr("Hermes is busy — set the goal when this response finishes.")); return; }
-    QScopedPointer<QDialog> dlg(createGoalDialog());
-    if (dlg->exec() == QDialog::Accepted) {
-        if (auto *gd = qobject_cast<GoalDialog *>(dlg.data())) runCommand(gd->commandLine());
     }
 }
 
@@ -972,13 +880,11 @@ void MainWindow::startSession(const QString &dir) {
     m_chat->clearConversation();
     m_cwd = dir;
     m_sessionTitle.clear();
-    m_goal = CommandCatalog::GoalStatus();
     m_opening = true;
     if (!m_client.newSession(dir)) {
         m_opening = false;
         showToast(tr("Couldn't start a session."));
     }
-    updateGoalButton();
     updateUiState();
 }
 
@@ -988,23 +894,19 @@ void MainWindow::resumeSession(const QString &sessionId, const QString &dir) {
     m_chat->clearConversation();
     m_cwd = dir.isEmpty() ? cwd() : dir;
     m_sessionTitle.clear();
-    m_goal = CommandCatalog::GoalStatus();
     m_opening = true;
     if (!m_client.resumeSession(sessionId, m_cwd)) {
         m_opening = false;
         showToast(tr("Couldn't reopen that session."));
     }
-    updateGoalButton();
     updateUiState();
 }
 
 void MainWindow::stopSession() {
     if (m_busy) endTurnUi();
     m_client.stopSession();
-    m_goal = CommandCatalog::GoalStatus();
     setActive(false);
     rebuildConfigCombos();
-    updateGoalButton();
     updateUiState();
     refreshSessionList();
 }
@@ -1048,7 +950,7 @@ void MainWindow::onConnected() {
     refreshSessionList();
     updateUiState();
     rebuildPalette();
-    if ((!m_pendingPrompt.isEmpty() || m_pendingGoalDialog) && !m_client.isReady() && !m_opening) startNewSession();
+    if (!m_pendingPrompt.isEmpty() && !m_client.isReady() && !m_opening) startNewSession();
 }
 
 void MainWindow::onSessionsListed(QList<AcpClient::SessionInfo> sessions) {
@@ -1082,16 +984,11 @@ void MainWindow::onReady() {
     setActive(true);
     rebuildConfigCombos();
     startDiscovery(false);
-    if (m_discoveryPages == 0) refreshGoalStatus();
     if (!m_pendingPrompt.isEmpty()) {
         const QString text = m_pendingPrompt;
         const bool display = m_pendingDisplay;
         m_pendingPrompt.clear();
         sendOrQueue(text, display);
-    }
-    if (m_pendingGoalDialog) {
-        m_pendingGoalDialog = false;
-        QTimer::singleShot(0, this, &MainWindow::openGoalDialog);
     }
     updateUiState();
     refreshSessionList();
@@ -1166,10 +1063,7 @@ void MainWindow::onTurnCompleted(const QString &stopReason, qint64 inputTokens, 
     if (stopReason == QLatin1String("cancelled")) m_chat->appendNotice(tr("Stopped"), ChatBlock::Warning);
     else if (stopReason == QLatin1String("max_tokens")) m_chat->appendNotice(tr("Response cut short: the model hit its output limit."), ChatBlock::Warning);
     else if (stopReason == QLatin1String("refusal")) m_chat->appendNotice(tr("The model declined to answer."), ChatBlock::Warning);
-    const bool goalRelated = isGoalControl(m_lastCommand) || m_goal.state == QLatin1String("active")
-                             || m_goal.state == QLatin1String("parked");
     m_lastCommand.clear();
-    if (goalRelated) refreshGoalStatus();
     updateUiState();
 }
 
@@ -1194,7 +1088,6 @@ void MainWindow::onTurnFailed(const QString &message) {
 void MainWindow::onSessionFailed(const QString &message) {
     m_opening = false;
     setActive(false);
-    m_pendingGoalDialog = false;
     if (!m_pendingPrompt.isEmpty() && m_chat->composerText().isEmpty()) m_chat->setComposerText(m_pendingPrompt);
     m_pendingPrompt.clear();
     m_chat->appendNotice(tr("Couldn't open the session: %1").arg(ui::maskSecrets(message)), ChatBlock::Error);
@@ -1278,18 +1171,6 @@ void MainWindow::onPaletteAction(const QString &id) {
             refreshSessionList();
             updateEmptyState();
         }
-    }
-    else if (id == QLatin1String("app:goal")) openGoalDialog();
-    else if (id == QLatin1String("app:goal-status")) runCommand(QStringLiteral("/goal status"));
-    else if (id == QLatin1String("app:goal-show")) runCommand(QStringLiteral("/goal show"));
-    else if (id == QLatin1String("app:goal-pause")) runCommand(QStringLiteral("/goal pause"));
-    else if (id == QLatin1String("app:goal-resume")) runCommand(QStringLiteral("/goal resume"));
-    else if (id == QLatin1String("app:goal-clear")) {
-        const auto answer = QMessageBox::question(this, tr("Clear Goal"),
-            m_goal.goal.isEmpty() ? tr("Clear the standing goal?")
-                                  : tr("Clear the standing goal?\n\n“%1”").arg(m_goal.goal),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (answer == QMessageBox::Yes) runCommand(QStringLiteral("/goal clear"));
     }
     else if (id == QLatin1String("app:palette") || id == QLatin1String("app:all-commands")) m_palette->open();
     else if (id == QLatin1String("app:refresh-commands")) {
@@ -1401,7 +1282,6 @@ void MainWindow::updateUiState() {
 
     m_rail->setConnected(connected);
     updateEmptyState();
-    updateGoalButton();
     updateActionStates();
 }
 
@@ -1438,7 +1318,7 @@ void MainWindow::updateEmptyState() {
         bool hasRecent = false;
         for (QAction *a : m_recentMenu->actions()) if (a->data().toStringList().size() == 2) { hasRecent = true; break; }
         QList<QA> actions{QA{"app:new-session", tr("New Session"), tr("Start fresh in %1").arg(QDir(cwd()).dirName().isEmpty() ? cwd() : QDir(cwd()).dirName()), "message-square-plus", sc("app:new-session")},
-                          QA{"app:goal", tr("Set a Goal"), tr("A standing objective"), "target", sc("app:goal")}};
+                          QA{"app:workspace", tr("Choose Folder"), tr("Pick where Hermes works"), "folder-open", sc("app:workspace")}};
         if (hasRecent) actions << QA{"app:resume-last", tr("Resume Last"), tr("Pick up where you left off"), "history", QString()};
         else actions << QA{"app:settings", tr("Settings"), tr("Theme, model and Hermes setup"), "settings", sc("app:settings")};
         actions << QA{"app:palette", tr("Browse Commands"), tr("Every Hermes command"), "command", sc("app:palette")};
@@ -1447,13 +1327,17 @@ void MainWindow::updateEmptyState() {
                               actions);
         return;
     }
-    QList<QA> actions{QA{"app:goal", tr("Set a Goal"), tr("A standing objective for this session"), "target", sc("app:goal")}};
+    QList<QA> actions;
     if (m_catalog.contains(QStringLiteral("status")))
         actions << QA{"/status", tr("Session Status"), tr("Model, tokens and settings"), "activity", QString()};
     if (m_catalog.contains(QStringLiteral("tools")))
         actions << QA{"/tools", tr("Tools"), tr("What Hermes can use"), "wrench", QString()};
+    if (m_catalog.contains(QStringLiteral("help")))
+        actions << QA{"/help", tr("Hermes Help"), tr("How Hermes commands work"), "circle-help", QString()};
+    else
+        actions << QA{"app:settings", tr("Settings"), tr("Theme, model and Hermes setup"), "settings", sc("app:settings")};
     actions << QA{"app:palette", tr("All Commands"), m_catalog.count() == 1 ? tr("1 command available") : tr("%1 commands available").arg(m_catalog.count()), "command", sc("app:palette")};
-    m_chat->setEmptyState(tr("Hermes is ready"), tr("Ask anything, or give it a goal to pursue."), actions);
+    m_chat->setEmptyState(tr("Hermes is ready"), tr("Ask anything, or run one of Hermes's commands."), actions);
 }
 
 void MainWindow::updateModelLabel() {
@@ -1470,66 +1354,14 @@ void MainWindow::updateModelLabel() {
     m_modelLabel->setVisible(!model.isEmpty());
 }
 
-void MainWindow::updateGoalButton() {
-    if (!m_goalButton) return;
-    Theme &t = theme();
-    const QString state = m_goal.known ? m_goal.state : QStringLiteral("none");
-    const bool has = state != QLatin1String("none") && !m_goal.goal.isEmpty();
-    QString text = tr("Goal"), icon = QStringLiteral("target"), tip;
-    if (has) {
-        const QString goal = m_goal.goal.simplified();
-        if (state == QLatin1String("paused")) { text = tr("Paused: %1").arg(goal); icon = QStringLiteral("circle-pause"); }
-        else if (state == QLatin1String("done")) { text = tr("Done: %1").arg(goal); icon = QStringLiteral("circle-check"); }
-        else if (state == QLatin1String("parked")) { text = tr("Waiting: %1").arg(goal); icon = QStringLiteral("hourglass"); }
-        else text = goal;
-        tip = tr("Goal (%1%2): %3\nClick to change it · use the arrow for goal actions (%4)")
-                  .arg(state, m_goal.meta.isEmpty() ? QString() : QStringLiteral(", ") + m_goal.meta, goal,
-                       m_actions.value("app:goal")->shortcut().toString(QKeySequence::NativeText));
-    } else {
-        tip = ui::withShortcut(tr("Set a goal Hermes works toward across turns"), m_actions.value("app:goal")->shortcut());
-    }
-    const QFontMetrics fm(m_goalButton->font());
-    const int goalWidth = width() < t.px(900) ? t.px(140) : t.px(210);
-    const QString shown = fm.elidedText(text, Qt::ElideRight, goalWidth);
-    const bool resized = m_goalButton->text() != shown;
-    m_goalButton->setText(shown);
-    const QColor iconColor = state == QLatin1String("paused") && has ? t.tokens().warning
-                           : state == QLatin1String("done") && has ? t.tokens().success
-                           : t.tokens().accentText;
-    m_goalButton->setIcon(t.icon(icon, iconColor));
-    ui::describe(m_goalButton, has ? tr("Goal: %1").arg(m_goal.goal) : tr("Set Goal"), tip);
-    const QString prop = has ? state : QStringLiteral("none");
-    if (m_goalButton->property("goalState").toString() != prop) {
-        m_goalButton->setProperty("goalState", prop);
-        m_goalButton->setProperty("goalActive", has && state == QLatin1String("active"));
-        m_goalButton->style()->unpolish(m_goalButton);
-        m_goalButton->style()->polish(m_goalButton);
-    }
-    m_goalButton->setEnabled(m_conn == Conn::Connected);
-    // A longer goal label needs toolbar room: re-fit the chrome (queued, so
-    // updateResponsive() → updateGoalButton() can't recurse).
-    if (resized && !m_inResponsive && !m_responsivePending) {
-        m_responsivePending = true;
-        QTimer::singleShot(0, this, [this]() { m_responsivePending = false; updateResponsive(); });
-    }
-}
-
 void MainWindow::updateActionStates() {
     if (m_actions.isEmpty()) return;
     const bool connected = m_conn == Conn::Connected;
     const bool session = m_client.isReady();
-    const QString state = m_goal.known ? m_goal.state : QString();
-    const bool goalCmd = !m_catalog.count() || m_catalog.contains(QStringLiteral("goal"));
     auto en = [this](const char *id, bool on) { if (QAction *a = m_actions.value(QString::fromLatin1(id))) a->setEnabled(on); };
     en("app:new-session", connected && !m_opening);
     en("app:end-session", session && !m_opening);
     en("app:stop", m_busy);
-    en("app:goal", connected && goalCmd);
-    en("app:goal-status", connected && goalCmd && !m_busy);
-    en("app:goal-show", connected && goalCmd && !m_busy && !state.isEmpty() && state != QLatin1String("none"));
-    en("app:goal-pause", connected && !m_busy && (state == QLatin1String("active") || state == QLatin1String("parked")));
-    en("app:goal-resume", connected && !m_busy && state == QLatin1String("paused"));
-    en("app:goal-clear", connected && !m_busy && !state.isEmpty() && state != QLatin1String("none"));
     en("app:refresh-commands", session && !m_busy);
     en("app:help", connected);
     en("app:configure-provider", true);
@@ -1541,7 +1373,6 @@ void MainWindow::updateActionStates() {
     };
     if (m_hermesMenu) setTree(m_hermesMenu, setTree);
     if (m_sessionMenu) setTree(m_sessionMenu, setTree);
-    if (m_goalMenu) setTree(m_goalMenu, setTree);
 }
 
 void MainWindow::beginTurnUi() {
@@ -1594,19 +1425,17 @@ void MainWindow::restyle() {
     }
     m_rail->setFixedWidth(t.px(268));
     m_toolbar->setIconSize(QSize(t.px(16), t.px(16)));
-    m_goalButton->setIconSize(QSize(t.px(16), t.px(16)));
     m_contextBar->setFixedWidth(t.px(72));
     for (const char *id : {"app:theme-system", "app:theme-light", "app:theme-dark"}) {
         const Theme::Mode mode = Theme::modeFromName(QString::fromLatin1(id).mid(10));
         if (QAction *a = m_actions.value(QString::fromLatin1(id))) a->setChecked(t.mode() == mode);
     }
-    updateGoalButton();
     rebuildConfigCombos();
 }
 
 QList<QPair<QString, QString>> MainWindow::shortcutList() const {
     QList<QPair<QString, QString>> list;
-    const char *order[] = {"app:new-session", "app:goal", "app:goal-status", "app:stop", "app:end-session",
+    const char *order[] = {"app:new-session", "app:stop", "app:end-session",
                            "app:palette", "app:workspace", "app:sidebar", "app:focus-composer", "app:settings",
                            "app:restart", "app:zoom-in", "app:zoom-out", "app:zoom-reset", "app:help",
                            "app:shortcuts", "app:quit"};
@@ -1634,8 +1463,6 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
 
 void MainWindow::updateResponsive() {
     if (!m_rail || !m_toolbar) return;
-    m_inResponsive = true;
-    struct Reset { bool &flag; ~Reset() { flag = false; } } reset{m_inResponsive};
     Theme &t = theme();
     const int w = width();
     // The sidebar steps aside when the window gets narrow (the user's choice is restored
@@ -1649,7 +1476,6 @@ void MainWindow::updateResponsive() {
     // When the toolbar runs out of room, secondary pickers (reasoning, mode,
     // …) step out first, then the Commands label, then the model picker.
     // They all stay reachable in Settings → Session and the Hermes menu.
-    updateGoalButton();
     auto *paletteBtn = qobject_cast<QToolButton *>(m_toolbar->widgetForAction(m_actions.value("app:palette")));
     if (paletteBtn) paletteBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     QList<QAction *> secondary, primary;

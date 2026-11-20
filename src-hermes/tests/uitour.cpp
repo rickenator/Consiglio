@@ -100,37 +100,45 @@ static void runAndWait(MainWindow &w, const QString &line, int ms) {
 }
 
 static void tourMenus(MainWindow &w) {
-    // Goal menu from the Goal button.
-    QToolButton *goal = w.goalButton();
-    const QPoint goalAt = goal->mapTo(&w, QPoint(0, goal->height()));
-    w.goalMenu()->popup(goal->mapToGlobal(QPoint(0, goal->height())));
-    shotWithPopups(&w, {{w.goalMenu(), goalAt}}, "goal-menu");
-    w.goalMenu()->hide();
-
-    // Hermes menu with one group open.
+    // Hermes menu with one group open (and optionally one command's choices).
     QMenuBar *bar = w.menuBar();
-    QAction *hermesAction = w.hermesMenu()->menuAction();
-    const QRect r = bar->actionGeometry(hermesAction);
-    const QPoint hermesAt = bar->mapTo(&w, r.bottomLeft());
-    w.hermesMenu()->popup(bar->mapToGlobal(r.bottomLeft()));
-    settle(150);
-    QMenu *sub = nullptr;
-    QAction *subAction = nullptr;
-    for (QAction *a : w.hermesMenu()->actions()) {
-        if (a->menu() && a->property("catalogGroup").toString() == QLatin1String("model")) { sub = a->menu(); subAction = a; break; }
-    }
-    if (!sub)
-        for (QAction *a : w.hermesMenu()->actions()) if (a->menu()) { sub = a->menu(); subAction = a; break; }
-    QPoint subAt;
-    if (sub) {
-        w.hermesMenu()->setActiveAction(subAction);
-        const QRect ar = w.hermesMenu()->actionGeometry(subAction);
-        subAt = hermesAt + QPoint(w.hermesMenu()->width() - 4, ar.top() - 4);
-        sub->popup(w.hermesMenu()->mapToGlobal(QPoint(w.hermesMenu()->width() - 4, ar.top() - 4)));
-    }
-    shotWithPopups(&w, {{w.hermesMenu(), hermesAt}, {sub, subAt}}, "hermes-menu");
-    if (sub) sub->hide();
-    w.hermesMenu()->hide();
+    auto hermesShot = [&](const QString &groupId, const QString &command, const QString &name) {
+        QAction *hermesAction = w.hermesMenu()->menuAction();
+        const QRect r = bar->actionGeometry(hermesAction);
+        const QPoint hermesAt = bar->mapTo(&w, r.bottomLeft());
+        w.hermesMenu()->popup(bar->mapToGlobal(r.bottomLeft()));
+        settle(150);
+        QMenu *sub = nullptr;
+        QAction *subAction = nullptr;
+        for (QAction *a : w.hermesMenu()->actions())
+            if (a->menu() && a->property("catalogGroup").toString() == groupId) { sub = a->menu(); subAction = a; break; }
+        if (!sub)
+            for (QAction *a : w.hermesMenu()->actions()) if (a->menu()) { sub = a->menu(); subAction = a; break; }
+        QPoint subAt, cmdAt;
+        QMenu *cmdMenu = nullptr;
+        if (sub) {
+            w.hermesMenu()->setActiveAction(subAction);
+            const QRect ar = w.hermesMenu()->actionGeometry(subAction);
+            subAt = hermesAt + QPoint(w.hermesMenu()->width() - 4, ar.top() - 4);
+            sub->popup(w.hermesMenu()->mapToGlobal(QPoint(w.hermesMenu()->width() - 4, ar.top() - 4)));
+            settle(100);
+            for (QAction *a : sub->actions())
+                if (!command.isEmpty() && a->menu() && a->property("catalogCommand").toString() == command) {
+                    sub->setActiveAction(a);
+                    const QRect cr = sub->actionGeometry(a);
+                    cmdMenu = a->menu();
+                    cmdAt = subAt + QPoint(sub->width() - 4, cr.top() - 4);
+                    cmdMenu->popup(sub->mapToGlobal(QPoint(sub->width() - 4, cr.top() - 4)));
+                    break;
+                }
+        }
+        shotWithPopups(&w, {{w.hermesMenu(), hermesAt}, {sub, subAt}, {cmdMenu, cmdAt}}, name);
+        if (cmdMenu) cmdMenu->hide();
+        if (sub) sub->hide();
+        w.hermesMenu()->hide();
+    };
+    hermesShot(QStringLiteral("model"), QString(), QStringLiteral("hermes-menu"));
+    hermesShot(QStringLiteral("automation"), QStringLiteral("goal"), QStringLiteral("hermes-menu-automation"));
 
     // Session menu (app actions + Hermes session commands).
     const QRect sr = bar->actionGeometry(w.sessionMenu()->menuAction());
@@ -143,14 +151,14 @@ static void tourDialogs(MainWindow &w, bool real) {
     // Command palette.
     w.palette()->open();
     shot(&w, "palette");
-    w.palette()->setQuery(QStringLiteral("goal"));
+    w.palette()->setQuery(QStringLiteral("model"));
     shot(&w, "palette-search");
     w.palette()->closeOverlay();
 
     // A command with one-click choices, and one with a required argument.
     QString withChoices, required;
     for (const auto &c : w.catalog()->commands()) {
-        if (withChoices.isEmpty() && c.choices().size() >= 3 && !c.requiresArgs() && c.name != QLatin1String("goal")) withChoices = c.name;
+        if (withChoices.isEmpty() && c.choices().size() >= 3 && !c.requiresArgs()) withChoices = c.name;
         if (required.isEmpty() && c.requiresArgs()) required = c.name;
     }
     for (const QString &name : {withChoices, required}) {
@@ -264,27 +272,24 @@ int main(int argc, char **argv) {
         shot(&w, "tools-command");
     }
 
-    // Goal flow.
+    // /goal is one command among the others: the generic command form, then
+    // run it like any command.
     {
-        QDialog *d = w.createGoalDialog();
-        if (auto *g = qobject_cast<GoalDialog *>(d)) g->setGoalText(QStringLiteral("Write release notes for 0.1 with a changelog"));
+        QDialog *d = w.createCommandDialog(QStringLiteral("goal"));
+        if (auto *c = qobject_cast<CommandDialog *>(d)) c->setArguments(QStringLiteral("Write release notes for 0.1 with a changelog"));
         d->show();
-        shot(d, "goal-dialog");
+        shot(d, "command-dialog-goal");
         d->deleteLater();
     }
-    runAndWait(w, QStringLiteral("/goal Write release notes for 0.1 with a changelog"), real ? 180000 : 10000);
-    waitFor([&]() { return w.goalStatus().state == QLatin1String("active") && idle(w); }, real ? 60000 : 5000);
+    runAndWait(w, QStringLiteral("/goal Write release notes for 0.1 with a changelog"), real ? 240000 : 10000);
     settle(400);
-    g_log << "Goal state: " << w.goalStatus().state << " — " << w.goalStatus().goal << "\n";
-    shot(&w, "goal-active");
+    shot(&w, "goal-command");
 
     tourMenus(w);
     tourDialogs(w, real);
 
-    w.action(QStringLiteral("app:goal-pause"))->trigger();
-    waitFor([&]() { return w.goalStatus().state == QLatin1String("paused") && idle(w); }, real ? 60000 : 5000);
-    settle(400);
-    shot(&w, "goal-paused");
+    runAndWait(w, QStringLiteral("/goal pause"), real ? 60000 : 5000);
+    shot(&w, "goal-pause-command");
 
     if (!real) {
         w.runCommand(QStringLiteral("permission"));
@@ -322,7 +327,7 @@ int main(int argc, char **argv) {
         shot(&failed, "failed");
     }
     if (real) {
-        // Leave the real Hermes tidy: stop any goal continuation, clear the goal.
+        // Leave the real Hermes tidy: stop any running turn and clear the goal set above.
         if (!idle(w)) { w.action(QStringLiteral("app:stop"))->trigger(); waitFor([&]() { return idle(w); }, 30000); }
         runAndWait(w, QStringLiteral("/goal clear"), 30000);
     }

@@ -103,8 +103,7 @@ private slots:
         for (const auto &p : pal) ids.insert(p.id);
         QList<QAction *> menuActions;
         for (QAction *top : w->menuBar()->actions()) if (top->menu()) menuActions += allActions(top->menu());
-        QSet<QString> inMenus{QStringLiteral("goal")};   // /goal = Goal ▸ Set Goal… (app:goal)
-        QVERIFY(w->goalMenu()->actions().contains(w->action("app:goal")));
+        QSet<QString> inMenus;
         for (QAction *a : menuActions) inMenus.insert(a->property("catalogCommand").toString());
         for (const auto &c : w->catalog()->commands()) {
             QVERIFY2(ids.contains('/' + c.name), qPrintable("palette lacks /" + c.name));
@@ -137,10 +136,10 @@ private slots:
             QVERIFY2(!a->toolTip().isEmpty(), qPrintable(id));
             QVERIFY2(!a->text().isEmpty(), qPrintable(id));
         }
-        for (const char *id : {"app:new", "app:palette", "app:settings", "app:goal", "app:stop", "app:quit"})
-            QVERIFY2(!w->action(id) || !w->action(id)->shortcut().isEmpty(), id);
-        QVERIFY(w->action("app:goal"));
-        QVERIFY(!w->action("app:goal")->shortcut().isEmpty());
+        for (const char *id : {"app:new-session", "app:palette", "app:settings", "app:stop", "app:quit", "app:sidebar"}) {
+            QVERIFY2(w->action(id), id);
+            QVERIFY2(!w->action(id)->shortcut().isEmpty(), id);
+        }
         QVERIFY(w->shortcutList().size() >= 10);
         for (QWidget *c : w->toolbar()->findChildren<QWidget *>()) {
             if (!qobject_cast<QToolButton *>(c) && !qobject_cast<QComboBox *>(c)) continue;
@@ -150,35 +149,41 @@ private slots:
             QVERIFY2(!c->accessibleName().isEmpty() || (qobject_cast<QToolButton *>(c) && qobject_cast<QToolButton *>(c)->defaultAction()),
                      qPrintable(c->objectName()));
         }
-        QVERIFY(!w->goalButton()->accessibleName().isEmpty());
     }
 
-    void goalButtonSetsAndTracksGoal() {
+    // /goal is an ordinary command: grouped with the other planning and
+    // automation commands, its fixed choices in a submenu, nothing special.
+    void goalIsAnOrdinaryCommand() {
         QScopedPointer<MainWindow> w(makeWindow());
         QVERIFY(waitDiscovered(w.data()));
-        QVERIFY(w->goalButton()->isEnabled());
-        bool handled = false;
-        QTimer::singleShot(0, this, [&]() {
-            QTRY_VERIFY_WITH_TIMEOUT(qobject_cast<GoalDialog *>(QApplication::activeModalWidget()), 10000);
-            auto *d = qobject_cast<GoalDialog *>(QApplication::activeModalWidget());
-            d->setGoalText("ship the release notes");
-            handled = true;
-            d->accept();
-        });
-        w->goalButton()->click();          // opens a session if needed, then the dialog
-        QTRY_VERIFY_WITH_TIMEOUT(handled, 15000);
-        QTRY_COMPARE_WITH_TIMEOUT(w->goalStatus().state, QString("active"), 10000);
-        QCOMPARE(w->goalStatus().goal, QString("ship the release notes"));
-        QTRY_COMPARE_WITH_TIMEOUT(w->goalButton()->property("goalState").toString(), QString("active"), 5000);
-        QVERIFY(w->goalButton()->toolTip().contains("ship the release notes"));
-        // Pause from the Goal menu.
+        for (QAction *top : w->menuBar()->actions())
+            QVERIFY2(top->text().remove('&') != "Goal", "no dedicated Goal menu");
+        for (QWidget *c : w->toolbar()->findChildren<QWidget *>())
+            QVERIFY2(!c->objectName().contains("goal", Qt::CaseInsensitive), qPrintable(c->objectName()));
+        QAction *goal = findCommand(w->hermesMenu(), "goal");
+        QVERIFY(goal);
+        QVERIFY(goal->menu());
+        QAction *group = nullptr;
+        for (QAction *a : w->hermesMenu()->actions())
+            if (a->menu() && a->menu()->actions().contains(goal)) group = a;
+        QVERIFY(group);
+        QCOMPARE(group->property("catalogGroup").toString(), QString("automation"));
         QAction *pause = nullptr;
-        for (QAction *a : allActions(w->goalMenu())) if (a->text().contains("Pause")) pause = a;
+        for (QAction *a : goal->menu()->actions()) if (a->text() == "pause") pause = a;
         QVERIFY(pause);
-        QTRY_VERIFY_WITH_TIMEOUT(pause->isEnabled(), 5000);
+        QVERIFY(w->runCommand("/goal ship the release notes"));
+        QTRY_VERIFY_WITH_TIMEOUT(w->stateText().startsWith("Ready"), 10000);
         pause->trigger();
-        QTRY_COMPARE_WITH_TIMEOUT(w->goalStatus().state, QString("paused"), 10000);
-        QTRY_COMPARE_WITH_TIMEOUT(w->goalButton()->property("goalState").toString(), QString("paused"), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(QString::fromUtf8(QJsonDocument(logged("session/prompt").last()).toJson()).contains("/goal pause"), 10000);
+        // Free-form arguments go through the same generic command form as any other command.
+        QScopedPointer<QDialog> d(w->createCommandDialog("goal"));
+        auto *cd = qobject_cast<CommandDialog *>(d.data());
+        QVERIFY(cd);
+        cd->setArguments("write the changelog");
+        QCOMPARE(cd->commandLine(), QString("/goal write the changelog"));
+        bool inPalette = false;
+        for (const auto &p : w->palette()->actions()) inPalette |= p.id == "/goal";
+        QVERIFY(inPalette);
     }
 
     void helloWorldTurn() {
@@ -241,7 +246,6 @@ private slots:
         w.show();
         QTRY_VERIFY_WITH_TIMEOUT(w.chat()->isBannerVisible(), 10000);
         QCOMPARE(w.stateText(), QString("Not connected"));
-        QVERIFY(!w.goalButton()->isEnabled() || w.goalStatus().state.isEmpty() || w.goalStatus().state == "none");
     }
 
     void cachedCatalogUsedBeforeDiscovery() {
@@ -254,7 +258,7 @@ private slots:
         o.autoLaunch = false;
         MainWindow w(o);
         QVERIFY2(w.catalog()->count() >= 30, "cached catalog not loaded at startup");
-        QVERIFY(findCommand(w.hermesMenu(), "goal") || w.catalog()->contains("goal"));
+        QVERIFY(findCommand(w.hermesMenu(), "goal"));   // menus built from the cache
     }
 };
 

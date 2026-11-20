@@ -100,16 +100,6 @@ public:
     static QList<Group> groups();                 // ordered menu groups
     static Group group(const QString &id);
 
-    // Hermes's goal status line ("⊙ Goal (active, 2/20 turns): ship it",
-    // "⏸ Goal paused: …", "No active goal. …") → state the Goal button shows.
-    struct GoalStatus {
-        QString state;   // "none", "active", "paused", "parked", "done", or another word Hermes used
-        QString goal;    // the goal text ("" when none)
-        QString meta;    // "2/20 turns, contract" …
-        bool known = false;  // the text was recognisably a goal status
-    };
-    static GoalStatus parseGoalStatus(const QString &text);
-
     // Static presentation knowledge (exposed for tests).
     static QString groupFor(const QString &name, bool skill);
     static QString iconFor(const QString &name, const QString &group);

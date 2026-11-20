@@ -46,19 +46,19 @@ const QHash<QString, Known> &knownCommands() {
         {"bg", {"session", "layers", "Run in Background"}},
         {"handoff", {"session", "send", "Hand Off to Messaging"}},
         // Goals & automation
-        {"goal", {"goal", "target", "Goal"}},
-        {"subgoal", {"goal", "list-checks", "Subgoals"}},
-        {"heartbeat", {"goal", "heart-pulse", "Heartbeat"}},
-        {"loop", {"goal", "repeat", "Loop a Prompt"}},
-        {"plan", {"goal", "clipboard-list", "Write a Plan"}},
-        {"review", {"goal", "search-check", "Independent Review"}},
-        {"refine", {"goal", "sparkles", "Refine and Learn"}},
-        {"moa", {"goal", "network", "Mixture of Agents"}},
-        {"kanban", {"goal", "kanban", "Kanban Board"}},
-        {"suggestions", {"goal", "lightbulb", "Automation Suggestions"}},
-        {"blueprint", {"goal", "layout-template", "Automation Blueprint"}},
-        {"cron", {"goal", "timer", "Scheduled Tasks"}},
-        {"journey", {"goal", "chart-line", "Learning Journey"}},
+        {"goal", {"automation", "target", "Goal"}},
+        {"subgoal", {"automation", "list-checks", "Subgoals"}},
+        {"heartbeat", {"automation", "heart-pulse", "Heartbeat"}},
+        {"loop", {"automation", "repeat", "Loop a Prompt"}},
+        {"plan", {"automation", "clipboard-list", "Write a Plan"}},
+        {"review", {"automation", "search-check", "Independent Review"}},
+        {"refine", {"automation", "sparkles", "Refine and Learn"}},
+        {"moa", {"automation", "network", "Mixture of Agents"}},
+        {"kanban", {"automation", "kanban", "Kanban Board"}},
+        {"suggestions", {"automation", "lightbulb", "Automation Suggestions"}},
+        {"blueprint", {"automation", "layout-template", "Automation Blueprint"}},
+        {"cron", {"automation", "timer", "Scheduled Tasks"}},
+        {"journey", {"automation", "chart-line", "Learning Journey"}},
         // Model & behavior
         {"model", {"model", "cpu", "Switch Model"}},
         {"reasoning", {"model", "brain", "Reasoning"}},
@@ -211,9 +211,9 @@ CommandCatalog::CommandCatalog(QObject *parent) : QObject(parent) {}
 QList<CommandCatalog::Group> CommandCatalog::groups() {
     return {
         {"session", tr("Session"), "messages-square"},
-        {"goal", tr("Goals & Automation"), "target"},
         {"model", tr("Model & Behavior"), "cpu"},
         {"tools", tr("Tools, Skills & Memory"), "wrench"},
+        {"automation", tr("Planning & Automation"), "list-checks"},
         {"info", tr("Info & Diagnostics"), "activity"},
         {"gateway", tr("Gateway & Account"), "radio"},
         {"skills", tr("Skills"), "puzzle"},
@@ -370,48 +370,6 @@ CommandCatalog::Page CommandCatalog::parsePage(const QString &text) {
     }
     if (!page.commands.isEmpty()) page.valid = true;
     return page;
-}
-
-CommandCatalog::GoalStatus CommandCatalog::parseGoalStatus(const QString &text) {
-    GoalStatus st;
-    const QString t = text.trimmed();
-    if (t.contains(QLatin1String("No active goal"), Qt::CaseInsensitive)
-        || t.contains(QLatin1String("No goal set"), Qt::CaseInsensitive)
-        || t.contains(QLatin1String("Goal cleared"), Qt::CaseInsensitive)) {
-        st.state = QStringLiteral("none");
-        st.known = true;
-        return st;
-    }
-    // "<glyph> Goal (active, 0/20 turns): text"  /  "✓ Goal done (meta): text"
-    static const QRegularExpression full(
-        QStringLiteral("Goal\\s*(?:(done)\\s*)?\\(([^)]*)\\)\\s*:\\s*(.+)"));
-    const auto m = full.match(t);
-    if (m.hasMatch()) {
-        const QString inside = m.captured(2).trimmed();
-        QString first = inside.section(',', 0, 0).trimmed();
-        st.meta = inside.section(',', 1).trimmed();
-        if (!m.captured(1).isEmpty()) {
-            st.state = QStringLiteral("done");
-            st.meta = inside;
-        } else if (first.startsWith(QLatin1String("parked"))) {
-            st.state = QStringLiteral("parked");
-        } else {
-            st.state = first.section(' ', 0, 0).toLower();
-        }
-        st.goal = m.captured(3).section('\n', 0, 0).trimmed();
-        st.known = true;
-        return st;
-    }
-    // Replies to set/pause/resume: "⊙ Goal set (20-turn budget): text", "⏸ Goal paused: text".
-    static const QRegularExpression verb(
-        QStringLiteral("Goal\\s+(set|paused|resumed)(?:\\s*\\([^)]*\\))?\\s*:\\s*(.+)"));
-    const auto v = verb.match(t);
-    if (v.hasMatch()) {
-        st.state = v.captured(1) == QLatin1String("paused") ? QStringLiteral("paused") : QStringLiteral("active");
-        st.goal = v.captured(2).section('\n', 0, 0).trimmed();
-        st.known = true;
-    }
-    return st;
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────

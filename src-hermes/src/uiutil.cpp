@@ -303,13 +303,16 @@ void ElidedCombo::paintEvent(QPaintEvent *) {
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
     p.drawComplexControl(QStyle::CC_ComboBox, opt);
-    if (width() >= sizeHint().width()) {   // room for the full text: draw it as is
-        p.drawControl(QStyle::CE_ComboBoxLabel, opt);
-        return;
-    }
+    // The label may use the field and its right padding, but never run under
+    // the drop-down arrow.
     const QRect field = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
-    const int iconW = opt.currentIcon.isNull() ? 0 : opt.iconSize.width() + 6;
-    opt.currentText = opt.fontMetrics.elidedText(opt.currentText, Qt::ElideRight, qMax(0, field.width() - iconW));
+    const QRect arrow = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
+    const int iconW = opt.currentIcon.isNull() ? 0 : opt.iconSize.width() + 4;
+    const int right = arrow.isValid() && arrow.left() > field.left() ? arrow.left() : field.right();
+    const int avail = right - field.left() - iconW - 2;
+    const QFontMetrics &fm = opt.fontMetrics;
+    if (fm.horizontalAdvance(opt.currentText) > avail)
+        opt.currentText = fm.elidedText(opt.currentText, Qt::ElideRight, qMax(0, avail));
     p.drawControl(QStyle::CE_ComboBoxLabel, opt);
 }
 
