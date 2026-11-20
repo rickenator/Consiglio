@@ -349,7 +349,58 @@ bool AcpClient::listSessions(const QString &cwd) {
 
 bool AcpClient::sendPrompt(const QString &text) {
     if (!m_sessionReady || m_busy) return false;
+    if (m_quietReqId >= 0) {
+        // A hidden command (command discovery) is finishing; it takes a few
+        // milliseconds. Hold the user's prompt and send it right after, so the
+        // UI never has to know.
+        m_deferredPrompt = text;
+        m_hasDeferredPrompt = true;
+        m_busy = true;
+        return true;
+    }
+    return dispatchPrompt(text, false);
+}
 
+bool AcpClient::runQuietCommand(const QString &text) {
+    if (!m_sessionReady || text.trimmed().isEmpty()) return false;
+    m_quietQueue.append(text);
+    pumpQuietQueue();
+    return true;
+}
+
+bool AcpClient::hasQuietWork() const { return m_quietReqId >= 0 || !m_quietQueue.isEmpty(); }
+
+void AcpClient::pumpQuietQueue() {
+    // One prompt at a time per session: wait for the user's turn (or another
+    // quiet command) to finish first.
+    if (m_quietReqId >= 0 || m_busy || !m_sessionReady || m_quietQueue.isEmpty()) {
+        return;
+    }
+    const QString next = m_quietQueue.takeFirst();
+    if (!dispatchPrompt(next, true)) {
+        emit quietCommandFinished(next, QString(), false);
+    }
+}
+
+void AcpClient::finishQuiet(bool ok) {
+    const QString command = m_quietCommand;
+    const QString output = m_quietOutput;
+    m_quietReqId = -1;
+    m_quietCommand.clear();
+    m_quietOutput.clear();
+    emit quietCommandFinished(command, output, ok);
+    if (m_hasDeferredPrompt) {
+        const QString text = m_deferredPrompt;
+        m_deferredPrompt.clear();
+        m_hasDeferredPrompt = false;
+        m_busy = false;
+        if (!dispatchPrompt(text, false)) failTurn(tr("Could not send the prompt to Hermes."));
+        return;
+    }
+    pumpQuietQueue();
+}
+
+bool AcpClient::dispatchPrompt(const QString &text, bool quiet) {
     QJsonObject params;
     params["sessionId"] = m_sessionId;
     QJsonArray blocks;
@@ -360,11 +411,153 @@ bool AcpClient::sendPrompt(const QString &text) {
     params["prompt"] = blocks;
 
     const int id = m_nextReqId++;
-    if (!sendRequest(id, "session/prompt", params, ReqKind::Prompt)) return false;
-    m_busy = true;
-    m_promptReqId = id;
+    if (!sendRequest(id, "session/prompt", params, quiet ? ReqKind::QuietPrompt : ReqKind::Prompt)) {
+        return false;
+    }
+    if (quiet) {
+        m_quietReqId = id;
+        m_quietCommand = text;
+        m_quietOutput.clear();
+    } else {
+        m_busy = true;
+        m_promptReqId = id;
+    }
     return true;
 }
+
+// ─── Session configuration ────────────────────────────────────────────────
+
+QList<AcpClient::ConfigOption> AcpClient::configOptions() const { return m_configOptions; }
+QList<AcpClient::SessionMode> AcpClient::sessionModes() const { return m_modes; }
+QString AcpClient::currentModeId() const { return m_currentMode; }
+QList<AcpClient::AuthMethod> AcpClient::authMethods() const { return m_authMethods; }
+QString AcpClient::sessionCwd() const { return m_sessionCwd; }
+
+bool AcpClient::setConfigOption(const QString &configId, const QString &value) {
+    if (!m_sessionReady) return false;
+    int index = -1;
+    for (int i = 0; i < m_configOptions.size(); ++i) {
+        if (m_configOptions[i].id == configId) { index = i; break; }
+    }
+    if (index < 0) return false;
+    const QString previous = m_configOptions[index].currentValue;
+    if (previous == value) return true;
+    QJsonObject params;
+    params["sessionId"] = m_sessionId;
+    params["configId"] = configId;
+    params["value"] = value;
+    const int id = m_nextReqId++;
+    if (!sendRequest(id, "session/set_config_option", params, ReqKind::SetConfigOption)) return false;
+    // Optimistic: show the new value now; roll back if the agent refuses.
+    m_configOptions[index].currentValue = value;
+    m_configChanges.insert(QString::number(id), ConfigChange{configId, previous, value, false});
+    emit configOptionsChanged();
+    return true;
+}
+
+bool AcpClient::setMode(const QString &modeId) {
+    if (!m_sessionReady || modeId == m_currentMode) return m_sessionReady;
+    QJsonObject params;
+    params["sessionId"] = m_sessionId;
+    params["modeId"] = modeId;
+    const int id = m_nextReqId++;
+    if (!sendRequest(id, "session/set_mode", params, ReqKind::SetMode)) return false;
+    m_configChanges.insert(QString::number(id), ConfigChange{QString(), m_currentMode, modeId, true});
+    m_currentMode = modeId;
+    emit modesChanged();
+    return true;
+}
+
+void AcpClient::parseConfigOptions(const QJsonArray &options) {
+    QList<ConfigOption> parsed;
+    for (const auto &v : options) {
+        const QJsonObject o = v.toObject();
+        ConfigOption opt;
+        opt.id = o.value("id").toString();
+        opt.name = o.value("name").toString();
+        opt.description = o.value("description").toString();
+        opt.category = o.value("category").toString();
+        opt.type = o.value("type").toString();
+        opt.currentValue = o.value("currentValue").toVariant().toString();
+        // Choices may be flat ({value,name}) or grouped ({group,name,options}).
+        for (const auto &c : o.value("options").toArray()) {
+            const QJsonObject co = c.toObject();
+            if (co.contains("options") && co.value("options").isArray()) {
+                const QString group = co.value("name").toString(co.value("group").toString());
+                for (const auto &gc : co.value("options").toArray()) {
+                    const QJsonObject g = gc.toObject();
+                    ConfigChoice choice{g.value("value").toVariant().toString(),
+                                        g.value("name").toString(),
+                                        g.value("description").toString(), group};
+                    if (!choice.value.isEmpty()) opt.choices.append(choice);
+                }
+            } else {
+                ConfigChoice choice{co.value("value").toVariant().toString(),
+                                    co.value("name").toString(),
+                                    co.value("description").toString(), QString()};
+                if (!choice.value.isEmpty()) opt.choices.append(choice);
+            }
+        }
+        if (!opt.id.isEmpty()) parsed.append(opt);
+    }
+    m_configOptions = parsed;
+    emit configOptionsChanged();
+}
+
+void AcpClient::parseSessionConfig(const QJsonObject &result) {
+    if (result.contains("configOptions") && result.value("configOptions").isArray()) {
+        parseConfigOptions(result.value("configOptions").toArray());
+    }
+    if (result.contains("modes") && result.value("modes").isObject()) {
+        const QJsonObject modes = result.value("modes").toObject();
+        m_modes.clear();
+        for (const auto &v : modes.value("availableModes").toArray()) {
+            const QJsonObject mo = v.toObject();
+            SessionMode mode{mo.value("id").toString(), mo.value("name").toString(),
+                             mo.value("description").toString()};
+            if (!mode.id.isEmpty()) m_modes.append(mode);
+        }
+        m_currentMode = modes.value("currentModeId").toString();
+        emit modesChanged();
+    }
+}
+
+bool AcpClient::cancelTurn() {
+    // ACP session/cancel is a notification; the agent then answers the
+    // in-flight session/prompt with stopReason "cancelled".
+    if (!m_busy || m_sessionId.isEmpty()) return false;
+    if (m_hasDeferredPrompt) {
+        // Never reached the agent: just drop it.
+        m_deferredPrompt.clear();
+        m_hasDeferredPrompt = false;
+        m_busy = false;
+        emit turnCompleted(QStringLiteral("cancelled"), 0, 0);
+        return true;
+    }
+    QJsonObject params;
+    params["sessionId"] = m_sessionId;
+    QJsonObject msg;
+    msg["jsonrpc"] = "2.0";
+    msg["method"] = "session/cancel";
+    msg["params"] = params;
+    cancelPendingPermissions(true);
+    if (!sendMessage(msg)) return false;
+    // Agents answer the prompt with "cancelled"; if one never does, don't
+    // leave the UI spinning forever.
+    const int promptId = m_promptReqId;
+    QTimer::singleShot(m_cancelGraceMs, this, [this, promptId]() {
+        if (m_busy && m_promptReqId == promptId && promptId >= 0) {
+            m_pending.remove(QString::number(promptId));
+            m_busy = false;
+            m_promptReqId = -1;
+            emit turnCompleted(QStringLiteral("cancelled"), 0, 0);
+            pumpQuietQueue();
+        }
+    });
+    return true;
+}
+
+void AcpClient::setCancelGrace(int ms) { m_cancelGraceMs = qMax(1, ms); }
 
 void AcpClient::stopSession() {
     // ACP has no "close session" RPC: cancel any turn in flight, then reset
@@ -412,6 +605,23 @@ void AcpClient::resetSessionState() {
     m_models.clear();
     const bool hadCommands = !m_commands.isEmpty();
     m_commands.clear();
+    if (m_quietReqId >= 0) m_pending.remove(QString::number(m_quietReqId));
+    const QString droppedQuiet = m_quietCommand;
+    const QStringList droppedQueue = m_quietQueue;
+    m_quietReqId = -1;
+    m_quietCommand.clear();
+    m_quietOutput.clear();
+    m_quietQueue.clear();
+    m_deferredPrompt.clear();
+    m_hasDeferredPrompt = false;
+    m_configChanges.clear();
+    const bool hadConfig = !m_configOptions.isEmpty() || !m_modes.isEmpty();
+    m_configOptions.clear();
+    m_modes.clear();
+    m_currentMode.clear();
+    if (hadConfig) { emit configOptionsChanged(); emit modesChanged(); }
+    if (!droppedQuiet.isEmpty()) emit quietCommandFinished(droppedQuiet, QString(), false);
+    for (const QString &q : droppedQueue) emit quietCommandFinished(q, QString(), false);
     m_contextUsed = 0;
     m_contextSize = 0;
     // Let the palette drop the previous session's slash commands.
@@ -623,6 +833,25 @@ void AcpClient::handleResponse(const QJsonObject &msg) {
                 failTurn(message);
             }
             return;
+        case ReqKind::QuietPrompt:
+            if (key == QString::number(m_quietReqId)) finishQuiet(false);
+            return;
+        case ReqKind::SetConfigOption:
+        case ReqKind::SetMode: {
+            const ConfigChange change = m_configChanges.take(key);
+            if (change.mode) {
+                if (m_currentMode == change.value) { m_currentMode = change.previous; emit modesChanged(); }
+            } else {
+                for (auto &opt : m_configOptions) {
+                    if (opt.id == change.id && opt.currentValue == change.value) {
+                        opt.currentValue = change.previous;
+                    }
+                }
+                emit configOptionsChanged();
+            }
+            emit configChangeFailed(change.mode ? QStringLiteral("mode") : change.id, text);
+            return;
+        }
         }
         return;
     }
@@ -655,6 +884,7 @@ void AcpClient::handleResponse(const QJsonObject &msg) {
             const QString modelId = m.toObject().value("modelId").toString();
             if (!modelId.isEmpty()) m_models.append(modelId);
         }
+        parseSessionConfig(result);
         m_sessionReady = !m_sessionId.isEmpty();
         if (!m_sessionReady) {
             emit sessionFailed(tr("Hermes did not return a session id."));
@@ -685,6 +915,23 @@ void AcpClient::handleResponse(const QJsonObject &msg) {
     case ReqKind::Prompt:
         if (key == QString::number(m_promptReqId)) finishTurn(result);
         break;
+
+    case ReqKind::QuietPrompt:
+        if (key == QString::number(m_quietReqId)) finishQuiet(true);
+        break;
+
+    case ReqKind::SetConfigOption: {
+        m_configChanges.remove(key);
+        // The spec says the reply carries the full option state; some Hermes
+        // versions reply with an empty list, so only an actual list replaces
+        // ours (the optimistic value already stands).
+        const QJsonArray options = result.value("configOptions").toArray();
+        if (!options.isEmpty()) parseConfigOptions(options);
+        break;
+    }
+    case ReqKind::SetMode:
+        m_configChanges.remove(key);
+        break;
     }
 }
 
@@ -698,6 +945,14 @@ void AcpClient::handleInitialized(const QJsonObject &result) {
     m_agentName = info.value("name").toString();
     m_agentVersion = info.value("version").toString();
     m_agentCaps = result.value("agentCapabilities").toObject();
+    m_authMethods.clear();
+    for (const auto &v : result.value("authMethods").toArray()) {
+        const QJsonObject a = v.toObject();
+        AuthMethod method{a.value("id").toString(), a.value("name").toString(),
+                          a.value("description").toString(), a.value("type").toString(), {}};
+        for (const auto &arg : a.value("args").toArray()) method.args.append(arg.toString());
+        if (!method.id.isEmpty()) m_authMethods.append(method);
+    }
 
     m_connected = true;
     m_restartAttempt = 0;
@@ -722,10 +977,22 @@ void AcpClient::handleUpdate(const QJsonObject &params) {
     const QJsonObject update = params.value("update").toObject();
     const QString kind = update.value("sessionUpdate").toString();
 
+    // While a hidden command runs, its reply is captured instead of shown;
+    // anything else it might stream (thoughts, tool calls) is dropped.
+    const bool quiet = m_quietReqId >= 0 && m_promptReqId < 0;
     if (kind == "agent_message_chunk") {
-        emit messageChunk(update.value("content").toObject().value("text").toString());
+        const QString text = update.value("content").toObject().value("text").toString();
+        if (quiet) m_quietOutput += text;
+        else emit messageChunk(text);
     } else if (kind == "agent_thought_chunk") {
-        emit thoughtChunk(update.value("content").toObject().value("text").toString());
+        if (!quiet) emit thoughtChunk(update.value("content").toObject().value("text").toString());
+    } else if (quiet && (kind == "tool_call" || kind == "tool_call_update" || kind == "user_message_chunk")) {
+        return;
+    } else if (kind == "config_option_update" || kind == "config_options_update") {
+        if (update.value("configOptions").isArray()) parseConfigOptions(update.value("configOptions").toArray());
+    } else if (kind == "current_mode_update") {
+        const QString mode = update.value("currentModeId").toString(update.value("modeId").toString());
+        if (!mode.isEmpty() && mode != m_currentMode) { m_currentMode = mode; emit modesChanged(); }
     } else if (kind == "usage_update") {
         m_contextUsed = static_cast<int>(qMin<qint64>(toInt64(update.value("used")), INT_MAX));
         m_contextSize = static_cast<int>(qMin<qint64>(toInt64(update.value("size")), INT_MAX));
@@ -752,6 +1019,8 @@ void AcpClient::handleUpdate(const QJsonObject &params) {
             SlashCommand sc;
             sc.name = co.value("name").toString();
             sc.description = co.value("description").toString();
+            sc.hint = co.value("input").toObject().value("hint").toString();
+            if (sc.name.startsWith('/')) sc.name.remove(0, 1);
             if (!sc.name.isEmpty()) m_commands.append(sc);
         }
         emit commandsUpdated();
@@ -772,6 +1041,7 @@ void AcpClient::finishTurn(const QJsonObject &result) {
         outputTokens = toInt64(usage.value("outputTokens"));
     }
     emit turnCompleted(stopReason, inputTokens, outputTokens);
+    pumpQuietQueue();
 }
 
 void AcpClient::failTurn(const QString &message) {
@@ -779,5 +1049,9 @@ void AcpClient::failTurn(const QString &message) {
     m_busy = false;
     m_promptReqId = -1;
     cancelPendingPermissions(false);
+    const bool deferred = m_hasDeferredPrompt;
+    m_deferredPrompt.clear();
+    m_hasDeferredPrompt = false;
     emit turnFailed(message);
+    if (!deferred) pumpQuietQueue();
 }
