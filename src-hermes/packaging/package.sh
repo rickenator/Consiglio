@@ -100,7 +100,8 @@ mac)
     # Unsigned builds still need an ad-hoc signature to launch on Apple silicon.
     codesign --force --deep --sign "${MAC_CODESIGN_IDENTITY:--}" "$app"
     codesign --verify --deep --strict "$app"
-    QT_QPA_PLATFORM=offscreen "$app/Contents/MacOS/ConsiglioHermes" --version
+    # Smoke test with only what the bundle carries (the default cocoa plugin).
+    env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM -u QML2_IMPORT_PATH "$app/Contents/MacOS/ConsiglioHermes" --version
     ln -s /Applications "$stage/Applications"
     hdiutil create -volname "Consiglio Hermes $version" -srcfolder "$stage" -ov -format UDZO \
         "$out/$base-mac-$arch.dmg"

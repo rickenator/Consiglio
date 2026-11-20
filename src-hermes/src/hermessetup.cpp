@@ -105,8 +105,18 @@ HermesSetup::Detection HermesSetup::detect(const Environment &env, int versionTi
     }
 
     // Data folder: config, keys, sessions, skills. Presence only.
+    // Prefer the first candidate that holds Hermes data; a folder that only
+    // has the launcher (e.g. %LOCALAPPDATA%/hermes/bin on Windows) comes after.
     const QStringList candidates = dataDirCandidates(env);
-    for (const QString &dir : candidates) {
+    auto looksLikeData = [](const QDir &qd) {
+        for (const char *marker : {"config.yaml", ".env", "state.db", "skills", "sessions", "hermes-agent"})
+            if (QFileInfo::exists(qd.filePath(QString::fromLatin1(marker)))) return true;
+        return false;
+    };
+    QStringList ordered;
+    for (const QString &dir : candidates) if (looksLikeData(QDir(dir))) ordered << dir;
+    for (const QString &dir : candidates) if (!ordered.contains(dir)) ordered << dir;
+    for (const QString &dir : ordered) {
         const QDir qd(dir);
         if (!qd.exists()) continue;
         d.dataDir = QDir::toNativeSeparators(qd.absolutePath());

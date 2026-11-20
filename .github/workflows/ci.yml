@@ -153,7 +153,10 @@ jobs:
             # Re-run failing suites directly so their full QtTest log is shown.
             for exe in build-ci/test_* build-ci/Release/test_*; do
               [[ -f "$exe" && -x "$exe" ]] || continue
-              echo "::group::$exe -v1"; "$exe" -v1 2>&1 | tail -n 200 || true; echo "exit: ${PIPESTATUS[0]}"; echo "::endgroup::"
+              echo "::group::$exe"
+              status=0; "$exe" -o "$exe.log,txt" || status=$?
+              cat "$exe.log" 2>/dev/null | tail -n 200; echo "exit status: $status"
+              echo "::endgroup::"
             done
             exit 1
           }
