@@ -282,7 +282,7 @@ The Capacitor client in [`mobile/`](mobile/) connects to a deliberately narrow b
 
 #### Packaging and releases
 
-`npm run package:host` builds native packages for the current OS (`package:linux`, `package:win`, `package:mac`). Pushing a version tag that matches `package.json`, or running the **Release Consiglio** workflow, publishes a release only after every platform package passes validation. Each release includes `SHA256SUMS.txt`, an SPDX SBOM and a Sigstore-backed attestation. Production releases need macOS Developer ID signing and notarization and Windows Authenticode signing; see [Releasing Consiglio](docs/RELEASING.md).
+`npm run package:host` builds native packages for the current OS (`package:linux`, `package:win`, `package:mac`). Pushing a version tag that matches `package.json`, or running the **Release Consiglio** workflow, publishes a release only after every platform package passes validation. Each release includes `SHA256SUMS.txt`, an SPDX SBOM and a Sigstore-backed attestation. Signed releases need macOS Developer ID signing and notarization and Windows Authenticode signing. A tag push fails closed without them; a manual run can explicitly opt in to unsigned macOS and Windows packages. See [Releasing Consiglio](docs/RELEASING.md).
 
 #### Electron architecture
 

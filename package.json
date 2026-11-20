@@ -1,6 +1,6 @@
 {
   "name": "consiglio",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Desktop workspace for Hermes Agent sessions that outlive the terminal, plus an Electron app for the Codex CLI and other coding-agent CLIs.",
   "keywords": [
     "hermes-agent",
