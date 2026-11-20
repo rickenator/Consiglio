@@ -354,22 +354,27 @@ void SettingsDialog::rebuildSession() {
         if (opt.type != "select" || opt.choices.isEmpty()) continue;
         if (!first) cl->addWidget(divider(c));
         first = false;
-        auto *combo = new QComboBox(c);
-        combo->setMinimumWidth(th().px(220));
-        combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        auto *combo = new ui::ElidedCombo(c);
+        combo->setMinimumWidth(th().px(200));
+        combo->setMaximumWidth(th().px(280));
+        combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        combo->setMinimumContentsLength(14);
         QString lastGroup;
         for (const auto &choice : opt.choices) {
             if (!choice.group.isEmpty() && choice.group != lastGroup) {
                 combo->insertSeparator(combo->count());
                 lastGroup = choice.group;
             }
-            combo->addItem(choice.name.isEmpty() ? choice.value : choice.name, choice.value);
-            if (!choice.description.isEmpty()) {
-                combo->setItemData(combo->count() - 1, choice.description, Qt::ToolTipRole);
-            }
+            const QString text = ui::displayChoice(choice.name.isEmpty() ? choice.value : choice.name);
+            combo->addItem(text, choice.value);
+            const QString tip = choice.description.isEmpty() ? text : text + QStringLiteral(" — ") + choice.description;
+            combo->setItemData(combo->count() - 1, tip, Qt::ToolTipRole);
         }
         combo->setCurrentIndex(qMax(0, combo->findData(opt.currentValue)));
         combo->setAccessibleName(opt.name);
+        combo->setToolTip(combo->currentText());
+        connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), combo,
+                [combo]() { combo->setToolTip(combo->currentText()); });
         const QString id = opt.id;
         connect(combo, QOverload<int>::of(&QComboBox::activated), this, [this, combo, id](int idx) {
             m_client->setConfigOption(id, combo->itemData(idx).toString());
@@ -383,8 +388,10 @@ void SettingsDialog::rebuildSession() {
     if (!hasModeOption && !modes.isEmpty()) {
         if (!first) cl->addWidget(divider(c));
         first = false;
-        auto *combo = new QComboBox(c);
-        for (const auto &m : modes) combo->addItem(m.name.isEmpty() ? m.id : m.name, m.id);
+        auto *combo = new ui::ElidedCombo(c);
+        combo->setMaximumWidth(th().px(280));
+        combo->setAccessibleName(tr("Mode"));
+        for (const auto &m : modes) combo->addItem(ui::displayChoice(m.name.isEmpty() ? m.id : m.name), m.id);
         combo->setCurrentIndex(qMax(0, combo->findData(m_client->currentModeId())));
         connect(combo, QOverload<int>::of(&QComboBox::activated), this,
                 [this, combo](int idx) { m_client->setMode(combo->itemData(idx).toString()); });
@@ -399,9 +406,9 @@ void SettingsDialog::rebuildSession() {
     grid->setHorizontalSpacing(th().px(16));
     grid->setVerticalSpacing(th().px(6));
     auto mono = [info](const QString &text) {
-        auto *v = new QLabel(text, info);
+        auto *v = new QLabel(ui::softWrap(text), info);
+        v->setToolTip(text);   // soft-wrapped for display; the tooltip has the exact value
         v->setProperty("role", "mono");
-        v->setTextInteractionFlags(Qt::TextSelectableByMouse);
         v->setWordWrap(true);
         return v;
     };

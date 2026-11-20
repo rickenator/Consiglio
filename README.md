@@ -143,6 +143,8 @@ Reconnecting a task reuses its original session id, so its history, subscription
 
 Hermes updates itself (`hermes update`). Consiglio never pins a Hermes path or version. It resolves `hermes` from `PATH` (or `HERMES_BIN`) each time it starts one. The Hermes ACP client negotiates from the agent's `initialize` response and tolerates unknown protocol fields and methods. If the agent exits, the client relaunches it and re-opens the active session. See [`src-hermes/README.md`](src-hermes/README.md).
 
+The native Hermes client (`src-hermes`) puts every Hermes slash command in its menus, its command palette (Ctrl+K) and composer completion. It reads that list from the running Hermes, so commands added by a Hermes update show up on their own. The toolbar has a Goal button and pickers for the session settings Hermes reports. Hermes setup, health checks, updates and `config.yaml` are under Settings.
+
 ## API Keys And MCP
 
 Open **Secrets** in the conversation header to add credentials. Consiglio stores only encrypted values on disk, restricts the secrets file to the current OS user, and never sends saved values back to the renderer. A saved value can be replaced or removed, but not revealed.

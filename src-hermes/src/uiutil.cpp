@@ -1,3 +1,5 @@
+#include <QStyleOptionComboBox>
+#include <QStylePainter>
 #include "uiutil.h"
 
 #include "theme.h"
@@ -290,6 +292,48 @@ QString relativeTime(const QDateTime &when, const QDateTime &now) {
     if (d.daysTo(today) < 7) return d.toString(QStringLiteral("dddd"));
     if (d.year() == today.year()) return d.toString(QStringLiteral("MMM d"));
     return d.toString(QStringLiteral("MMM d, yyyy"));
+}
+
+} // namespace ui
+
+namespace ui {
+
+void ElidedCombo::paintEvent(QPaintEvent *) {
+    QStylePainter p(this);
+    QStyleOptionComboBox opt;
+    initStyleOption(&opt);
+    p.drawComplexControl(QStyle::CC_ComboBox, opt);
+    if (width() >= sizeHint().width()) {   // room for the full text: draw it as is
+        p.drawControl(QStyle::CE_ComboBoxLabel, opt);
+        return;
+    }
+    const QRect field = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
+    const int iconW = opt.currentIcon.isNull() ? 0 : opt.iconSize.width() + 6;
+    opt.currentText = opt.fontMetrics.elidedText(opt.currentText, Qt::ElideRight, qMax(0, field.width() - iconW));
+    p.drawControl(QStyle::CE_ComboBoxLabel, opt);
+}
+
+QString displayChoice(const QString &s) {
+    if (s.isEmpty() || s != s.toLower()) return s;
+    for (const QChar c : s) if (!c.isLetter() && c != QLatin1Char(' ')) return s;
+    return s.at(0).toUpper() + s.mid(1);
+}
+
+QString softWrap(const QString &s, int chunk) {
+    QString out;
+    out.reserve(s.size() + s.size() / qMax(1, chunk) + 4);
+    int run = 0;
+    for (const QChar c : s) {
+        out += c;
+        if (c == QLatin1Char('/') || c == QLatin1Char('-') || c == QLatin1Char('_') || c == QLatin1Char('.')) {
+            out += QChar(0x200B);
+            run = 0;
+        } else if (++run >= chunk) {
+            out += QChar(0x200B);
+            run = 0;
+        }
+    }
+    return out;
 }
 
 } // namespace ui

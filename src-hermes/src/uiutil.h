@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QComboBox>
+
 #include <QLabel>
 #include <QLayout>
 #include <QString>
@@ -116,5 +118,22 @@ QString maskSecrets(const QString &text);
 
 // A friendly relative time ("just now", "5 min ago", "Yesterday", "Mar 3").
 QString relativeTime(const QDateTime &when, const QDateTime &now);
+
+// A combo box that elides its current text instead of clipping it under the
+// arrow (long model names such as "Custom endpoint · qwen2.5-1.5b-instruct").
+class ElidedCombo : public QComboBox {
+public:
+    using QComboBox::QComboBox;
+protected:
+    void paintEvent(QPaintEvent *event) override;
+};
+
+// Hermes reports some choices as bare lowercase words ("medium"); title-case
+// those for display. Identifiers (models, paths, ids) are left alone.
+QString displayChoice(const QString &s);
+
+// Allow a long identifier or path to wrap: zero-width spaces after
+// separators and every `chunk` characters of an unbroken run.
+QString softWrap(const QString &s, int chunk = 16);
 
 } // namespace ui

@@ -241,6 +241,21 @@ void Theme::rebuild() {
         font.setFamily(pickFamily({"Inter", "Segoe UI", "SF Pro Text", "Helvetica Neue",
                                    "Noto Sans", "IBM Plex Sans", "Cantarell", "Ubuntu",
                                    "DejaVu Sans"}, font.family()));
+#ifdef Q_OS_LINUX
+        // Hermes replies use emoji/symbols (⏸ 📊 ⚡). Qt 5 on Linux often can't
+        // draw colour-bitmap emoji fonts and shows tofu boxes; prefer installed
+        // monochrome symbol fonts as fallbacks for those glyphs.
+        {
+            static const QStringList symbolFonts = []() {
+                QStringList found;
+                const QStringList all = QFontDatabase().families();
+                for (const char *f : {"Noto Sans Symbols 2", "Noto Sans Symbols", "Symbola"})
+                    if (all.contains(QLatin1String(f))) found << QLatin1String(f);
+                return found;
+            }();
+            if (!symbolFonts.isEmpty()) font.setFamilies(QStringList{font.family()} + symbolFonts);
+        }
+#endif
         font.setPixelSize(px(13));
         m_app->setFont(font);
         m_app->setStyleSheet(styleSheet());

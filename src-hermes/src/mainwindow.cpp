@@ -673,33 +673,6 @@ void MainWindow::rebuildCommandMenus() {
     updateActionStates();
 }
 
-namespace {
-// A toolbar picker that elides its current text ("Custom endpoint · qwen2.5…")
-// instead of clipping it under the arrow when Hermes reports a long name.
-class ElidedCombo : public QComboBox {
-public:
-    using QComboBox::QComboBox;
-protected:
-    void paintEvent(QPaintEvent *) override {
-        QStylePainter p(this);
-        QStyleOptionComboBox opt;
-        initStyleOption(&opt);
-        p.drawComplexControl(QStyle::CC_ComboBox, opt);
-        const QRect field = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
-        const int iconW = opt.currentIcon.isNull() ? 0 : opt.iconSize.width() + 6;
-        opt.currentText = opt.fontMetrics.elidedText(opt.currentText, Qt::ElideRight, qMax(0, field.width() - iconW));
-        p.drawControl(QStyle::CE_ComboBoxLabel, opt);
-    }
-};
-// Hermes reports some choices as bare lowercase words ("medium"); title-case
-// those for display. Identifiers (models, paths) are left alone.
-QString displayChoice(const QString &s) {
-    if (s.isEmpty() || s != s.toLower()) return s;
-    for (const QChar c : s) if (!c.isLetter() && c != QLatin1Char(' ')) return s;
-    return s.at(0).toUpper() + s.mid(1);
-}
-}  // namespace
-
 void MainWindow::rebuildConfigCombos() {
     if (!m_toolbar) return;
     for (QAction *a : qAsConst(m_configActions)) { m_toolbar->removeAction(a); }
@@ -713,7 +686,7 @@ void MainWindow::rebuildConfigCombos() {
                         const QList<AcpClient::ConfigChoice> &choices, const QString &current,
                         std::function<void(const QString &)> apply) {
         if (choices.isEmpty()) return;
-        auto *combo = new ElidedCombo(m_toolbar);
+        auto *combo = new ui::ElidedCombo(m_toolbar);
         combo->setObjectName(QStringLiteral("toolbarCombo"));
         combo->setProperty("configId", key);
         combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
@@ -733,7 +706,7 @@ void MainWindow::rebuildConfigCombos() {
                 if (combo->count() > 0) combo->insertSeparator(combo->count());
                 lastGroup = c.group;
             }
-            combo->addItem(itemIcon, displayChoice(c.name.isEmpty() ? c.value : c.name), c.value);
+            combo->addItem(itemIcon, ui::displayChoice(c.name.isEmpty() ? c.value : c.name), c.value);
             const int i = combo->count() - 1;
             QString itemTip = c.description;
             if (!c.group.isEmpty()) itemTip = c.group + (itemTip.isEmpty() ? QString() : QStringLiteral(" — ") + itemTip);
