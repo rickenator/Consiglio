@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QProcessEnvironment>
 #include <vector>
 
 #if defined(Q_OS_UNIX) && !defined(Q_OS_ANDROID)
@@ -9,6 +10,7 @@
 #include <QTimer>
 #include <cerrno>
 #include <csignal>
+#include <pthread.h>
 #include <cstring>
 #include <fcntl.h>
 #include <pty.h>
@@ -43,32 +45,44 @@ bool PtyHandler::start(const QString &program, const QStringList &arguments,
     encodedArguments.append(executable);
     for (const auto &argument : arguments) encodedArguments.append(argument.toLocal8Bit());
 
+    // Encode everything the child needs before forking: between fork and exec
+    // only async-signal-safe calls are allowed, so no Qt/heap work in the child.
+    const QByteArray directory = workingDir.isEmpty() ? QByteArray() : QFile::encodeName(workingDir);
+    // The caller's environment is the complete child environment (so removals
+    // such as CODEX_PERMISSION_PROFILE take effect); an empty one inherits ours.
+    QProcessEnvironment childEnvironment =
+        environment.isEmpty() ? QProcessEnvironment::systemEnvironment() : environment;
+    childEnvironment.insert(QStringLiteral("TERM"), QStringLiteral("xterm-256color"));
+    QList<QByteArray> encodedEnvironment;
+    for (const auto &entry : childEnvironment.toStringList()) encodedEnvironment.append(entry.toLocal8Bit());
+    std::vector<char *> envp;
+    envp.reserve(encodedEnvironment.size() + 1);
+    for (auto &entry : encodedEnvironment) envp.push_back(entry.data());
+    envp.push_back(nullptr);
+    std::vector<char *> argv;
+    argv.reserve(encodedArguments.size() + 1);
+    for (auto &argument : encodedArguments) argv.push_back(argument.data());
+    argv.push_back(nullptr);
+
+    // Block signals across the fork so the child cannot run the parent's
+    // handlers (e.g. a crash/termination handler) before exec resets them.
+    sigset_t allSignals, previousMask;
+    sigfillset(&allSignals);
+    pthread_sigmask(SIG_SETMASK, &allSignals, &previousMask);
     pid_t child = forkpty(&m_masterFd, nullptr, nullptr, &windowSize);
+    if (child == 0) {
+        for (int signalNumber = 1; signalNumber < NSIG; ++signalNumber) ::signal(signalNumber, SIG_DFL);
+        pthread_sigmask(SIG_SETMASK, &previousMask, nullptr);
+        if (!directory.isEmpty() && ::chdir(directory.constData()) != 0) _exit(126);
+        ::execvpe(executable.constData(), argv.data(), envp.data());
+        _exit(127);
+    }
+    pthread_sigmask(SIG_SETMASK, &previousMask, nullptr);
     if (child < 0) {
         m_error = QString::fromLocal8Bit(std::strerror(errno));
         m_masterFd = -1;
         emit errorOccurred(QProcess::FailedToStart);
         return false;
-    }
-
-    if (child == 0) {
-        if (!workingDir.isEmpty()) {
-            const QByteArray directory = QFile::encodeName(workingDir);
-            if (::chdir(directory.constData()) != 0) _exit(126);
-        }
-        for (const auto &key : environment.keys()) {
-            const QByteArray encodedKey = key.toLocal8Bit();
-            const QByteArray encodedValue = environment.value(key).toLocal8Bit();
-            ::setenv(encodedKey.constData(), encodedValue.constData(), 1);
-        }
-        ::setenv("TERM", "xterm-256color", 1);
-
-        std::vector<char *> argv;
-        argv.reserve(encodedArguments.size() + 1);
-        for (auto &argument : encodedArguments) argv.push_back(argument.data());
-        argv.push_back(nullptr);
-        ::execvp(executable.constData(), argv.data());
-        _exit(127);
     }
 
     m_childPid = child;
