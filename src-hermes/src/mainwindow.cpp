@@ -14,6 +14,7 @@
 #include <QScreen>
 #include <QTimer>
 #include <QDir>
+#include <QPushButton>
 #include "fontsettingsdialog.h"
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
@@ -116,9 +117,18 @@ void MainWindow::setupMenuBar() {
     newSessionAction->setShortcut(QKeySequence::New);
     connect(newSessionAction, &QAction::triggered, this, [this]() {
         // Trigger the rail's start with the current directory.
-        onSessionStarted(QDir::homePath());
+        onSessionStarted(m_cwd.isEmpty() ? QDir::homePath() : m_cwd);
     });
     fileMenu->addAction(newSessionAction);
+    // After `hermes update` the running agent keeps the old code until it is
+    // restarted; this relaunches it (re-resolved from PATH) and re-opens the
+    // active session.
+    auto *restartAction = new QAction(tr("&Restart Hermes Agent"), fileMenu);
+    connect(restartAction, &QAction::triggered, this, [this]() {
+        m_stateLabel->setText(tr("Restarting Hermes…"));
+        m_client.restartAgent();
+    });
+    fileMenu->addAction(restartAction);
     fileMenu->addSeparator();
     auto *quitAction = new QAction(tr("E&xit"), fileMenu);
     quitAction->setShortcut(QKeySequence::Quit);
@@ -202,6 +212,14 @@ void MainWindow::connectClient() {
     connect(&m_client, &AcpClient::commandsUpdated, this, &MainWindow::onCommandsUpdated);
     connect(&m_client, &AcpClient::turnCompleted, this, &MainWindow::onTurnCompleted);
     connect(&m_client, &AcpClient::processExited, this, &MainWindow::onProcessExited);
+    connect(&m_client, &AcpClient::turnFailed, this, &MainWindow::onTurnFailed);
+    connect(&m_client, &AcpClient::sessionFailed, this, &MainWindow::onSessionFailed);
+    connect(&m_client, &AcpClient::permissionRequested, this, &MainWindow::onPermissionRequested);
+    connect(&m_client, &AcpClient::permissionCancelled, this, &MainWindow::onPermissionCancelled);
+    connect(&m_client, &AcpClient::agentRestarting, this, &MainWindow::onAgentRestarting);
+    connect(&m_client, &AcpClient::agentRestartFailed, this, &MainWindow::onAgentRestartFailed);
+    connect(&m_client, &AcpClient::agentVersionChanged, this, &MainWindow::onAgentVersionChanged);
+    connect(&m_client, &AcpClient::sessionRestored, this, &MainWindow::onSessionRestored);
 }
 
 void MainWindow::startSession(const QString &cwd) {
@@ -258,7 +276,16 @@ void MainWindow::onPromptSubmitted(const QString &text) {
             tr("Start a session first (left rail → Start Session)."));
         return;
     }
+    if (m_client.isBusy()) return;  // one turn at a time
     m_chat->appendUserMessage(text);
+    if (!m_client.sendPrompt(text)) {
+        m_stateLabel->setText(tr("Could not send the prompt; Hermes is not connected."));
+        return;
+    }
+    beginTurnUi();
+}
+
+void MainWindow::beginTurnUi() {
     m_chat->setBusy(true);
     m_busy = true;
     m_streamedChars = 0;
@@ -266,7 +293,13 @@ void MainWindow::onPromptSubmitted(const QString &text) {
     m_timerLabel->setText("0:00");
     m_tokensLabel->clear();
     m_turnTimer->start();
-    m_client.sendPrompt(text);
+}
+
+void MainWindow::endTurnUi() {
+    m_chat->finalizeTurn();
+    m_chat->setBusy(false);
+    m_busy = false;
+    m_turnTimer->stop();
 }
 
 void MainWindow::onSessionStarted(const QString &cwd) {
@@ -301,13 +334,85 @@ void MainWindow::onReady() {
 }
 
 void MainWindow::onError(const QString &message) {
-    m_stateLabel->setText(tr("Error"));
-    if (!m_active) {
-        // Connection-level error: show it in the state label, not the chat.
-        m_stateLabel->setText(message);
-    } else {
-        m_chat->appendUserMessage(QString("[error] %1").arg(message));
+    // Connection-level errors (launch / initialize / list). Never leave the
+    // UI stuck in "busy" because of one.
+    if (m_busy && !m_client.isBusy()) endTurnUi();
+    m_stateLabel->setText(message);
+}
+
+void MainWindow::onTurnFailed(const QString &message) {
+    endTurnUi();
+    m_chat->appendAgentChunk(tr("⚠ %1").arg(message));
+    m_chat->finalizeTurn();
+    m_stateLabel->setText(tr("Turn failed — ready for the next prompt"));
+}
+
+void MainWindow::onSessionFailed(const QString &message) {
+    setActive(false);
+    m_stateLabel->setText(message);
+}
+
+void MainWindow::onPermissionRequested(const AcpClient::PermissionRequest &request) {
+    // Hermes asks before dangerous commands. Offer exactly the options it
+    // sent (their ids are opaque and may change between Hermes versions);
+    // the button role comes from the option kind, unknown kinds are neutral.
+    auto *box = new QMessageBox(QMessageBox::Warning, tr("Hermes wants to run a command"),
+                                request.title.isEmpty() ? tr("Hermes requests permission.") : request.title,
+                                QMessageBox::NoButton, this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setTextFormat(Qt::PlainText);
+    if (!request.detail.isEmpty() && request.detail != request.title) box->setDetailedText(request.detail);
+    QPushButton *rejectButton = nullptr;
+    for (const auto &opt : request.options) {
+        QMessageBox::ButtonRole role = QMessageBox::ActionRole;
+        if (opt.kind.startsWith("allow")) role = QMessageBox::AcceptRole;
+        else if (opt.kind.startsWith("reject")) role = QMessageBox::RejectRole;
+        QPushButton *b = box->addButton(opt.name.isEmpty() ? opt.optionId : opt.name, role);
+        b->setProperty("acpOptionId", opt.optionId);
+        if (role == QMessageBox::RejectRole && !rejectButton) rejectButton = b;
     }
+    if (rejectButton) box->setDefaultButton(rejectButton);  // safe default
+    const QString key = request.key;
+    connect(box, &QMessageBox::buttonClicked, this, [this, key](QAbstractButton *b) {
+        const QString optionId = b->property("acpOptionId").toString();
+        if (optionId.isEmpty() || !m_client.respondPermission(key, optionId)) m_client.cancelPermission(key);
+    });
+    connect(box, &QDialog::rejected, this, [this, key]() {
+        // Esc / window close without a choice = ACP "cancelled".
+        m_client.cancelPermission(key);
+    });
+    connect(box, &QObject::destroyed, this, [this, key]() { m_permissionDialogs.remove(key); });
+    m_permissionDialogs.insert(key, box);
+    m_stateLabel->setText(tr("Waiting for your approval…"));
+    box->open();
+}
+
+void MainWindow::onPermissionCancelled(const QString &key) {
+    // The request went away (turn ended, session stopped, agent exited).
+    if (auto box = m_permissionDialogs.take(key)) {
+        box->disconnect(this);
+        box->close();
+    }
+}
+
+void MainWindow::onAgentRestarting(int attempt, int delayMs) {
+    setActive(false);
+    m_stateLabel->setText(tr("Hermes exited — reconnecting (attempt %1, %2 s)…")
+                              .arg(attempt).arg(delayMs / 1000.0, 0, 'f', 1));
+}
+
+void MainWindow::onAgentRestartFailed(const QString &message) {
+    if (m_busy) endTurnUi();
+    m_stateLabel->setText(message);
+}
+
+void MainWindow::onAgentVersionChanged(const QString &oldVersion, const QString &newVersion) {
+    statusBar()->showMessage(tr("Hermes updated: %1 → %2").arg(oldVersion, newVersion), 8000);
+}
+
+void MainWindow::onSessionRestored(const QString &sessionId) {
+    Q_UNUSED(sessionId);
+    m_stateLabel->setText(tr("Reconnected — session restored"));
 }
 
 void MainWindow::onMessageChunk(const QString &text) {
@@ -365,10 +470,7 @@ void MainWindow::onCommandsUpdated() {
 
 void MainWindow::onTurnCompleted(const QString &stopReason, qint64 inputTokens, qint64 outputTokens) {
     Q_UNUSED(stopReason);
-    m_chat->finalizeTurn();
-    m_chat->setBusy(false);
-    m_busy = false;
-    m_turnTimer->stop();
+    endTurnUi();
     // Exact in/out from ACP (replaces the live estimate). Show BOTH rates at turn
     // end: input tokens ÷ duration (how fast the model consumed the context) and
     // output tokens ÷ duration (generation speed). Each count carries its own rate.
@@ -385,15 +487,16 @@ void MainWindow::onTurnCompleted(const QString &stopReason, qint64 inputTokens, 
 
 void MainWindow::onProcessExited(int code) {
     Q_UNUSED(code);
+    // The client has already failed any in-flight turn; make sure the UI
+    // isn't left spinning, then wait for the automatic reconnect.
+    if (m_busy) endTurnUi();
     setActive(false);
-    if (!m_busy) {
-        m_stateLabel->setText(tr("Connection lost"));
-    }
+    m_stateLabel->setText(tr("Connection lost"));
 }
 
 void MainWindow::onPaletteAction(const QString &id) {
     if (id == "new-session") {
-        onSessionStarted(QDir::homePath());
+        onSessionStarted(m_cwd.isEmpty() ? QDir::homePath() : m_cwd);
     } else if (id == "clear") {
         m_chat->clearConversation();
     } else if (id == "about") {
@@ -402,15 +505,16 @@ void MainWindow::onPaletteAction(const QString &id) {
     } else if (id.startsWith("/")) {
         // Slash commands are sent to the agent as a prompt WITH the leading "/" —
         // the ACP agent dispatches on the slash (e.g. "/model", "/context").
+        if (!m_client.isReady() || m_client.isBusy()) {
+            m_stateLabel->setText(tr("Start a session first to run %1.").arg(id));
+            return;
+        }
         m_chat->appendUserMessage(id);
-        m_chat->setBusy(true);
-        m_busy = true;
-        m_streamedChars = 0;
-        m_turnStartMs = QDateTime::currentMSecsSinceEpoch();
-        m_timerLabel->setText("0:00");
-        m_tokensLabel->clear();
-        m_turnTimer->start();
-        m_client.sendPrompt(id);
+        if (!m_client.sendPrompt(id)) {
+            m_stateLabel->setText(tr("Could not send %1.").arg(id));
+            return;
+        }
+        beginTurnUi();
     }
 }
 

@@ -48,4 +48,6 @@ enable_testing()
 add_executable(test_acpclient tests/test_acpclient.cpp)
 target_include_directories(test_acpclient PRIVATE src)
 target_link_libraries(test_acpclient PRIVATE Qt5::Core Qt5::Test HermesAcp)
+target_compile_definitions(test_acpclient PRIVATE
+    FAKE_ACP_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fake_hermes_acp.py")
 add_test(NAME AcpClientTests COMMAND test_acpclient)

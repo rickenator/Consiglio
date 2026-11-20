@@ -101,8 +101,10 @@ void CommandPalette::closeOverlay() {
     hide();
     // Hand keyboard focus back to the composer so the user can keep typing
     // right after closing the palette (Esc) or running an action.
-    if (auto *input = parentWidget()->findChild<QLineEdit *>("composerInput"))
-        input->setFocus();
+    if (parentWidget()) {
+        if (auto *input = parentWidget()->findChild<QLineEdit *>("composerInput"))
+            input->setFocus();
+    }
 }
 
 bool CommandPalette::eventFilter(QObject *obj, QEvent *event) {

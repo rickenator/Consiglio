@@ -4,6 +4,9 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QTimer>
+#include <QMap>
+#include <QPointer>
+#include <QMessageBox>
 #include "acpclient.h"
 #include "chatpane.h"
 #include "commandpalette.h"
@@ -40,6 +43,14 @@ private slots:
     void onCommandsUpdated();
     void onTurnCompleted(const QString &stopReason, qint64 inputTokens, qint64 outputTokens);
     void onProcessExited(int code);
+    void onTurnFailed(const QString &message);
+    void onSessionFailed(const QString &message);
+    void onPermissionRequested(const AcpClient::PermissionRequest &request);
+    void onPermissionCancelled(const QString &key);
+    void onAgentRestarting(int attempt, int delayMs);
+    void onAgentRestartFailed(const QString &message);
+    void onAgentVersionChanged(const QString &oldVersion, const QString &newVersion);
+    void onSessionRestored(const QString &sessionId);
     void onPaletteAction(const QString &id);
     void onTimerTick();
     // File picker: "/" at a non-first position opens it; a chosen path is
@@ -59,6 +70,8 @@ private:
     void setActive(bool active);
     void updateModelLabel();
     QString cwd() const;
+    void beginTurnUi();
+    void endTurnUi();
 
     AcpClient m_client;
     ChatPane *m_chat = nullptr;
@@ -84,4 +97,5 @@ private:
     QString m_sessionTitle;  // last title reported by the active session
     int m_filePickerColumn = 0; // cursor column where the "/" that opened the picker was typed
     bool m_filePickerRelative = false; // true when the user typed "./" (current directory)
+    QMap<QString, QPointer<QMessageBox>> m_permissionDialogs; // open approval prompts by request key
 };
