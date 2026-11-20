@@ -1,4 +1,5 @@
 #include "acpclient.h"
+#include "hermessetup.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -61,14 +62,7 @@ QString AcpClient::resolveExecutable(const QString &requested) {
     // the Hermes installer and the Electron shell use). These are install
     // locations, not versions: the launcher in them is kept current by
     // `hermes update`.
-    const QString home = QDir::homePath();
-    const QStringList dirs = {
-        home + QStringLiteral("/.local/bin"),
-        home + QStringLiteral("/.hermes/hermes-agent/venv/bin"),
-        QStringLiteral("/usr/local/bin"),
-        QStringLiteral("/opt/homebrew/bin"),
-        home + QStringLiteral("/bin"),
-    };
+    const QStringList dirs = HermesSetup::standardExecutableDirs(HermesSetup::Environment::current());
     const QString found = QStandardPaths::findExecutable(QStringLiteral("hermes"), dirs);
     if (!found.isEmpty()) return found;
 
@@ -114,6 +108,8 @@ bool AcpClient::launchInternal() {
         if (!m_connected) emit errorOccurred(proc->errorString());
     });
 
+    // HERMES_HOME is set only for a separate Consiglio-managed copy.
+    proc->setProcessEnvironment(HermesSetup::processEnvironment());
     proc->start(m_resolvedExecutable, {QStringLiteral("acp")});
     if (!proc->waitForStarted(8000)) {
         const QString why = proc->errorString();

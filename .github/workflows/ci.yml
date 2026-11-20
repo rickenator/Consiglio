@@ -62,6 +62,119 @@ jobs:
       - name: Bootstrap smoke test (real Codex + Open Interpreter install)
         run: node scripts/bootstrap-smoke.mts
 
+  hermes:
+    name: Hermes client on ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            qt: apt
+          - name: Windows x64
+            runner: windows-2022
+            platform: win
+            arch: x64
+            qt: aqt
+            qt_arch: win64_msvc2019_64
+          - name: macOS Intel
+            runner: macos-15-intel
+            platform: mac
+            arch: x64
+            qt: aqt
+            qt_arch: clang_64
+          - name: macOS Apple Silicon
+            runner: macos-15
+            platform: mac
+            arch: arm64
+            qt: brew
+    defaults:
+      run:
+        shell: bash
+        working-directory: src-hermes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Qt 5 (apt)
+        if: matrix.qt == 'apt'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qtbase5-dev qtbase5-dev-tools libqt5svg5-dev file dpkg-dev
+          echo "QMAKE=/usr/lib/qt5/bin/qmake" >> "$GITHUB_ENV"
+          echo "QT_SOURCE=Ubuntu 24.04 packages" >> "$GITHUB_ENV"
+
+      - name: Install Qt 5 (Homebrew)
+        if: matrix.qt == 'brew'
+        run: |
+          brew install qt@5
+          prefix="$(brew --prefix qt@5)"
+          echo "QT_ROOT_DIR=$prefix" >> "$GITHUB_ENV"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          echo "QT_SOURCE=Homebrew qt@5" >> "$GITHUB_ENV"
+
+      - name: Install Qt 5 (official binaries)
+        if: matrix.qt == 'aqt'
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: '5.15.2'
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Record Qt source
+        if: matrix.qt == 'aqt'
+        run: |
+          echo "QT_SOURCE=Qt online installer (aqtinstall)" >> "$GITHUB_ENV"
+          # Qt 5.15.2's CMake config still links AGL.framework, which current
+          # macOS SDKs no longer ship. Drop it (OpenGL.framework stays).
+          extras="$QT_ROOT_DIR/lib/cmake/Qt5Gui/Qt5GuiConfigExtras.cmake"
+          if [[ "${{ runner.os }}" == "macOS" && -f "$extras" ]]; then
+            sed -i '' -e 's#;/System/Library/Frameworks/AGL.framework##g' -e 's#/System/Library/Frameworks/AGL.framework;##g' "$extras"
+            grep -n "Frameworks" "$extras" || true
+          fi
+
+      - name: Configure
+        run: cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release ${QT_ROOT_DIR:+-DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"}
+
+      - name: Build
+        run: cmake --build build-ci --config Release --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          # The ACP and main-window suites drive the fake agent through a POSIX
+          # shell wrapper; Windows runs the setup and command-catalog suites.
+          if [[ "${{ runner.os }}" == "Windows" ]]; then exclude=(-LE posix); else exclude=(); fi
+          ctest --test-dir build-ci -C Release --output-on-failure "${exclude[@]}" || {
+            # Re-run failing suites directly so their full QtTest log is shown.
+            for exe in build-ci/test_* build-ci/Release/test_*; do
+              [[ -f "$exe" && -x "$exe" ]] || continue
+              echo "::group::$exe"
+              status=0; "$exe" -o "$exe.log,txt" || status=$?
+              cat "$exe.log" 2>/dev/null | tail -n 200; echo "exit status: $status"
+              echo "::endgroup::"
+            done
+            exit 1
+          }
+
+      - name: Package
+        env:
+          BUILD_DIR: ${{ github.workspace }}/src-hermes/build-package
+          SBOM_INPUT: ${{ github.workspace }}/sbom-input/hermes-${{ matrix.platform }}-${{ matrix.arch }}.json
+        run: bash packaging/package.sh ${{ matrix.platform }} ${{ matrix.arch }} "$GITHUB_WORKSPACE/dist-hermes"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Consiglio-Hermes-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}
+          path: dist-hermes/Consiglio-Hermes-*
+          if-no-files-found: error
+          retention-days: 14
+
   mobile-web:
     name: Verify mobile client
     runs-on: ubuntu-24.04

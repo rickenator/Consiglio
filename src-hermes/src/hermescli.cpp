@@ -1,6 +1,7 @@
 #include "hermescli.h"
 
 #include "acpclient.h"
+#include "hermessetup.h"
 #include "uiutil.h"
 
 #include <QFileInfo>
@@ -21,7 +22,7 @@ void HermesCli::setExecutableOverride(const QString &path) {
 }
 
 QString HermesCli::executable() {
-    return AcpClient::resolveExecutable(executableOverride());
+    return AcpClient::resolveExecutable(HermesSetup::launchExecutable());
 }
 
 QString HermesCli::stripAnsi(const QString &text) {
@@ -36,7 +37,7 @@ QProcess *HermesCli::run(const QStringList &args, QObject *context,
                          std::function<void(int, const QString &)> done, int timeoutMs,
                          std::function<void(const QString &)> progress) {
     auto *proc = new QProcess(context);
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QProcessEnvironment env = HermesSetup::processEnvironment();
     env.insert("NO_COLOR", "1");
     env.insert("TERM", "dumb");
     env.insert("PYTHONIOENCODING", "utf-8");
@@ -89,7 +90,17 @@ static QString shellQuote(const QString &s) {
 QStringList HermesCli::terminalCommand(const QStringList &args) {
     QStringList parts{shellQuote(executable())};
     for (const QString &a : args) parts << shellQuote(a);
-    const QString script = parts.join(' ')
+#if defined(Q_OS_WIN)
+    QStringList cmd{"cmd.exe", "/c", "start", "Hermes", "cmd.exe", "/k", executable()};
+    cmd += args;
+    return cmd;
+#else
+    return terminalCommandForScript(parts.join(' '));
+#endif
+}
+
+QStringList HermesCli::terminalCommandForScript(const QString &command) {
+    const QString script = command
         + QStringLiteral("; status=$?; echo; printf 'Press Enter to close… '; read _; exit $status");
 #if defined(Q_OS_MACOS)
     QString escaped = script;
@@ -97,9 +108,8 @@ QStringList HermesCli::terminalCommand(const QStringList &args) {
     return {"osascript", "-e", QStringLiteral("tell application \"Terminal\" to do script \"%1\"").arg(escaped),
             "-e", "tell application \"Terminal\" to activate"};
 #elif defined(Q_OS_WIN)
-    QStringList cmd{"cmd.exe", "/c", "start", "Hermes", "cmd.exe", "/k", executable()};
-    cmd += args;
-    return cmd;
+    Q_UNUSED(script);
+    return {};
 #else
     struct Term { const char *bin; QStringList prefix; };
     const QList<Term> terms = {
@@ -211,4 +221,30 @@ QList<HermesCli::ConfigSection> HermesCli::parseConfigShow(const QString &raw) {
         sections.last().rows.append(row);
     }
     return sections;
+}
+
+bool HermesCli::openInstallerInTerminal(const HermesSetup::InstallCommand &command, QString *error) {
+#if defined(Q_OS_WIN)
+    if (command.windowsArgv.isEmpty()) {
+        if (error) *error = QObject::tr("This install isn't available on Windows.");
+        return false;
+    }
+    // A new console window, so the user sees (and can answer) the installer.
+    if (!QProcess::startDetached(command.windowsArgv.first(), command.windowsArgv.mid(1))) {
+        if (error) *error = QObject::tr("Could not start PowerShell. Run this in PowerShell instead:\n\n%1").arg(command.display);
+        return false;
+    }
+    return true;
+#else
+    const QStringList cmd = terminalCommandForScript(command.posixScript);
+    if (cmd.isEmpty()) {
+        if (error) *error = QObject::tr("No terminal emulator was found. Run this in a terminal instead:\n\n%1").arg(command.display);
+        return false;
+    }
+    if (!QProcess::startDetached(cmd.first(), cmd.mid(1))) {
+        if (error) *error = QObject::tr("Could not open a terminal (%1).").arg(cmd.first());
+        return false;
+    }
+    return true;
+#endif
 }

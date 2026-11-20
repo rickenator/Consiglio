@@ -258,3 +258,31 @@ test('installed front ends are not reinstalled', async () => {
   assert.equal(calls, 0);
   assert.ok(result.every(entry => entry.installed && !entry.attempted));
 });
+
+// Consiglio never installs, updates or reconfigures Hermes Agent from the
+// Electron bootstrap: an existing ~/.hermes (or HERMES_HOME) is the user's.
+// The native Hermes client detects Hermes on first launch and asks first.
+for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
+  test(`bootstrap never touches an existing Hermes environment (${platform})`, async () => {
+    const userDataPath = platform === 'win32' ? 'C:\\Users\\Someone\\AppData\\Roaming\\Consiglio' : '/home/someone/.config/Consiglio';
+    const sim = simulatedInstall(platform, userDataPath);
+    const hermesHome = platform === 'win32' ? 'C:\\Users\\Someone\\AppData\\Local\\hermes' : '/home/someone/.hermes';
+    sim.env.HERMES_HOME = hermesHome;
+    sim.env.HERMES_BIN = platform === 'win32' ? `${hermesHome}\\bin\\hermes.exe` : '/home/someone/.local/bin/hermes';
+    await installMissingAgentFrontends({
+      readiness: [readiness('codex', false), readiness('open-interpreter', false)],
+      userDataPath,
+      env: sim.env,
+      platform,
+      runner: sim.runner,
+      fileExists: sim.fileExists,
+    });
+
+    assert.ok(sim.calls.length > 0);
+    for (const call of sim.calls) {
+      const text = [call.command, ...call.args].join(' ');
+      assert.ok(!/hermes/i.test(text), `bootstrap must not run anything Hermes-related: ${text}`);
+    }
+    assert.equal(sim.env.HERMES_HOME, hermesHome, 'HERMES_HOME is left as it was');
+  });
+}

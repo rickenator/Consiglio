@@ -320,7 +320,10 @@ QString Theme::styleSheet() const {
     const QString check = tintedFile(QStringLiteral("check"), t.accentText);
     const int r = px(8);     // control radius
     const int rl = px(12);   // card radius
-    QString s = QStringLiteral(R"(
+    // MSVC limits one string literal to ~16 KB: the sheet is split into
+    // adjacent raw-string pieces that the compiler concatenates.
+    QString s = QString::fromUtf8(
+R"QSS(
 * { outline: none; }
 QWidget { color: %text; }
 QMainWindow, QDialog { background: %window; }
@@ -440,7 +443,8 @@ QComboBox::drop-down { border: none; width: %p26px; subcontrol-position: right c
 QComboBox::down-arrow { image: url(%chevron); width: %p12px; height: %p12px; }
 QComboBox QAbstractItemView {
     background: %raised; border: 1px solid %borderStrong; border-radius: %rpx;
-    padding: %p4px; selection-background-color: %accentSoft; selection-color: %text;
+)QSS"
+R"QSS(    padding: %p4px; selection-background-color: %accentSoft; selection-color: %text;
     outline: none;
 }
 QComboBox#toolbarCombo { background: transparent; border-color: transparent; }
@@ -452,7 +456,11 @@ QCheckBox::indicator, QRadioButton::indicator {
 QCheckBox::indicator { border-radius: %p4px; }
 QRadioButton::indicator { border-radius: %p8px; }
 QCheckBox::indicator:checked { background: %accent; border-color: %accent; image: url(%check); }
-QRadioButton::indicator:checked { background: %raised; border: %p5px solid %accent; }
+QRadioButton::indicator:checked {
+    border-color: %accent;
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+        stop:0 %raised, stop:0.36 %raised, stop:0.42 %accent, stop:1 %accent);
+}
 QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: %accent; }
 
 /* ── Lists, scroll bars, progress ─────────────────────── */
@@ -553,7 +561,8 @@ QToolButton#blockToggle {
 QToolButton#blockToggle:hover { color: %text; background: transparent; }
 QToolButton#blockAction { background: transparent; border: none; padding: %p3px; border-radius: %p6px; }
 QToolButton#blockAction:hover { background: %hover; }
-QLabel#toolTitle { color: %text; background: transparent;
+)QSS"
+R"QSS(QLabel#toolTitle { color: %text; background: transparent;
     font-family: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace; }
 QLabel#statusBadge { border-radius: %p8px; padding: %p1px %p8px; font-size: %p11px; font-weight: 600;
     background: %hover; color: %textMuted; }
@@ -620,7 +629,7 @@ QLabel#railActiveTitle { font-weight: 600; color: %text; background: transparent
 QLineEdit#railFilter { background: %window; }
 QListWidget#railSessions::item { padding: %p8px %p10px; margin: 1px 0; }
 QLabel#statusDot { background: transparent; }
-)");
+)QSS");
 
     // Scaled sizes: %pNpx → px(N).
     static const QRegularExpression sizeToken(QStringLiteral("%p(\\d+)px"));

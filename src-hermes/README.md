@@ -8,7 +8,39 @@ resumes saved Hermes sessions, and shows Hermes's permission prompts as approval
 This is Consiglio's primary client. The Electron app in `src/` and the earlier Qt client in
 `src-qt/` are optional, legacy backends; see the top-level [README](../README.md#optional-and-legacy-backends).
 
-## Prerequisites
+## Download
+
+Prebuilt packages are on the [releases page](https://github.com/rickenator/Consiglio/releases/latest)
+as `Consiglio-Hermes-<version>-*`: `.deb` and `.AppImage` for Linux x64, `.dmg` for macOS
+(Apple Silicon and Intel) and a portable `.zip` for Windows x64. See the top-level
+[README](../README.md#1-download-consiglio--hermes) for which to pick.
+
+## First-run setup (an existing Hermes is preserved)
+
+`HermesSetupDialog` runs before the main window on first launch (and from
+**Settings → Hermes Agent → Detect Hermes again…**). `HermesSetup::detect()` is read-only: it
+checks `$HERMES_BIN`, `PATH` and the standard folders, runs `hermes --version`, and looks at the
+data folder (`$HERMES_HOME`, `%LOCALAPPDATA%\hermes`, `~/.hermes`) for `config.yaml`, `.env`
+(presence only; never read), sessions, skills and the `hermes-agent` checkout.
+
+| Found | Default | Other choices |
+| --- | --- | --- |
+| an executable | **Use this Hermes as it is**: nothing stored, pinned or changed | a different executable; a separate copy |
+| data but no executable | a different executable | a separate copy; the official installer *with* the existing data, only after ticking a consent box |
+| nothing | open the official installer in a terminal | a different executable; **Skip for now** |
+
+A separate copy (Linux and macOS) runs the official `install.sh` with `HOME` and
+`HERMES_HOME` pointed into its own folder, so it can't touch `~/.hermes`, `~/.local/bin/hermes`
+or shell profiles; the client then launches it with that `HERMES_HOME`. Windows doesn't offer
+it because `install.ps1` always edits the user `PATH`. Choices are stored in `QSettings`
+(`hermes/setupChoice`, `hermes/separateRoot`, and `hermes/executable` only when you pick a path).
+The packages themselves (the `.deb` has no maintainer scripts) never install or change Hermes.
+
+`setuptour` renders the dialog offscreen:
+`QT_QPA_PLATFORM=offscreen ./setuptour --out DIR [--theme light|dark] [--real]`
+(`--real` adds the two screens for the Hermes really installed on this machine, detected read-only).
+
+## Prerequisites (building from source)
 
 - **Hermes Agent**, installed with its official installer
   (`curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` on Linux, macOS and WSL2;
@@ -16,7 +48,8 @@ This is Consiglio's primary client. The Electron app in `src/` and the earlier Q
   provider with `hermes setup` or `hermes model`, and check it with `hermes doctor`.
 - **CMake 3.16+, a C++17 compiler and Qt 5** (Core, Gui, Widgets, Svg, Test). On Debian/Ubuntu: `sudo apt install build-essential cmake qtbase5-dev libqt5svg5-dev`.
   On macOS: `brew install cmake qt@5`, then pass `-DCMAKE_PREFIX_PATH="$(brew --prefix qt@5)"`
-  to CMake. The client is developed and tested on Linux.
+  to CMake. On Windows: Qt 5.15 for MSVC and Visual Studio 2019+. CI builds and tests it on
+  Linux, Windows, macOS Intel and Apple Silicon.
 - `python3` only for the test suites, which use a scripted fake agent.
 
 Run it with `src-hermes/build/ConsiglioHermes [--hermes /path/to/hermes]`.
@@ -29,7 +62,8 @@ cmake --build src-hermes/build -j
 cd src-hermes/build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 ```
 
-`build/` is ignored (`src-hermes/.gitignore`). Three suites run under `ctest`:
+`build/` is ignored (`src-hermes/.gitignore`). Four suites run under `ctest` (on Windows,
+`ctest -LE posix` skips the two that drive the fake agent through a POSIX shell wrapper):
 
 - `test_acpclient` drives a scripted ACP agent
 (`tests/fake_hermes_acp.py`, needs `python3`) through request-vs-response handling, the
@@ -42,6 +76,14 @@ live test against a real `hermes` runs only when one is on `PATH`.
   discovered command is in the menus and palette, that a command added by an update
   appears, that every control has a tooltip and accessible name, that `/goal` is handled
   like any other command, the config pickers, Stop and the disconnected state.
+- `test_hermessetup` builds a fake `HOME` and checks detection order (`HERMES_BIN`, `PATH`,
+  standard folders), that detection is read-only, that an existing Hermes is offered first and
+  **Use as it is** leaves every file, `HERMES_HOME` and the stored path untouched, that the
+  installer only runs when chosen, the consent box for existing data, the separate copy's
+  isolation, and that Windows doesn't offer one.
+
+`packaging/package.sh <linux|mac|win> <arch> <out>` builds the release packages
+(CPack `.deb`, linuxdeploy AppImage, macdeployqt `.dmg`, windeployqt `.zip`).
 
 `uitour` is a screenshot tour, not a test:
 `QT_QPA_PLATFORM=offscreen ./uitour --out DIR [--theme light|dark] [--real]`. Without

@@ -219,7 +219,23 @@ private slots:
     }
 
     void terminalCommandWrapsArgs() {
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+        // CI machines have no terminal emulator: point $TERMINAL at a stand-in.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString term = dir.filePath("fake-terminal");
+        QFile f(term);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("#!/bin/sh\nexit 0\n");
+        f.close();
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        const QByteArray previous = qgetenv("TERMINAL");
+        qputenv("TERMINAL", term.toLocal8Bit());
         const QStringList cmdline = HermesCli::terminalCommand({"--setup"});
+        if (previous.isEmpty()) qunsetenv("TERMINAL"); else qputenv("TERMINAL", previous);
+#else
+        const QStringList cmdline = HermesCli::terminalCommand({"--setup"});
+#endif
         QVERIFY(!cmdline.isEmpty());
         QVERIFY(cmdline.join(' ').contains("--setup"));
     }

@@ -32,3 +32,8 @@ Thumbs.db
 *.rpm
 __pycache__/
 .aider*
+
+# Native Hermes client build/packaging outputs
+src-hermes/build*/
+dist-hermes/
+sbom-input/

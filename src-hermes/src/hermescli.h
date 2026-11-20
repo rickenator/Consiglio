@@ -7,6 +7,8 @@
 #include <QStringList>
 #include <functional>
 
+#include "hermessetup.h"
+
 // Runs the `hermes` CLI for the parts of setup/config that ACP doesn't cover
 // (config show/set, doctor, update, provider setup). The executable is
 // resolved on every call — the user's override if set, else $HERMES_BIN /
@@ -31,6 +33,10 @@ public:
     static bool openInTerminal(const QStringList &args, QString *error = nullptr);
     // The terminal command line that openInTerminal would use (for tests/UI).
     static QStringList terminalCommand(const QStringList &args);
+    // A terminal running `sh -c <command>` (POSIX), left open at the end.
+    static QStringList terminalCommandForScript(const QString &command);
+    // Run the official Hermes installer where the user can see and answer it.
+    static bool openInstallerInTerminal(const HermesSetup::InstallCommand &command, QString *error = nullptr);
 
     static QString stripAnsi(const QString &text);
 

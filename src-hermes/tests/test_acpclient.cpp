@@ -364,7 +364,7 @@ void AcpClientTest::relaunchWorksAfterAgentExit() {
     AcpClient client;
     client.setAutoRestart(false);
     QSignalSpy exited(&client, &AcpClient::processExited);
-    QVERIFY(client.launch("/bin/true"));
+    QVERIFY(client.launch(QStandardPaths::findExecutable("true")));
     QTRY_COMPARE_WITH_TIMEOUT(exited.count(), 1, 5000);
     QVERIFY(writeWrapper("1.0.0", "full"));
     QSignalSpy connected(&client, &AcpClient::connected);
