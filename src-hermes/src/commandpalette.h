@@ -1,19 +1,27 @@
 #pragma once
 
-#include <QWidget>
-#include <QList>
+#include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
+#include <QListView>
+#include <QStandardItemModel>
+#include <QWidget>
 
+// One entry in the command palette.
 struct PaletteAction {
-    QString id;        // stable identifier, e.g. "new-session" or "/model"
-    QString label;     // display text, e.g. "Model" or "New Session"
-    QString shortcut;  // hint, e.g. "Ctrl+N"
+    QString id;           // what actionSelected() reports ("/model", "app:settings", …)
+    QString label;        // "Switch Model"
+    QString shortcut;     // "Ctrl+N" (display only)
+    QString description;  // one line under/after the label
+    QString group;        // section title ("Session", "Hermes · Info & Diagnostics")
+    QString icon;         // icon name in :/icons
+    QString keywords;     // extra search terms (aliases, "/name")
+    QString detail;       // right-aligned hint, e.g. "/model"
+    bool enabled = true;
 };
 
-// A compact, searchable action palette (Ctrl+K). Lists app actions plus the
-// Hermes slash commands the session exposes (/model, /context, /tools, …).
-// Type to filter; Enter runs the highlighted action; Esc closes.
+// A Ctrl+K command palette: a dimmed overlay over the window with a search
+// field and a grouped, keyboard-driven list. Matches on label, command name,
+// aliases and description.
 class CommandPalette : public QWidget {
     Q_OBJECT
 
@@ -21,25 +29,38 @@ public:
     explicit CommandPalette(QWidget *parent = nullptr);
 
     void setActions(const QList<PaletteAction> &actions);
-    void open();
+    QList<PaletteAction> actions() const { return m_actions; }
+    void open(const QString &query = QString());
     void closeOverlay();
+    bool isOpen() const { return isVisible(); }
+
+    // For tests: ids currently listed (in order) for the current query.
+    QStringList visibleIds() const;
+    void setQuery(const QString &query);
+    void triggerCurrent();
 
 signals:
     void actionSelected(const QString &id);
 
-public slots:
-    void onFilterTextChanged(const QString &text);
-    void onRunHighlighted();
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void setupUI();
-    void refreshList();
+    void rebuild();
+    void layoutSheet();
+    void moveSelection(int delta);
+    void selectFirst();
 
-protected:
-    bool eventFilter(QObject *obj, QEvent *event) override;
-
-    QWidget *m_overlay = nullptr;
+    QWidget *m_sheet = nullptr;
+    QLabel *m_searchIcon = nullptr;
     QLineEdit *m_filter = nullptr;
-    QListWidget *m_list = nullptr;
+    QListView *m_list = nullptr;
+    QStandardItemModel *m_model = nullptr;
+    QLabel *m_footer = nullptr;
+    QLabel *m_count = nullptr;
     QList<PaletteAction> m_actions;
 };

@@ -1,6 +1,9 @@
 #include "filepicker.h"
 
+#include "theme.h"
+
 #include <QDir>
+#include <QFrame>
 #include <QEvent>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -19,54 +22,38 @@ void FilePicker::setupUI() {
     overlayLayout->setContentsMargins(0, 0, 0, 0);
 
     m_overlay = new QWidget(this);
-    m_overlay->setObjectName("filePickerOverlay");
-    m_overlay->setStyleSheet(R"(
-        QWidget#filePickerOverlay { background: rgba(1, 4, 9, 0.55); }
-    )");
+    m_overlay->setObjectName("overlayDim");
+    m_overlay->setAttribute(Qt::WA_StyledBackground);
     overlayLayout->addWidget(m_overlay); // fill the window so the dim + panel show
 
-    auto *panel = new QWidget(m_overlay);
-    panel->setObjectName("filePickerPanel");
-    panel->setStyleSheet(R"(
-        QWidget#filePickerPanel {
-            background: #161b22; border: 1px solid #30363d; border-radius: 14px;
-        }
-    )");
+    auto &t = Theme::instance();
+    auto *panel = new QFrame(m_overlay);
+    panel->setObjectName("paletteSheet");
+    panel->setMinimumSize(t.px(600), t.px(420));
+    panel->setAccessibleName(tr("Insert a path"));
     auto *panelLayout = new QVBoxLayout(panel);
-    panelLayout->setContentsMargins(16, 16, 16, 16);
-    panelLayout->setSpacing(10);
+    panelLayout->setContentsMargins(t.px(14), t.px(12), t.px(14), t.px(12));
+    panelLayout->setSpacing(t.px(6));
 
     m_pathLabel = new QLabel(panel);
     m_pathLabel->setObjectName("filePickerPath");
-    m_pathLabel->setStyleSheet(R"(
-        QLabel#filePickerPath { color: #8b949e; font-family: 'JetBrains Mono', monospace; }
-    )");
+    m_pathLabel->setProperty("role", "faint");
     panelLayout->addWidget(m_pathLabel);
 
     m_filter = new QLineEdit(panel);
-    m_filter->setObjectName("filePickerFilter");
-    m_filter->setPlaceholderText(tr("Type to filter… Enter inserts · double-click browses · Esc closes"));
-    m_filter->setStyleSheet(R"(
-        QLineEdit#filePickerFilter {
-            background: #0d1117; border: 1px solid #30363d;
-            border-radius: 10px; padding: 12px 14px; color: #c9d1d9;
-            font-family: 'Segoe UI', sans-serif;
-        }
-        QLineEdit#filePickerFilter:focus { border-color: #58a6ff; }
-    )");
+    m_filter->setObjectName("paletteSearch");
+    m_filter->setAccessibleName(tr("Filter files"));
+    m_filter->setPlaceholderText(tr("Filter…   Enter inserts · double-click opens a folder · Esc closes"));
     panelLayout->addWidget(m_filter);
 
     m_list = new QListWidget(panel);
-    m_list->setObjectName("filePickerList");
-    m_list->setStyleSheet(R"(
-        QListWidget#filePickerList { background: transparent; border: none; }
-        QListWidget::item { padding: 10px 12px; border-radius: 8px; color: #c9d1d9; }
-        QListWidget::item:selected { background: rgba(88, 166, 255, 0.18); color: #f0f6fc; }
-    )");
+    m_list->setObjectName("paletteList");
+    m_list->setIconSize(QSize(t.px(16), t.px(16)));
+    m_list->setAccessibleName(tr("Files and folders"));
     panelLayout->addWidget(m_list, 1);
 
     auto *centering = new QVBoxLayout(m_overlay);
-    centering->setContentsMargins(0, 120, 0, 0);
+    centering->setContentsMargins(0, t.px(90), 0, 0);
     centering->addStretch();
     auto *panelRow = new QHBoxLayout();
     panelRow->addStretch();
@@ -108,7 +95,7 @@ void FilePicker::closeOverlay() {
     hide();
     // Hand keyboard focus back to the composer so the user can keep typing
     // right after closing the picker (Esc) or inserting a path.
-    if (auto *input = parentWidget()->findChild<QLineEdit *>("composerInput"))
+    if (auto *input = parentWidget()->findChild<QWidget *>("composerInput"))
         input->setFocus();
 }
 
@@ -138,7 +125,8 @@ void FilePicker::refreshList() {
         QDir parent(m_current);
         parent.cdUp();
         up->setData(Qt::UserRole, parent.absolutePath());
-        up->setToolTip("Go to parent directory");
+        up->setToolTip(tr("Go to parent directory"));
+        up->setIcon(Theme::instance().icon("arrow-up"));
     }
     for (const QFileInfo &info : entries) {
         if (info.isHidden()) continue;
@@ -149,7 +137,9 @@ void FilePicker::refreshList() {
             QString("%1%2").arg(name, isDir ? "/" : ""), m_list);
         item->setData(Qt::UserRole, info.absoluteFilePath());
         // Directories get a subtle folder glyph so they read as navigable.
-        if (isDir) item->setToolTip(info.absoluteFilePath());
+        item->setIcon(Theme::instance().icon(isDir ? "folder" : "file-text",
+                                             isDir ? Theme::instance().tokens().accent : QColor()));
+        item->setToolTip(info.absoluteFilePath());
     }
     if (m_list->currentRow() < 0 && m_list->count() > 0) {
         m_list->setCurrentRow(0);
@@ -215,20 +205,8 @@ bool FilePicker::eventFilter(QObject *obj, QEvent *event) {
             return true;
         }
     }
-    // A click on the dimmed area (outside the panel) dismisses the picker. The
-    // panel and its children swallow their own clicks, so this only fires for
-    // outside clicks. Commits the highlighted entry — a file, or a directory
-    // with a trailing "/" (the ".." row is navigation, never committed).
     if (obj == m_overlay && event->type() == QEvent::MouseButtonPress) {
-        auto *item = m_list->currentItem();
-        if (item && item->text() != "..") {
-            const QString path = item->data(Qt::UserRole).toString();
-            if (!path.isEmpty()) {
-                emit pathSelected(QFileInfo(path).isDir() ? path + "/" : path);
-                closeOverlay();
-                return true;
-            }
-        }
+        // A click outside the panel cancels, like Esc.
         closeOverlay();
         return true;
     }
