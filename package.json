@@ -1,7 +1,17 @@
 {
   "name": "consiglio",
   "version": "0.1.1",
-  "description": "A cross-platform desktop control plane for Codex-compatible agents.",
+  "description": "Desktop workspace for Hermes Agent sessions that outlive the terminal, plus an Electron app for the Codex CLI and other coding-agent CLIs.",
+  "keywords": [
+    "hermes-agent",
+    "hermes",
+    "agent-client-protocol",
+    "ai-agent",
+    "desktop-app",
+    "codex",
+    "electron",
+    "qt"
+  ],
   "author": {
     "name": "Rick Goldberg, Aniviza LLC Productions",
     "email": "rick@aniviza.com"
@@ -65,8 +75,8 @@
       ],
       "category": "Development",
       "icon": "build/icons/icon.png",
-      "synopsis": "Desktop control plane for Codex CLI",
-      "description": "A native desktop control plane for Codex-compatible agents with session tracking, review tooling, provider health checks, and remote llama.cpp support.",
+      "synopsis": "Desktop workspace for coding-agent CLIs",
+      "description": "Consiglio's Electron app: a desktop workspace for the Codex CLI and other coding-agent CLIs, with persistent tasks, provider health checks, encrypted secrets and remote llama.cpp support. The native Hermes Agent client is built from src-hermes.",
       "syncDesktopName": true
     },
     "deb": {

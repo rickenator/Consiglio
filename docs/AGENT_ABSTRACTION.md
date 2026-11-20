@@ -1,5 +1,7 @@
 # Agent Abstraction
 
+> **Scope:** this document covers the **Electron app** (`src/`), one of Consiglio's optional, legacy backends, which runs the Codex CLI plus preview adapters for other coding-agent CLIs. Consiglio's primary client is now the native Hermes Agent client in [`src-hermes`](../src-hermes/README.md); see the [README](../README.md).
+
 ## Objective
 
 Replace the hardcoded Codex dependency with a pluggable `AgentAdapter` interface so Consiglio can host Codex, Open Interpreter, Aider, Claude Code, and future CLI-based agents behind one normalized event model.

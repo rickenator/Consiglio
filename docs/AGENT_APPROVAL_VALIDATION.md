@@ -1,5 +1,7 @@
 # Agent approval protocol validation
 
+> **Scope:** this document covers the **Electron app** (`src/`), one of Consiglio's optional, legacy backends, which runs the Codex CLI plus preview adapters for other coding-agent CLIs. Consiglio's primary client is now the native Hermes Agent client in [`src-hermes`](../src-hermes/README.md); see the [README](../README.md).
+
 Issue #20 routes approve and reject decisions to the exact adapter session that emitted a normalized approval request. The automated suite validates ownership, replay protection, session cleanup, desktop/mobile routing, and PTY input sequences.
 
 ## Automated validation

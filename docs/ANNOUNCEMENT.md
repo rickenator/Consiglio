@@ -1,5 +1,7 @@
 # Announcing Consiglio
 
+> **Historical:** this is the v0.1.0 announcement of the Electron app for Codex. Consiglio now centres on [Hermes Agent](https://github.com/NousResearch/hermes-agent) through its native client, [`src-hermes`](../src-hermes/README.md); see the [README](../README.md).
+
 By Rick Goldberg, Aniviza LLC Productions
 
 Consiglio is an open-source desktop workspace for Codex tasks that need to survive beyond one terminal session.

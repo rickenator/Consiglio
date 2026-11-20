@@ -194,7 +194,7 @@ export default function EventTimeline({ sessionId, compact = false, onCopySessio
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="codex-empty-state" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <span>Start a task and tell Codex what you want done.</span>
+            <span>Start a task and describe what you want done.</span>
             <button className="codex-button codex-button-primary" onClick={() => void onRequestNewSession()}>
               New task
             </button>
@@ -312,7 +312,7 @@ export default function EventTimeline({ sessionId, compact = false, onCopySessio
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Codex, paste a URL, or add documents"
+            placeholder="Ask the agent, paste a URL, or add documents"
             disabled={isSending || isAwaitingResponse}
             className="codex-textarea"
             rows={2}

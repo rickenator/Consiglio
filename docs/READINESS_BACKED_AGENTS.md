@@ -1,5 +1,7 @@
 # Readiness-backed agent selection
 
+> **Scope:** this document covers the **Electron app** (`src/`), one of Consiglio's optional, legacy backends, which runs the Codex CLI plus preview adapters for other coding-agent CLIs. Consiglio's primary client is now the native Hermes Agent client in [`src-hermes`](../src-hermes/README.md); see the [README](../README.md).
+
 Consiglio detects agent CLIs asynchronously before enabling them in the discussion selector.
 
 The readiness result records installation, authentication or configuration state, version, diagnostics, support tier, and whether the agent is selectable. Codex is selectable only when its CLI is installed and authenticated. Preview integrations are selectable when their executable answers a version probe; provider and authentication readiness remain explicit as unknown until launch and real-CLI validation.
