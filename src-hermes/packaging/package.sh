@@ -81,8 +81,20 @@ mac)
     macdeployqt="${MACDEPLOYQT:-$(command -v macdeployqt)}"
     "$macdeployqt" "$app" -always-overwrite
     # Nothing in the bundle may point back at the build machine's Qt.
-    if find "$app/Contents" -type f \( -perm -111 -o -name '*.dylib' \) -print0 |
-        xargs -0 otool -L 2>/dev/null | grep -E '^\s+(/opt/homebrew|/usr/local|/Users/)' ; then
+    # (A dylib's own install name is listed first by otool -L and doesn't
+    # matter at load time, so only its dependencies are checked.)
+    leaks=0
+    while IFS= read -r -d '' f; do
+        id="$(otool -D "$f" 2>/dev/null | sed -n 2p)"
+        deps="$(otool -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}')"
+        while IFS= read -r dep; do
+            [ -n "$dep" ] && [ "$dep" != "$id" ] || continue
+            case "$dep" in
+                /opt/homebrew/*|/usr/local/*|/Users/*) echo "$f -> $dep"; leaks=1 ;;
+            esac
+        done <<< "$deps"
+    done < <(find "$app/Contents" -type f \( -perm -111 -o -name '*.dylib' \) -print0)
+    if [ "$leaks" -ne 0 ]; then
         echo "bundle still links against build-machine libraries" >&2; exit 1
     fi
     # Unsigned builds still need an ad-hoc signature to launch on Apple silicon.

@@ -149,7 +149,14 @@ jobs:
           # The ACP and main-window suites drive the fake agent through a POSIX
           # shell wrapper; Windows runs the setup and command-catalog suites.
           if [[ "${{ runner.os }}" == "Windows" ]]; then exclude=(-LE posix); else exclude=(); fi
-          ctest --test-dir build-ci -C Release --output-on-failure "${exclude[@]}"
+          ctest --test-dir build-ci -C Release --output-on-failure "${exclude[@]}" || {
+            # Re-run failing suites directly so their full QtTest log is shown.
+            for exe in build-ci/test_* build-ci/Release/test_*; do
+              [[ -f "$exe" && -x "$exe" ]] || continue
+              echo "::group::$exe -v1"; "$exe" -v1 2>&1 | tail -n 200 || true; echo "exit: ${PIPESTATUS[0]}"; echo "::endgroup::"
+            done
+            exit 1
+          }
 
       - name: Package
         env:
