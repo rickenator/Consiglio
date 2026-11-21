@@ -45,6 +45,8 @@ add_library(HermesUi STATIC
     src/commandpalette.h
     src/commanddialog.cpp
     src/commanddialog.h
+    src/commandui.cpp
+    src/commandui.h
     src/hermescli.cpp
     src/hermescli.h
     src/settingsdialog.cpp
@@ -125,6 +127,13 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_commandcatalog.cpp")
     target_compile_definitions(test_commandcatalog PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     add_test(NAME CommandCatalogTests COMMAND test_commandcatalog)
     set_tests_properties(CommandCatalogTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_commandui.cpp")
+    add_executable(test_commandui tests/test_commandui.cpp)
+    target_link_libraries(test_commandui PRIVATE Qt5::Test HermesUi)
+    add_test(NAME CommandUiTests COMMAND test_commandui)
+    set_tests_properties(CommandUiTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mainwindow.cpp")

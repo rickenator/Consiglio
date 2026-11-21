@@ -25,6 +25,7 @@ enum Roles {
     ShortcutRole,
     DetailRole,
     EnabledRole,
+    BadgeRole,
 };
 
 class PaletteDelegate : public QStyledItemDelegate {
@@ -73,10 +74,11 @@ public:
         }
         x += iconSize + t.px(12);
 
-        // Right side: shortcut keycap, else detail ("/model").
+        // Right side: badge ("Dialog"/"Chat"), then shortcut keycap, else detail ("/model").
         int right = r.right() - pad;
         const QString shortcut = index.data(ShortcutRole).toString();
         const QString detail = index.data(DetailRole).toString();
+        const QString badge = index.data(BadgeRole).toString();
         QFont small = base;
         small.setPixelSize(t.px(11));
         if (!shortcut.isEmpty()) {
@@ -102,6 +104,23 @@ public:
             p->setPen(tk.textFaint);
             p->drawText(QRect(right - w, r.top(), w, r.height()), Qt::AlignVCenter | Qt::AlignRight, d);
             right -= w + t.px(12);
+        }
+        if (!badge.isEmpty()) {
+            QFont bf = small;
+            bf.setPixelSize(t.px(10));
+            bf.setWeight(QFont::DemiBold);
+            p->setFont(bf);
+            const QFontMetrics bm(bf);
+            const int bw = bm.horizontalAdvance(badge) + t.px(12);
+            const int bh = t.px(18);
+            QRectF pill(right - bw, r.top() + (r.height() - bh) / 2.0, bw, bh);
+            const bool dialog = badge.compare(QLatin1String("Dialog"), Qt::CaseInsensitive) == 0;
+            p->setPen(Qt::NoPen);
+            p->setBrush(dialog ? tk.accentSoft : tk.hover);
+            p->drawRoundedRect(pill, t.px(7), t.px(7));
+            p->setPen(dialog ? tk.accent : tk.textMuted);
+            p->drawText(pill, Qt::AlignCenter, badge);
+            right -= bw + t.px(8);
         }
 
         // Label, then the description in a fainter colour.
@@ -209,7 +228,7 @@ void CommandPalette::setupUI() {
     footerBar->setObjectName("paletteFooterBar");
     auto *fl = new QHBoxLayout(footerBar);
     fl->setContentsMargins(t.px(8), t.px(8), t.px(8), t.px(9));
-    m_footer = new QLabel(tr("↑↓ navigate   ↵ run   Esc close"), footerBar);
+    m_footer = new QLabel(tr("↑↓ navigate   ↵ run   Esc close    Dialog = UI    Chat = / command"), footerBar);
     m_footer->setObjectName("paletteFooter");
     m_count = new QLabel(footerBar);
     m_count->setObjectName("paletteFooter");
@@ -258,6 +277,7 @@ void CommandPalette::rebuild() {
             it->setData(a.icon, IconRole);
             it->setData(a.shortcut, ShortcutRole);
             it->setData(a.detail, DetailRole);
+            it->setData(a.badge, BadgeRole);
             it->setData(a.enabled, EnabledRole);
             it->setData(a.description.isEmpty() ? a.label : a.label + ". " + a.description, Qt::AccessibleTextRole);
             it->setFlags(a.enabled ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable) : Qt::ItemIsEnabled);
@@ -280,6 +300,7 @@ void CommandPalette::rebuild() {
             it->setData(a.icon, IconRole);
             it->setData(a.shortcut, ShortcutRole);
             it->setData(a.detail.isEmpty() ? a.group : a.detail, DetailRole);
+            it->setData(a.badge, BadgeRole);
             it->setData(a.enabled, EnabledRole);
             it->setData(a.description.isEmpty() ? a.label : a.label + ". " + a.description, Qt::AccessibleTextRole);
             it->setFlags(a.enabled ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable) : Qt::ItemIsEnabled);

@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QToolBar>
 #include <QToolButton>
@@ -120,13 +121,16 @@ private slots:
         QVERIFY(w->catalog()->contains("zz-newfeature"));
         QAction *a = findCommand(w->hermesMenu(), "zz-newfeature");
         QVERIFY(a);
-        QVERIFY(a->menu());                              // [on|off|status] → choices submenu
-        QStringList texts;
-        for (QAction *c : a->menu()->actions()) texts << c->text();
-        QVERIFY(texts.contains("on") && texts.contains("off") && texts.contains("status"));
+        QVERIFY(!a->menu());                             // unknown commands open the console, no choice submenu
         bool inPalette = false;
-        for (const auto &p : w->palette()->actions()) inPalette |= p.id == "/zz-newfeature";
+        QString badge;
+        for (const auto &p : w->palette()->actions()) {
+            if (p.id == "/zz-newfeature") { inPalette = true; badge = p.badge; }
+        }
         QVERIFY(inPalette);
+        QCOMPARE(badge, QString("Chat"));
+        QScopedPointer<QDialog> d(w->createCommandDialog("zz-newfeature"));
+        QVERIFY(qobject_cast<CommandDialog *>(d.data()));
     }
 
     void everyControlIsLabelled() {
@@ -153,7 +157,8 @@ private slots:
     }
 
     // /goal is an ordinary command: grouped with the other planning and
-    // automation commands, its fixed choices in a submenu, nothing special.
+    // automation commands, nothing special. Unmapped commands use the Command
+    // console rather than a choices submenu that echoes into the chat.
     void goalIsAnOrdinaryCommand() {
         QScopedPointer<MainWindow> w(makeWindow());
         QVERIFY(waitDiscovered(w.data()));
@@ -163,28 +168,52 @@ private slots:
             QVERIFY2(!c->objectName().contains("goal", Qt::CaseInsensitive), qPrintable(c->objectName()));
         QAction *goal = findCommand(w->hermesMenu(), "goal");
         QVERIFY(goal);
-        QVERIFY(goal->menu());
+        QVERIFY(!goal->menu());
         QAction *group = nullptr;
         for (QAction *a : w->hermesMenu()->actions())
             if (a->menu() && a->menu()->actions().contains(goal)) group = a;
         QVERIFY(group);
         QCOMPARE(group->property("catalogGroup").toString(), QString("automation"));
-        QAction *pause = nullptr;
-        for (QAction *a : goal->menu()->actions()) if (a->text() == "pause") pause = a;
-        QVERIFY(pause);
         QVERIFY(w->runCommand("/goal ship the release notes"));
         QTRY_VERIFY_WITH_TIMEOUT(w->stateText().startsWith("Ready"), 10000);
-        pause->trigger();
-        QTRY_VERIFY_WITH_TIMEOUT(QString::fromUtf8(QJsonDocument(logged("session/prompt").last()).toJson()).contains("/goal pause"), 10000);
-        // Free-form arguments go through the same generic command form as any other command.
         QScopedPointer<QDialog> d(w->createCommandDialog("goal"));
         auto *cd = qobject_cast<CommandDialog *>(d.data());
         QVERIFY(cd);
         cd->setArguments("write the changelog");
         QCOMPARE(cd->commandLine(), QString("/goal write the changelog"));
         bool inPalette = false;
-        for (const auto &p : w->palette()->actions()) inPalette |= p.id == "/goal";
+        QString badge;
+        for (const auto &p : w->palette()->actions()) {
+            if (p.id == "/goal") { inPalette = true; badge = p.badge; }
+        }
         QVERIFY(inPalette);
+        QCOMPARE(badge, QString("Chat"));
+    }
+
+    void modelsDialogAppliesOnlyOnSave() {
+        QScopedPointer<MainWindow> w(makeWindow());
+        QVERIFY(waitDiscovered(w.data()));
+        QTRY_VERIFY_WITH_TIMEOUT(!w->client()->configOptions().isEmpty(), 10000);
+        QScopedPointer<QDialog> d(w->createCommandDialog("models"));
+        auto *host = qobject_cast<CommandHostDialog *>(d.data());
+        QVERIFY(host);
+        QVERIFY(host->pickerCount() >= 2);
+        QCOMPARE(host->selectedValue(), QString("fake/model"));
+        QVERIFY(host->previewBody().contains("fake"));
+        QVERIFY(!host->saveButton()->isEnabled());          // nothing dirty yet
+        QCOMPARE(logged("session/set_config_option").size(), 0);
+        host->setSelectedValue("fake/large");
+        QVERIFY(host->isDirty());
+        QVERIFY(host->previewHeadline().contains("Large") || host->previewBody().contains("fake/large"));
+        QVERIFY(host->saveButton()->isEnabled());
+        QCOMPARE(logged("session/set_config_option").size(), 0);
+        const auto req = host->applyRequest();
+        QCOMPARE(req.method, CommandApply::ConfigOption);
+        QCOMPARE(req.configId, QString("model"));
+        QCOMPARE(req.value, QString("fake/large"));
+        QString badge;
+        for (const auto &p : w->palette()->actions()) if (p.id == "/model") badge = p.badge;
+        QCOMPARE(badge, QString("Dialog"));
     }
 
     void helloWorldTurn() {
@@ -232,11 +261,12 @@ private slots:
         QScopedPointer<MainWindow> w(makeWindow());
         QVERIFY(waitDiscovered(w.data()));
         QScopedPointer<QDialog> d(w->createCommandDialog("queue"));
-        auto *cd = qobject_cast<CommandDialog *>(d.data());
-        QVERIFY(cd);
-        QVERIFY(!cd->canRun());
-        cd->setArguments("then write tests");
-        QCOMPARE(cd->commandLine(), QString("/queue then write tests"));
+        auto *host = qobject_cast<CommandHostDialog *>(d.data());
+        QVERIFY(host);
+        QVERIFY(!host->canApply());
+        host->setTextArgument("then write tests");
+        QCOMPARE(host->commandLine(), QString("/queue then write tests"));
+        QVERIFY(host->canApply());
     }
 
     void badExecutableShowsDisconnected() {

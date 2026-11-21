@@ -12,6 +12,7 @@
 #include "chatpane.h"
 #include "commandcatalog.h"
 #include "commandpalette.h"
+#include "commandui.h"
 #include "filepicker.h"
 #include "fontsettings.h"
 #include "sessionrail.h"
@@ -70,10 +71,10 @@ public:
     // first when none is open.
     bool runCommand(const QString &line);
     // What a menu item does: run directly, or open the command's dialog.
-    void triggerCommand(const QString &name);
+    void triggerCommand(const QString &name, const QString &prefill = QString());
     SettingsDialog *openSettings(const QString &page = QString());
     // Build (but don't exec) dialogs — used by the screenshot tour.
-    QDialog *createCommandDialog(const QString &name);
+    QDialog *createCommandDialog(const QString &name, const QString &prefill = QString());
     void refreshCommands();
 
 protected:
@@ -148,6 +149,10 @@ private:
     void restyle();
     void applyZoom(double delta);
     void updateResponsive();   // fit the chrome to the window width (no clipped toolbar)
+    bool handleCommandAppLink(const CommandPlan &plan);
+    void seedCommandHost(class CommandHostDialog *dialog);
+    void applyCommandHost(class CommandHostDialog *dialog, const CommandApplyRequest &request);
+    void finishCommandHostQuiet(const QString &command, const QString &output, bool ok);
 
     AcpClient m_client;
     CommandCatalog m_catalog;
@@ -200,4 +205,9 @@ private:
     int m_filePickerColumn = 0; // cursor column where the "/" that opened the picker was typed
     bool m_filePickerRelative = false; // true when the user typed "./" (current directory)
     QMap<QString, QPointer<QDialog>> m_permissionDialogs; // open approval prompts by request key
+    QPointer<CommandHostDialog> m_commandUi;
+    QString m_pendingConfigId;
+    QString m_pendingPersistLine;
+    enum class CommandUiWait { None, Seed, Apply, Persist } m_commandUiWait = CommandUiWait::None;
 };
+

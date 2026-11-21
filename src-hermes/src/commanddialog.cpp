@@ -1,6 +1,8 @@
 #include "commanddialog.h"
 
 #include "theme.h"
+
+#include <QCoreApplication>
 #include "uiutil.h"
 
 #include <QDialogButtonBox>
@@ -80,7 +82,7 @@ QFrame *previewCard(QLabel **label, QWidget *parent) {
 CommandDialog::CommandDialog(const CommandCatalog::Command &command, QWidget *parent)
     : QDialog(parent), m_command(command) {
     auto &t = Theme::instance();
-    setWindowTitle(command.label);
+    setWindowTitle(command.label.isEmpty() ? tr("Command") : command.label);
     setModal(true);
     setMinimumWidth(t.px(520));
     ui::fitOnShow(this);
@@ -88,7 +90,17 @@ CommandDialog::CommandDialog(const CommandCatalog::Command &command, QWidget *pa
     l->setContentsMargins(t.px(22), t.px(20), t.px(22), t.px(18));
     l->setSpacing(t.px(12));
 
-    l->addWidget(dialogHeader(command.icon, command.label, QStringLiteral("/") + command.name, this));
+    const QString subtitle = command.name.isEmpty() ? QStringLiteral("/ …")
+                                                    : QStringLiteral("/") + command.name;
+    l->addWidget(dialogHeader(command.icon.isEmpty() ? QStringLiteral("command") : command.icon,
+                              command.label.isEmpty() ? tr("Command") : command.label,
+                              subtitle, this));
+    auto *note = new QLabel(tr("This command will be sent to the chat as a / line. "
+                               "Commands that have a Consiglio dialog open that dialog instead."), this);
+    note->setWordWrap(true);
+    note->setProperty("role", "muted");
+    note->setObjectName(QStringLiteral("commandConsoleNote"));
+    l->addWidget(note);
     if (!command.description.isEmpty()) {
         auto *desc = new QLabel(command.description, this);
         desc->setWordWrap(true);
@@ -146,11 +158,11 @@ CommandDialog::CommandDialog(const CommandCatalog::Command &command, QWidget *pa
     auto *buttons = new QDialogButtonBox(this);
     auto *cancel = buttons->addButton(QDialogButtonBox::Cancel);
     ui::describe(cancel, tr("Cancel"), ui::withShortcut(tr("Close without running"), QKeySequence(Qt::Key_Escape)));
-    m_run = buttons->addButton(tr("Run"), QDialogButtonBox::AcceptRole);
+    m_run = buttons->addButton(tr("Send"), QDialogButtonBox::AcceptRole);
     m_run->setProperty("role", "primary");
     m_run->setIcon(t.icon("play", t.tokens().accentText));
     m_run->setDefault(true);
-    ui::describe(m_run, tr("Run"), ui::withShortcut(tr("Send this command to Hermes"), QKeySequence(Qt::Key_Return)));
+    ui::describe(m_run, tr("Send"), ui::withShortcut(tr("Send this / command to the chat"), QKeySequence(Qt::Key_Return)));
     l->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, this, [this]() { if (canRun()) accept(); });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -166,12 +178,41 @@ QString CommandDialog::arguments() const { return m_args->text().trimmed(); }
 void CommandDialog::setArguments(const QString &args) { m_args->setText(args); }
 
 QString CommandDialog::commandLine() const {
+    if (m_freeform) {
+        QString line = arguments();
+        if (!line.startsWith(QLatin1Char('/'))) line.prepend(QLatin1Char('/'));
+        return line.trimmed();
+    }
     const QString args = arguments();
     return args.isEmpty() ? QStringLiteral("/") + m_command.name
                           : QStringLiteral("/%1 %2").arg(m_command.name, args);
 }
 
-bool CommandDialog::canRun() const { return !m_command.requiresArgs() || !arguments().isEmpty(); }
+bool CommandDialog::canRun() const {
+    if (m_freeform) {
+        QString line = arguments().trimmed();
+        if (line.startsWith(QLatin1Char('/'))) line.remove(0, 1);
+        return !line.isEmpty();
+    }
+    return !m_command.requiresArgs() || !arguments().isEmpty();
+}
+
+CommandDialog *CommandDialog::console(QWidget *parent, const QString &prefill) {
+    CommandCatalog::Command cmd;
+    cmd.label = QCoreApplication::translate("CommandDialog", "Command");
+    cmd.icon = QStringLiteral("command");
+    cmd.description = QString();
+    auto *d = new CommandDialog(cmd, parent);
+    d->m_freeform = true;
+    if (d->m_args) {
+        d->m_args->setPlaceholderText(QStringLiteral("/command arguments"));
+        ui::describe(d->m_args, QCoreApplication::translate("CommandDialog", "Command"),
+                     QCoreApplication::translate("CommandDialog", "A / command to send to the chat"));
+    }
+    if (!prefill.isEmpty()) d->setArguments(prefill);
+    d->updatePreview();
+    return d;
+}
 
 void CommandDialog::updatePreview() {
     m_preview->setText(commandLine());
