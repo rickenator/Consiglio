@@ -37,3 +37,6 @@ __pycache__/
 src-hermes/build*/
 dist-hermes/
 sbom-input/
+
+# Local playtest screenshots (README images live in docs/screenshots/)
+screenshots/
