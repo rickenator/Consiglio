@@ -39,4 +39,4 @@ dist-hermes/
 sbom-input/
 
 # Local playtest screenshots (README images live in docs/screenshots/)
-screenshots/
+/screenshots/

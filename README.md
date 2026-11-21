@@ -33,9 +33,14 @@
     <td width="33%" align="center"><img src="docs/screenshots/palette-dark.png" alt="The command palette"><br><sub><b>Command palette</b> (Ctrl+K)</sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><img src="docs/screenshots/palette-search-light.png" alt="The command palette filtered to model commands"><br><sub><b>Palette search</b> across Hermes commands</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/palette-search-light.png" alt="The command palette filtered to model commands, with Dialog vs Chat badges"><br><sub><b>Palette search</b> — Dialog vs Chat</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/model-dialog-dark.png" alt="The model picker dialog in the dark theme, with a current-model info panel and a selectable list"><br><sub><b>Model</b>: preview, then Save</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/model-dialog-light.png" alt="The model picker dialog in the light theme"><br><sub><b>Model</b>, light theme</sub></td>
+  </tr>
+  <tr>
     <td width="33%" align="center"><img src="docs/screenshots/settings-appearance-light.png" alt="Appearance settings: theme, interface size and text sizes"><br><sub><b>Settings</b>: theme and text sizes</sub></td>
     <td width="33%" align="center"><img src="docs/screenshots/settings-shortcuts-dark.png" alt="Keyboard shortcuts settings page"><br><sub><b>Keyboard shortcuts</b>, dark theme</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/command-console-dark.png" alt="The Command console, for sending a raw slash command to chat"><br><sub><b>Command console</b> for unmapped / commands</sub></td>
   </tr>
 </table>
 

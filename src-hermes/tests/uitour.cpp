@@ -195,7 +195,15 @@ static void tourDialogs(MainWindow &w, bool real) {
             }
         }
         d->show();
-        d->resize(d->sizeHint().expandedTo(QSize(560, 520)));
+        QSize minSize(560, 360);
+        if (auto *host = qobject_cast<CommandHostDialog *>(d)) {
+            if (host->plan().archetype == CommandArchetype::Confirm
+                || host->plan().archetype == CommandArchetype::TextPrompt)
+                minSize = QSize(560, 0);
+            else if (host->plan().archetype == CommandArchetype::Picker)
+                minSize = QSize(560, 560);
+        }
+        d->resize(d->sizeHint().expandedTo(minSize));
         shot(d, "command-ui-" + name);
         d->deleteLater();
     }
