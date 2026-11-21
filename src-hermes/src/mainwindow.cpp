@@ -2,6 +2,7 @@
 #include "appsandbox.h"
 
 #include "commanddialog.h"
+#include "commandui.h"
 #include "hermescli.h"
 #include "settingsdialog.h"
 #include "theme.h"
@@ -327,6 +328,8 @@ void MainWindow::setupActions() {
 
     makeAction("app:palette", tr("&Command Palette…"), "command", QKeySequence(Qt::CTRL | Qt::Key_K),
                tr("Search every Hermes command and app action"));
+    makeAction("app:command-console", tr("Command &Console…"), "square-terminal", QKeySequence(),
+               tr("Send a raw / command to the chat (for commands that don’t have a Consiglio dialog yet)"));
     makeAction("app:refresh-commands", tr("Refresh Command &List"), "refresh-cw", QKeySequence(),
                tr("Re-read the command list from Hermes (after an update or new skills)"));
     makeAction("app:configure-provider", tr("Configure &Provider…"), "log-in", QKeySequence(),
@@ -362,7 +365,7 @@ void MainWindow::setupActions() {
     }
 
     makeAction("app:help", tr("Hermes &Help"), "circle-help", QKeySequence(Qt::Key_F1),
-               tr("Ask Hermes for its built-in help (/help)"));
+               tr("Browse every command in the palette"));
     makeAction("app:docs", tr("Hermes &Documentation"), "book-open", QKeySequence(),
                tr("Open the Hermes documentation in your browser"));
     makeAction("app:shortcuts", tr("&Keyboard Shortcuts"), "keyboard", QKeySequence(Qt::CTRL | Qt::Key_Slash),
@@ -530,8 +533,27 @@ void MainWindow::connectClient() {
     connect(&m_client, &AcpClient::quietCommandFinished, this, &MainWindow::onQuietCommandFinished);
     connect(&m_client, &AcpClient::configOptionsChanged, this, &MainWindow::rebuildConfigCombos);
     connect(&m_client, &AcpClient::modesChanged, this, &MainWindow::rebuildConfigCombos);
+    connect(&m_client, &AcpClient::configChangeSucceeded, this, [this](const QString &id) {
+        if (!m_commandUi || m_commandUiWait != CommandUiWait::Apply || m_pendingConfigId != id)
+            return;
+        if (!m_pendingPersistLine.isEmpty() && m_client.runQuietCommand(m_pendingPersistLine)) {
+            m_commandUiWait = CommandUiWait::Persist;
+            return;
+        }
+        m_commandUiWait = CommandUiWait::None;
+        m_pendingConfigId.clear();
+        m_pendingPersistLine.clear();
+        m_commandUi->endApply(true);
+    });
     connect(&m_client, &AcpClient::configChangeFailed, this, [this](const QString &id, const QString &message) {
         rebuildConfigCombos();
+        if (m_commandUi && m_commandUiWait == CommandUiWait::Apply && m_pendingConfigId == id) {
+            m_commandUiWait = CommandUiWait::None;
+            m_pendingConfigId.clear();
+            m_pendingPersistLine.clear();
+            m_commandUi->endApply(false, message);
+            return;
+        }
         showToast(tr("Couldn't change %1: %2").arg(id, message), 6000);
     });
     connect(&m_client, &AcpClient::sessionStopped, this, [this]() { setActive(false); updateUiState(); });
@@ -557,27 +579,10 @@ void MainWindow::addCommandToMenu(QMenu *menu, const CommandCatalog::Command &cm
         a->setIcon(icon);
     };
 
-    const QStringList choices = cmd.choices();
-    if (!choices.isEmpty() && !cmd.requiresArgs()) {
-        QMenu *sub = menu->addMenu(icon, QString(cmd.label).replace(QLatin1Char('&'), QStringLiteral("&&")));
-        sub->setToolTipsVisible(true);
-        finish(sub->menuAction());
-        QAction *run = sub->addAction(tr("Run %1").arg(slash));
-        run->setToolTip(tip);
-        connect(run, &QAction::triggered, this, [this, slash]() { runCommand(slash); });
-        sub->addSeparator();
-        for (const QString &choice : choices) {
-            QAction *c = sub->addAction(choice);
-            c->setToolTip(QStringLiteral("%1 %2").arg(slash, choice));
-            connect(c, &QAction::triggered, this, [this, slash, choice]() { runCommand(slash + QLatin1Char(' ') + choice); });
-        }
-        sub->addSeparator();
-        QAction *more = sub->addAction(tr("More Options…"));
-        more->setToolTip(tr("Type arguments for %1").arg(slash));
-        connect(more, &QAction::triggered, this, [this, name]() { triggerCommand(name); });
-        return;
-    }
-    QString label = cmd.takesArgs() ? cmd.label + QStringLiteral("…") : cmd.label;
+    // Every command opens its dialog (or the Command console). Choice
+    // submenus that echoed "/name choice" into the chat are gone.
+    QString label = (cmd.takesArgs() || CommandUi::hasNativeUi(cmd.name))
+                        ? cmd.label + QStringLiteral("…") : cmd.label;
     label.replace(QLatin1Char('&'), QStringLiteral("&&"));
     QAction *a = menu->addAction(label);
     finish(a);
@@ -623,6 +628,7 @@ void MainWindow::rebuildCommandMenus() {
     }
     m_hermesMenu->addSeparator();
     m_hermesMenu->addAction(m_actions.value("app:palette"));
+    m_hermesMenu->addAction(m_actions.value("app:command-console"));
     m_hermesMenu->addAction(m_actions.value("app:refresh-commands"));
     m_hermesMenu->addSeparator();
     m_hermesMenu->addAction(m_actions.value("app:configure-provider"));
@@ -743,7 +749,7 @@ void MainWindow::rebuildPalette() {
         app(id, consiglio);
     const QString setup = tr("Hermes Setup");
     for (const char *id : {"app:configure-provider", "app:configuration", "app:check-updates",
-                           "app:restart", "app:refresh-commands", "app:docs"})
+                           "app:restart", "app:command-console", "app:refresh-commands", "app:docs"})
         app(id, setup);
 
     for (const auto &c : m_catalog.commands()) {
@@ -757,6 +763,8 @@ void MainWindow::rebuildPalette() {
         p.detail = c.argsHint.isEmpty() ? p.id : p.id + QLatin1Char(' ') + c.argsHint;
         p.keywords = p.id + QLatin1Char(' ') + c.name;
         for (const QString &al : c.aliases) p.keywords += QStringLiteral(" /") + al;
+        p.badge = CommandUi::badgeFor(c.name);
+        p.keywords += QLatin1Char(' ') + p.badge;
         p.enabled = m_conn == Conn::Connected;
         list << p;
     }
@@ -780,6 +788,10 @@ void MainWindow::startDiscovery(bool force) {
 }
 
 void MainWindow::onQuietCommandFinished(const QString &command, const QString &output, bool ok) {
+    if (m_commandUi && m_commandUiWait != CommandUiWait::None) {
+        finishCommandHostQuiet(command, output, ok);
+        return;
+    }
     if (command.startsWith(QLatin1String("/commands"))) {
         if (!ok) { m_discoveryPages = 0; return; }
         const auto page = CommandCatalog::parsePage(output);
@@ -834,28 +846,226 @@ void MainWindow::sendOrQueue(const QString &text, bool display) {
     beginTurnUi();
 }
 
-QDialog *MainWindow::createCommandDialog(const QString &name) {
-    CommandCatalog::Command cmd = m_catalog.command(name);
-    if (cmd.name.isEmpty()) {
-        cmd.name = name;
-        cmd.label = CommandCatalog::labelFor(name);
-        cmd.group = CommandCatalog::groupFor(name, false);
-        cmd.icon = CommandCatalog::iconFor(name, cmd.group);
+QDialog *MainWindow::createCommandDialog(const QString &name, const QString &prefill) {
+    QString key = name;
+    if (key.startsWith(QLatin1Char('/'))) key.remove(0, 1);
+    const CommandPlan plan = CommandUi::planFor(key);
+    CommandCatalog::Command cmd = m_catalog.command(plan.name.isEmpty() ? key : plan.name);
+    if (cmd.name.isEmpty() && !key.isEmpty()) {
+        cmd.name = plan.name.isEmpty() ? key : plan.name;
+        cmd.label = CommandCatalog::labelFor(cmd.name);
+        cmd.group = CommandCatalog::groupFor(cmd.name, false);
+        cmd.icon = CommandCatalog::iconFor(cmd.name, cmd.group);
     }
-    return new CommandDialog(cmd, this);
+    if (!CommandUi::hasNativeUi(key) || CommandUi::isAppLink(key)) {
+        if (cmd.name.isEmpty()) {
+            QString line = prefill;
+            if (line.isEmpty() && !key.isEmpty()) line = QLatin1Char('/') + key;
+            return CommandDialog::console(this, line);
+        }
+        auto *d = new CommandDialog(cmd, this);
+        if (!prefill.isEmpty()) d->setArguments(prefill);
+        return d;
+    }
+    auto *d = new CommandHostDialog(plan, cmd, this);
+    d->setConfigOptions(m_client.configOptions(), m_client.availableModels());
+    d->setSessionTitle(m_sessionTitle);
+    return d;
 }
 
-void MainWindow::triggerCommand(const QString &rawName) {
+void MainWindow::triggerCommand(const QString &rawName, const QString &prefill) {
     QString name = rawName;
     if (name.startsWith(QLatin1Char('/'))) name.remove(0, 1);
-    const CommandCatalog::Command cmd = m_catalog.command(name);
-    if (cmd.name.isEmpty() || !cmd.takesArgs()) { runCommand(QLatin1Char('/') + (cmd.name.isEmpty() ? name : cmd.name)); return; }
+    const CommandPlan plan = CommandUi::planFor(name);
+    if (handleCommandAppLink(plan)) return;
     if (m_conn != Conn::Connected) { showToast(tr("Hermes isn't connected yet.")); return; }
-    QScopedPointer<QDialog> dlg(createCommandDialog(cmd.name));
+    QScopedPointer<QDialog> dlg(createCommandDialog(name, prefill));
+    if (auto *host = qobject_cast<CommandHostDialog *>(dlg.data())) {
+        connect(host, &CommandHostDialog::applyRequested, this,
+                [this, host](const CommandApplyRequest &req) { applyCommandHost(host, req); });
+        connect(host, &CommandHostDialog::refreshRequested, this,
+                [this, host]() { seedCommandHost(host); });
+        seedCommandHost(host);
+        dlg->exec();
+        if (m_commandUi == host) {
+            m_commandUi.clear();
+            m_commandUiWait = CommandUiWait::None;
+            m_pendingConfigId.clear();
+            m_pendingPersistLine.clear();
+        }
+        return;
+    }
     if (dlg->exec() == QDialog::Accepted) {
         if (auto *cd = qobject_cast<CommandDialog *>(dlg.data())) runCommand(cd->commandLine());
     }
 }
+
+bool MainWindow::handleCommandAppLink(const CommandPlan &plan) {
+    if (plan.archetype != CommandArchetype::AppLink) return false;
+    switch (plan.apply) {
+    case CommandApply::OpenPalette:
+        m_palette->open();
+        return true;
+    case CommandApply::OpenSettings:
+        openSettings(plan.settingsPage.isEmpty() ? QStringLiteral("config") : plan.settingsPage);
+        return true;
+    case CommandApply::CheckUpdates:
+        openSettings(QStringLiteral("agent"));
+        return true;
+    case CommandApply::FocusSessions: {
+        QAction *sidebar = m_actions.value(QStringLiteral("app:sidebar"));
+        if (sidebar && !sidebar->isChecked()) sidebar->trigger();
+        else if (m_rail) m_rail->setVisible(true);
+        if (m_rail) m_rail->setFocus();
+        return true;
+    }
+    case CommandApply::StopTurn:
+        onPaletteAction(QStringLiteral("app:stop"));
+        return true;
+    case CommandApply::QuitApp:
+        onPaletteAction(QStringLiteral("app:quit"));
+        return true;
+    case CommandApply::OpenSetup:
+        onPaletteAction(QStringLiteral("app:configure-provider"));
+        return true;
+    default:
+        return false;
+    }
+}
+
+void MainWindow::seedCommandHost(CommandHostDialog *dialog) {
+    if (!dialog) return;
+    const QString name = dialog->plan().name;
+    const bool wants = dialog->plan().archetype == CommandArchetype::Info
+                       || name == QLatin1String("tools")
+                       || name == QLatin1String("personality")
+                       || name == QLatin1String("approvals");
+    if (!wants) return;
+    if (!m_client.isReady()) {
+        dialog->setBodyText(tr("Connect to Hermes to load this report."));
+        return;
+    }
+    const QString line = QLatin1Char('/') + name;
+    if (!m_client.runQuietCommand(line)) {
+        dialog->setError(tr("Couldn't ask Hermes for that just now."));
+        return;
+    }
+    m_commandUi = dialog;
+    m_commandUiWait = CommandUiWait::Seed;
+    dialog->setBusy(true);
+}
+
+void MainWindow::applyCommandHost(CommandHostDialog *dialog, const CommandApplyRequest &request) {
+    if (!dialog) return;
+    dialog->beginApply();
+    m_commandUi = dialog;
+    if (request.method == CommandApply::NewSession) {
+        startNewSession();
+        dialog->endApply(true);
+        return;
+    }
+    if (request.method == CommandApply::ConfigOption) {
+        QString id = request.configId;
+        if (id.isEmpty()) {
+            for (const auto &o : m_client.configOptions()) {
+                if (o.category == dialog->plan().configCategory || o.id == dialog->plan().name) {
+                    id = o.id;
+                    break;
+                }
+            }
+        }
+        bool have = false;
+        for (const auto &o : m_client.configOptions()) if (o.id == id) have = true;
+        QString previous;
+        for (const auto &o : m_client.configOptions())
+            if (o.id == id) previous = o.currentValue;
+        if (have && !id.isEmpty()) {
+            if (previous == request.value) {
+                if (!request.persistLine.isEmpty() && m_client.runQuietCommand(request.persistLine)) {
+                    m_commandUiWait = CommandUiWait::Persist;
+                    return;
+                }
+                dialog->endApply(true);
+                return;
+            }
+            if (m_client.setConfigOption(id, request.value)) {
+                m_pendingConfigId = id;
+                m_pendingPersistLine = request.persistLine;
+                m_commandUiWait = CommandUiWait::Apply;
+                return;
+            }
+        }
+        // No matching ACP option (or the write was rejected locally): quiet slash.
+    }
+    if (!m_client.isReady() || !m_client.runQuietCommand(request.quietLine)) {
+        dialog->endApply(false, tr("Couldn't apply that change right now."));
+        m_commandUiWait = CommandUiWait::None;
+        return;
+    }
+    m_pendingPersistLine = request.persistLine;
+    m_commandUiWait = CommandUiWait::Apply;
+}
+
+void MainWindow::finishCommandHostQuiet(const QString &command, const QString &output, bool ok) {
+    CommandHostDialog *dialog = m_commandUi;
+    if (!dialog) {
+        m_commandUiWait = CommandUiWait::None;
+        return;
+    }
+    if (m_commandUiWait == CommandUiWait::Seed) {
+        dialog->setBusy(false);
+        m_commandUiWait = CommandUiWait::None;
+        if (!ok) {
+            dialog->setError(output.isEmpty() ? tr("Hermes didn't answer that command.") : output);
+            return;
+        }
+        dialog->clearError();
+        if (dialog->plan().archetype == CommandArchetype::Info
+            || dialog->plan().name == QLatin1String("tools")) {
+            dialog->setBodyText(output);
+        }
+        if (dialog->plan().archetype == CommandArchetype::Picker) {
+            const auto items = CommandUi::itemsFromReport(output);
+            if (!items.isEmpty()) {
+                QStringList known;
+                for (const auto &it : items) known << it.value;
+                dialog->setPickerItems(items, CommandUi::currentFromReport(output, known));
+            } else if (dialog->pickerCount() == 0 && !output.trimmed().isEmpty()) {
+                // Couldn't parse a list; still show the report so the user isn't stuck.
+                dialog->setBodyText(output);
+            }
+        }
+        return;
+    }
+    if (m_commandUiWait == CommandUiWait::Persist) {
+        m_commandUiWait = CommandUiWait::None;
+        m_pendingPersistLine.clear();
+        if (!ok) showToast(tr("The session was updated, but saving it as the default didn't work."));
+        dialog->endApply(true);
+        return;
+    }
+    if (m_commandUiWait != CommandUiWait::Apply) return;
+    if (dialog->compressPreviewOnly()) {
+        m_commandUiWait = CommandUiWait::None;
+        dialog->releaseApply();
+        if (ok) dialog->setBodyText(output.isEmpty() ? tr("Nothing to preview.") : output);
+        else dialog->setError(output.isEmpty() ? tr("Preview failed.") : output);
+        return;
+    }
+    if (!ok) {
+        m_commandUiWait = CommandUiWait::None;
+        dialog->endApply(false, output.isEmpty() ? tr("Hermes couldn't run that command.") : output);
+        return;
+    }
+    if (!m_pendingPersistLine.isEmpty() && m_client.runQuietCommand(m_pendingPersistLine)) {
+        m_commandUiWait = CommandUiWait::Persist;
+        return;
+    }
+    m_commandUiWait = CommandUiWait::None;
+    m_pendingPersistLine.clear();
+    dialog->endApply(true);
+}
+
 
 SettingsDialog *MainWindow::openSettings(const QString &page) {
     if (!m_settings) {
@@ -1186,6 +1396,12 @@ void MainWindow::onPaletteAction(const QString &id) {
         }
     }
     else if (id == QLatin1String("app:palette") || id == QLatin1String("app:all-commands")) m_palette->open();
+    else if (id == QLatin1String("app:command-console")) {
+        QScopedPointer<QDialog> d(CommandDialog::console(this));
+        if (d->exec() == QDialog::Accepted) {
+            if (auto *cd = qobject_cast<CommandDialog *>(d.data())) runCommand(cd->commandLine());
+        }
+    }
     else if (id == QLatin1String("app:refresh-commands")) {
         if (!m_client.isReady()) { showToast(tr("Start a session to read the command list from Hermes.")); return; }
         startDiscovery(true);
@@ -1227,7 +1443,7 @@ void MainWindow::onPaletteAction(const QString &id) {
     else if (id == QLatin1String("app:theme-system")) theme().setMode(Theme::Mode::System);
     else if (id == QLatin1String("app:theme-light")) theme().setMode(Theme::Mode::Light);
     else if (id == QLatin1String("app:theme-dark")) theme().setMode(Theme::Mode::Dark);
-    else if (id == QLatin1String("app:help")) runCommand(QStringLiteral("/help"));
+    else if (id == QLatin1String("app:help")) m_palette->open();
     else if (id == QLatin1String("app:docs")) QDesktopServices::openUrl(QUrl(QString::fromLatin1(kDocsUrl)));
     else if (id == QLatin1String("app:install")) QDesktopServices::openUrl(QUrl(QString::fromLatin1(kInstallUrl)));
     else if (id == QLatin1String("app:shortcuts")) openSettings(QStringLiteral("shortcuts"));
@@ -1377,6 +1593,7 @@ void MainWindow::updateActionStates() {
     en("app:stop", m_busy);
     en("app:refresh-commands", session && !m_busy);
     en("app:help", connected);
+    en("app:command-console", connected);
     en("app:configure-provider", true);
     const auto setTree = [connected](QMenu *menu, auto &&self) -> void {
         for (QAction *a : menu->actions()) {

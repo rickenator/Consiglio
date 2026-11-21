@@ -946,12 +946,13 @@ void AcpClient::handleResponse(const QJsonObject &msg) {
         break;
 
     case ReqKind::SetConfigOption: {
-        m_configChanges.remove(key);
+        const ConfigChange change = m_configChanges.take(key);
         // The spec says the reply carries the full option state; some Hermes
         // versions reply with an empty list, so only an actual list replaces
         // ours (the optimistic value already stands).
         const QJsonArray options = result.value("configOptions").toArray();
         if (!options.isEmpty()) parseConfigOptions(options);
+        emit configChangeSucceeded(change.id);
         break;
     }
     case ReqKind::SetMode:

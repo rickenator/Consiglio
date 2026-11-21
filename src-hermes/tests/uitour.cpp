@@ -7,6 +7,7 @@
 // configured provider). Screenshots are written as DIR/<theme>-NN-name.png.
 #include "chatpane.h"
 #include "commanddialog.h"
+#include "commandui.h"
 #include "mainwindow.h"
 #include "settingsdialog.h"
 #include "theme.h"
@@ -168,6 +169,40 @@ static void tourDialogs(MainWindow &w, bool real) {
         shot(d, "command-dialog-" + name);
         d->deleteLater();
     }
+
+    // Native command surfaces (light and dark tours both run this).
+    const QStringList native = {"model", "reasoning", "approvals", "personality", "title",
+                                "new", "undo", "retry", "compress", "status", "usage",
+                                "context", "version", "tools", "save", "plan", "queue", "steer", "yolo"};
+    for (const QString &name : native) {
+        QDialog *d = w.createCommandDialog(name);
+        if (auto *host = qobject_cast<CommandHostDialog *>(d)) {
+            if (name == QLatin1String("model") || name == QLatin1String("reasoning")
+                || name == QLatin1String("fast")) {
+                host->setConfigOptions(w.client()->configOptions(), w.client()->availableModels());
+            }
+            if (name == QLatin1String("status") || name == QLatin1String("usage")
+                || name == QLatin1String("context") || name == QLatin1String("version")
+                || name == QLatin1String("tools")) {
+                host->setBodyText(QStringLiteral("Session  demo\nModel    fake/model\nReasoning  medium"));
+            }
+            if (name == QLatin1String("personality")) {
+                host->setPickerItems({
+                    {QStringLiteral("none"), QStringLiteral("none"), {}, {}},
+                    {QStringLiteral("concise"), QStringLiteral("concise"), {}, {}},
+                    {QStringLiteral("kawaii"), QStringLiteral("kawaii"), {}, {}},
+                }, QStringLiteral("concise"));
+            }
+        }
+        d->show();
+        d->resize(d->sizeHint().expandedTo(QSize(560, 520)));
+        shot(d, "command-ui-" + name);
+        d->deleteLater();
+    }
+    QDialog *console = CommandDialog::console(&w, QStringLiteral("/goal draft the changelog"));
+    console->show();
+    shot(console, "command-console");
+    console->deleteLater();
 
     // Settings pages.
     SettingsDialog *s = w.openSettings(QStringLiteral("appearance"));

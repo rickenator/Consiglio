@@ -242,6 +242,7 @@ signals:
     void configOptionsChanged();
     void modesChanged();
     // set_config_option / set_mode was rejected; the previous value stands.
+    void configChangeSucceeded(const QString &configId);
     void configChangeFailed(const QString &configId, const QString &message);
 
 private slots:

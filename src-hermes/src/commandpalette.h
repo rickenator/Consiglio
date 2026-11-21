@@ -16,6 +16,7 @@ struct PaletteAction {
     QString icon;         // icon name in :/icons
     QString keywords;     // extra search terms (aliases, "/name")
     QString detail;       // right-aligned hint, e.g. "/model"
+    QString badge;        // "Dialog" (native UI) or "Chat" (sent to the console)
     bool enabled = true;
 };
 
