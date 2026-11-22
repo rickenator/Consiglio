@@ -167,13 +167,30 @@ jobs:
           SBOM_INPUT: ${{ github.workspace }}/sbom-input/hermes-${{ matrix.platform }}-${{ matrix.arch }}.json
         run: bash packaging/package.sh ${{ matrix.platform }} ${{ matrix.arch }} "$GITHUB_WORKSPACE/dist-hermes"
 
+      # Packaging proof without burning the account's artifact quota: the
+      # deliverables are published by release.yml, so CI only records what it
+      # produced (names, sizes, hashes) and keeps the files on disk. Full
+      # packages are uploaded only on a manual dispatch.
+      - name: Summarize packages
+        shell: bash
+        # Absolute: this job's working directory is src-hermes, but package.sh
+        # writes to $GITHUB_WORKSPACE/dist-hermes.
+        run: |
+          set -e
+          out="$GITHUB_WORKSPACE/dist-hermes"
+          ls -l "$out"/Consiglio-Hermes-* >/dev/null || { echo "no packages produced"; exit 1; }
+          for f in "$out"/Consiglio-Hermes-*; do printf '%s %s bytes\n' "$f" "$(wc -c <"$f")"; done
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum "$out"/Consiglio-Hermes-*;
+          else shasum -a 256 "$out"/Consiglio-Hermes-*; fi
+
       - name: Upload packages
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Consiglio-Hermes-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}
           path: dist-hermes/Consiglio-Hermes-*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   mobile-web:
     name: Verify mobile client
@@ -202,12 +219,17 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Upload mobile web build
+        # PRs and pushes must not touch artifact storage: GitHub's quota is
+        # cached for 6-12 hours, so one exhausted account fails every upload
+        # even after the stored files are gone. The bundle is not consumed by
+        # later jobs (they run `npm run sync` themselves), so dispatch only.
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mobile-web-${{ github.sha }}
           path: mobile/dist/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
   mobile-android:
     name: Build Android client
@@ -242,12 +264,13 @@ jobs:
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload Android debug APK
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Consiglio-android-debug-${{ github.sha }}
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   mobile-ios:
     name: Build iOS client
@@ -287,12 +310,13 @@ jobs:
         run: test -d mobile/ios/App/build/DerivedData/Build/Products/Debug-iphonesimulator/App.app
 
       - name: Upload iOS simulator application
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Consiglio-ios-simulator-${{ github.sha }}
           path: mobile/ios/App/build/DerivedData/Build/Products/Debug-iphonesimulator/App.app
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   package:
     name: Package ${{ matrix.name }}
@@ -339,7 +363,21 @@ jobs:
       - name: Validate package internals
         run: npm run validate:package
 
+      # Same rule as the Hermes packages: prove the packaging step produced
+      # files, keep them in the job, upload only on manual dispatch.
+      - name: Summarize packages
+        shell: bash
+        run: |
+          set -e
+          out="$GITHUB_WORKSPACE/dist"
+          count=$(ls "$out"/Consiglio-* 2>/dev/null | wc -l)
+          if [ "$count" -lt 1 ]; then echo "no packages produced"; exit 1; fi
+          for f in "$out"/Consiglio-*; do printf '%s %s bytes\n' "$f" "$(wc -c <"$f")"; done
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum "$out"/Consiglio-*;
+          else shasum -a 256 "$out"/Consiglio-*; fi
+
       - name: Upload packages
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}-${{ github.sha }}
@@ -350,4 +388,4 @@ jobs:
             dist/Consiglio-*.zip
             dist/Consiglio-*.exe
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
