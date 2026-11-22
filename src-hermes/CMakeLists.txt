@@ -55,6 +55,10 @@ add_library(HermesUi STATIC
     src/settingsdialog.h
     src/sessionrail.cpp
     src/sessionrail.h
+    src/sessionmetrics.cpp
+    src/sessionmetrics.h
+    src/sparkline.cpp
+    src/sparkline.h
     src/filepicker.cpp
     src/filepicker.h
     src/fontsettings.cpp
@@ -165,6 +169,11 @@ set_tests_properties(AcpClientTests PROPERTIES LABELS posix)
 if(TARGET test_mainwindow)
     set_tests_properties(MainWindowTests PROPERTIES LABELS posix)
 endif()
+
+add_executable(test_sessionmetrics tests/test_sessionmetrics.cpp)
+target_link_libraries(test_sessionmetrics PRIVATE Qt5::Test HermesUi)
+add_test(NAME SessionMetricsTests COMMAND test_sessionmetrics)
+set_tests_properties(SessionMetricsTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(setuptour tests/setuptour.cpp)
 target_link_libraries(setuptour PRIVATE Qt5::Test HermesUi)
