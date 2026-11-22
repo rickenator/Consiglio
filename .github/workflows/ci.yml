@@ -173,12 +173,15 @@ jobs:
       # packages are uploaded only on a manual dispatch.
       - name: Summarize packages
         shell: bash
+        # Absolute: this job's working directory is src-hermes, but package.sh
+        # writes to $GITHUB_WORKSPACE/dist-hermes.
         run: |
           set -e
-          ls -l dist-hermes/Consiglio-Hermes-* >/dev/null || { echo "no packages produced"; exit 1; }
-          for f in dist-hermes/Consiglio-Hermes-*; do printf '%s %s bytes\n' "$f" "$(wc -c <"$f")"; done
-          if command -v sha256sum >/dev/null 2>&1; then sha256sum dist-hermes/Consiglio-Hermes-*;
-          else shasum -a 256 dist-hermes/Consiglio-Hermes-*; fi
+          out="$GITHUB_WORKSPACE/dist-hermes"
+          ls -l "$out"/Consiglio-Hermes-* >/dev/null || { echo "no packages produced"; exit 1; }
+          for f in "$out"/Consiglio-Hermes-*; do printf '%s %s bytes\n' "$f" "$(wc -c <"$f")"; done
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum "$out"/Consiglio-Hermes-*;
+          else shasum -a 256 "$out"/Consiglio-Hermes-*; fi
 
       - name: Upload packages
         if: github.event_name == 'workflow_dispatch'
@@ -361,12 +364,12 @@ jobs:
         shell: bash
         run: |
           set -e
-          ls dist/Consiglio-*.AppImage dist/Consiglio-*.deb dist/Consiglio-*.dmg dist/Consiglio-*.zip dist/Consiglio-*.exe >/dev/null 2>&1 || true
-          count=$(ls dist/Consiglio-* 2>/dev/null | wc -l)
+          out="$GITHUB_WORKSPACE/dist"
+          count=$(ls "$out"/Consiglio-* 2>/dev/null | wc -l)
           if [ "$count" -lt 1 ]; then echo "no packages produced"; exit 1; fi
-          for f in dist/Consiglio-*; do printf '%s %s bytes\n' "$f" "$(wc -c <"$f")"; done
-          if command -v sha256sum >/dev/null 2>&1; then sha256sum dist/Consiglio-*;
-          else shasum -a 256 dist/Consiglio-*; fi
+          for f in "$out"/Consiglio-*; do printf '%s %s bytes\n' "$f" "$(wc -c <"$f")"; done
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum "$out"/Consiglio-*;
+          else shasum -a 256 "$out"/Consiglio-*; fi
 
       - name: Upload packages
         if: github.event_name == 'workflow_dispatch'
