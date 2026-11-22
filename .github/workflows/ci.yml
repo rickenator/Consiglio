@@ -219,6 +219,11 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Upload mobile web build
+        # PRs and pushes must not touch artifact storage: GitHub's quota is
+        # cached for 6-12 hours, so one exhausted account fails every upload
+        # even after the stored files are gone. The bundle is not consumed by
+        # later jobs (they run `npm run sync` themselves), so dispatch only.
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mobile-web-${{ github.sha }}
