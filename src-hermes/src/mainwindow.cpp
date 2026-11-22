@@ -5,6 +5,7 @@
 #include "commandui.h"
 #include "hermescli.h"
 #include "hermesremote.h"
+#include "hostmanager.h"
 #include "sessionmetrics.h"
 #include "settingsdialog.h"
 #include "sparkline.h"
@@ -12,6 +13,7 @@
 #include "uiutil.h"
 
 #include <QAction>
+#include <QProcess>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
@@ -199,6 +201,9 @@ void MainWindow::init(const Options &options) {
     // best-effort: a missing or unreadable store must not stop the app.
     SessionMetrics::instance().load();
 
+    // Settings written by the single-connection version become one host profile.
+    HostManager::migrateLegacy();
+
     setupUI();
     setupActions();
     setupMenuBar();
@@ -237,17 +242,18 @@ void MainWindow::connectToHermes() {
     // A remote Hermes is found the same way the local one is: by asking, every
     // time. The lookup runs asynchronously so an unreachable host is an error
     // banner, not a frozen window.
-    if (HermesRemote::enabled()) {
-        const QString dest = HermesRemote::destination();
+    const HostProfile host = HostManager::active();
+    if (!host.isLocal()) {
+        const QString dest = host.destination.trimmed();
         if (dest.isEmpty()) {
             m_conn = Conn::Failed;
-            m_connError = tr("Settings → Connection has SSH turned on but no destination.");
+            m_connError = tr("Settings → Connection: “%1” has no destination.").arg(host.displayName());
             updateUiState();
             return;
         }
-        m_connError = tr("Looking for Hermes on %1…").arg(dest);
+        m_connError = tr("Looking for Hermes on %1…").arg(host.displayName());
         updateUiState();
-        const QStringList opts = HermesRemote::options();
+        const QStringList opts = QProcess::splitCommand(host.options);
         HermesRemote::probeAsync(this, dest, opts, [this, dest, opts](const RemoteProbe &probe) {
             if (!probe.ok) {
                 m_conn = Conn::Failed;
@@ -1580,7 +1586,7 @@ void MainWindow::updateUiState() {
     if (connected && !m_client.agentVersion().isEmpty() && !m_busy && !m_opening)
         label += QStringLiteral(" · Hermes %1").arg(m_client.agentVersion());
     if (connected && m_client.isRemote() && !m_busy && !m_opening)
-        label += QStringLiteral(" · %1").arg(HermesRemote::destination());
+        label += QStringLiteral(" · %1").arg(HostManager::active().displayName());
     m_stateDot->setState(dot);
     m_stateLabel->setText(label);
 
