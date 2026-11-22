@@ -1,4 +1,5 @@
 #include "acpclient.h"
+#include "acptransport.h"
 #include "sessioncatalog.h"
 #include "hermessetup.h"
 
@@ -73,6 +74,27 @@ QString AcpClient::resolveExecutable(const QString &requested) {
 
 QString AcpClient::resolvedExecutable() const { return m_resolvedExecutable; }
 
+void AcpClient::setRemote(const QString &destination, const QStringList &sshOptions,
+                          const QString &remoteExecutable) {
+    m_remoteHost = destination.trimmed();
+    m_sshOptions = sshOptions;
+    m_remoteExe = remoteExecutable.trimmed().isEmpty() ? QStringLiteral("hermes")
+                                                       : remoteExecutable.trimmed();
+}
+
+void AcpClient::clearRemote() {
+    m_remoteHost.clear();
+    m_sshOptions.clear();
+    m_remoteExe = QStringLiteral("hermes");
+}
+
+QString AcpClient::transportDescription() const {
+    if (isRemote()) return m_remoteHost + QLatin1String(": ") + m_remoteExe + QLatin1String(" acp");
+    return (m_resolvedExecutable.isEmpty() ? resolveExecutable(m_requestedExecutable)
+                                          : m_resolvedExecutable)
+           + QLatin1String(" acp");
+}
+
 // ─── Process lifecycle ────────────────────────────────────────────────────
 
 bool AcpClient::launch(const QString &executable) {
@@ -83,42 +105,47 @@ bool AcpClient::launch(const QString &executable) {
 }
 
 bool AcpClient::launchInternal() {
-    if (m_proc && m_proc->state() != QProcess::NotRunning) return false;
-    if (m_proc) {
-        m_proc->disconnect(this);
-        m_proc->deleteLater();
-        m_proc = nullptr;
+    if (m_transport && m_transport->isRunning()) return false;
+    if (m_transport) {
+        m_transport->disconnect(this);
+        m_transport->deleteLater();
+        m_transport = nullptr;
     }
     m_stopping = false;
     m_stdoutBuf.clear();
+    m_lastStderr.clear();
     m_pending.clear();
 
-    // Re-resolve on every launch: an update may have replaced the launcher.
-    m_resolvedExecutable = resolveExecutable(m_requestedExecutable);
+    // Where the agent lives is the transport's business. A local launch
+    // re-resolves the executable every time (an update may have moved it); a
+    // remote one names the launcher on the far side and lets ssh resolve it
+    // through the remote login shell, which is where a GUI's PATH is thinnest.
+    if (isRemote()) {
+        m_resolvedExecutable = m_remoteHost + QLatin1Char(':') + m_remoteExe;
+        m_transport = new SshProcessTransport(m_remoteHost, m_sshOptions, m_remoteExe, this);
+    } else {
+        m_resolvedExecutable = resolveExecutable(m_requestedExecutable);
+        m_transport = new LocalProcessTransport(m_resolvedExecutable, this);
+    }
 
-    auto *proc = new QProcess(this);
-    m_proc = proc;
-    proc->setProcessChannelMode(QProcess::SeparateChannels);
-
-    connect(proc, &QProcess::readyReadStandardOutput, this, &AcpClient::onStdout);
-    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &AcpClient::onProcessFinished);
-    connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError err) {
-        // FailedToStart is reported by the waitForStarted branch below.
-        if (err == QProcess::FailedToStart || proc != m_proc) return;
-        if (!m_connected) emit errorOccurred(proc->errorString());
+    connect(m_transport, &AcpTransport::dataReady, this, &AcpClient::onTransportData);
+    // Hermes logs to stderr, and so does ssh. Keep the tail for diagnostics
+    // rather than treating it as an error (which would be noise on every run).
+    connect(m_transport, &AcpTransport::stderrText, this, [this](const QString &text) {
+        m_lastStderr += text;
+        if (m_lastStderr.size() > 4000) m_lastStderr = m_lastStderr.right(4000);
     });
+    connect(m_transport, &AcpTransport::exited, this, &AcpClient::onTransportExited);
 
-    // HERMES_HOME is set only for a separate Consiglio-managed copy.
-    proc->setProcessEnvironment(HermesSetup::processEnvironment());
-    proc->start(m_resolvedExecutable, {QStringLiteral("acp")});
-    if (!proc->waitForStarted(8000)) {
-        const QString why = proc->errorString();
-        proc->disconnect(this);
-        proc->deleteLater();
-        m_proc = nullptr;
-        emit errorOccurred(QStringLiteral("Failed to start %1 acp: %2")
-                               .arg(m_resolvedExecutable, why));
+    QString why;
+    if (!m_transport->start(&why)) {
+        const QString detail = m_lastStderr.trimmed().isEmpty()
+                                   ? why
+                                   : why + QStringLiteral("\n") + m_lastStderr.trimmed();
+        m_transport->disconnect(this);
+        m_transport->deleteLater();
+        m_transport = nullptr;
+        emit errorOccurred(detail);
         return false;
     }
 
@@ -146,23 +173,12 @@ bool AcpClient::launchInternal() {
 
 void AcpClient::stopProcess() {
     if (m_restartTimer) m_restartTimer->stop();
-    if (!m_proc) return;
-    QProcess *proc = m_proc;
-    m_proc = nullptr;
-    proc->disconnect(this);
-    if (proc->state() != QProcess::NotRunning) {
-        // ACP over stdio: closing stdin is the polite "we're done", which
-        // lets Hermes flush session state. Escalate if it doesn't go.
-        proc->closeWriteChannel();
-        if (!proc->waitForFinished(1500)) {
-            proc->terminate();
-            if (!proc->waitForFinished(1500)) {
-                proc->kill();
-                proc->waitForFinished(1000);
-            }
-        }
-    }
-    proc->deleteLater();
+    if (!m_transport) return;
+    AcpTransport *transport = m_transport;
+    m_transport = nullptr;
+    transport->disconnect(this);
+    transport->stop();
+    transport->deleteLater();
     m_connected = false;
     m_pending.clear();
     m_stdoutBuf.clear();
@@ -214,7 +230,7 @@ void AcpClient::scheduleRestart() {
         m_restartTimer = new QTimer(this);
         m_restartTimer->setSingleShot(true);
         connect(m_restartTimer, &QTimer::timeout, this, [this]() {
-            if (m_stopping || (m_proc && m_proc->state() != QProcess::NotRunning)) return;
+            if (m_stopping || (m_transport && m_transport->isRunning())) return;
             if (!launchInternal()) scheduleRestart();
         });
     }
@@ -222,19 +238,17 @@ void AcpClient::scheduleRestart() {
     m_restartTimer->start(delay);
 }
 
-void AcpClient::onProcessFinished(int code, QProcess::ExitStatus status) {
-    Q_UNUSED(status);
-    QProcess *proc = qobject_cast<QProcess *>(sender());
-    if (proc && proc != m_proc) return;  // a process we already let go of
+void AcpClient::onTransportExited(int code, bool crashed) {
+    Q_UNUSED(crashed);
+    if (sender() != m_transport) return;  // a transport we already let go of
 
-    onStdout();  // flush trailing output
     const bool wasConnected = m_connected;
     const bool wasBusy = m_busy;
 
-    if (m_proc) {
-        m_proc->disconnect(this);
-        m_proc->deleteLater();
-        m_proc = nullptr;
+    if (m_transport) {
+        m_transport->disconnect(this);
+        m_transport->deleteLater();
+        m_transport = nullptr;
     }
     m_connected = false;
     m_pending.clear();
@@ -717,9 +731,10 @@ QString AcpClient::idKey(const QJsonValue &id) {
 }
 
 bool AcpClient::sendMessage(const QJsonObject &msg) {
-    if (!m_proc || m_proc->state() != QProcess::Running) return false;
+    if (!m_transport || !m_transport->isRunning()) return false;
     const QByteArray line = QJsonDocument(msg).toJson(QJsonDocument::Compact) + '\n';
-    return m_proc->write(line) == line.size();
+    m_transport->writeLine(line);
+    return true;
 }
 
 bool AcpClient::sendRequest(int id, const QString &method, const QJsonObject &params, ReqKind kind) {
@@ -744,15 +759,14 @@ void AcpClient::sendErrorResponse(const QJsonValue &id, int code, const QString 
     sendMessage(msg);
 }
 
-void AcpClient::onStdout() {
-    if (!m_proc) return;
-    m_stdoutBuf += m_proc->readAllStandardOutput();
+void AcpClient::onTransportData(const QByteArray &data) {
+    m_stdoutBuf += data;
     int nl;
     while ((nl = m_stdoutBuf.indexOf('\n')) >= 0) {
         const QString line = QString::fromUtf8(m_stdoutBuf.left(nl)).trimmed();
         m_stdoutBuf.remove(0, nl + 1);
         if (!line.isEmpty()) handleLine(line);
-        if (!m_proc) break;  // a handler tore the process down
+        if (!m_transport) break;  // a handler tore the transport down
     }
 }
 

@@ -47,9 +47,15 @@ private slots:
     void staleUpdatesAfterStopAreDropped();
     void slashCommandsClearedOnReset();
     void sendPromptWithoutSessionFails();
+    // A remote agent is the same client over ssh: argv-only spawn, then the
+    // ordinary ACP session. The shim stands in for ssh.
+    void remoteTransportSpawnsSshArgvOnly();
 
 private:
     bool writeWrapper(const QString &version, const QString &caps, const QString &body = QString());
+    // A stand-in for ssh: records its argv, then runs the local hermes wrapper
+    // as the remote command would. Returns the argv log path ("" on failure).
+    QString writeSshShim();
     QList<QJsonObject> agentLog() const;
     bool logHasMethod(const QString &method) const;
     void connectFresh(AcpClient &client, bool openSession = true);
@@ -238,6 +244,63 @@ void AcpClientTest::connectFresh(AcpClient &client, bool openSession) {
         QVERIFY(client.newSession(m_dir->path()));
         QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 10000);
     }
+}
+
+QString AcpClientTest::writeSshShim() {
+    const QString ssh = m_dir->filePath(QStringLiteral("ssh"));
+    const QString log = m_dir->filePath(QStringLiteral("ssh-args.txt"));
+    QFile f(ssh);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return QString();
+    // One argument per line: if the client ever spawned through a shell, these
+    // tokens would arrive joined (or the remote command would be one string)
+    // and the assertions in the test would say so.
+    const QString script =
+        QStringLiteral("#!/bin/sh\n"
+                       ": > '%1'\n"
+                       "for a in \"$@\"; do printf '%s\\n' \"$a\" >> '%1'; done\n"
+                       "exec '%2' acp\n")
+            .arg(log, m_dir->filePath(QStringLiteral("hermes")));
+    f.write(script.toUtf8());
+    f.close();
+    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    return log;
+}
+
+void AcpClientTest::remoteTransportSpawnsSshArgvOnly() {
+    REQUIRE_PYTHON();
+    QVERIFY(writeWrapper(QStringLiteral("0.23.3"), QStringLiteral("full")));
+    const QString log = writeSshShim();
+    QVERIFY(!log.isEmpty());
+
+    AcpClient client;
+    QCOMPARE(client.isRemote(), false);
+    // A launcher on the far side, named exactly as it will be passed to ssh.
+    client.setRemote(QStringLiteral("fake-host"), {QStringLiteral("-p"), QStringLiteral("2222")},
+                     QStringLiteral("/opt/agent/bin/hermes"));
+    QVERIFY(client.isRemote());
+    QCOMPARE(client.remoteHost(), QStringLiteral("fake-host"));
+    QCOMPARE(client.transportDescription(), QString("fake-host: /opt/agent/bin/hermes acp"));
+
+    QSignalSpy connected(&client, &AcpClient::connected);
+    QVERIFY(client.launch());
+    QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 10000);
+
+    QFile f(log);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QStringList argv = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    QVERIFY2(argv.contains(QStringLiteral("-T")), qPrintable(argv.join(' ')));
+    QVERIFY2(argv.contains(QStringLiteral("BatchMode=yes")), qPrintable(argv.join(' ')));
+    QVERIFY2(argv.contains(QStringLiteral("-p")), qPrintable(argv.join(' ')));
+    QVERIFY2(argv.contains(QStringLiteral("2222")), qPrintable(argv.join(' ')));
+    QVERIFY2(argv.contains(QStringLiteral("fake-host")), qPrintable(argv.join(' ')));
+    QVERIFY2(argv.contains(QStringLiteral("/opt/agent/bin/hermes")), qPrintable(argv.join(' ')));
+    QVERIFY2(argv.last() == QStringLiteral("acp"), qPrintable(argv.join(' ')));
+
+    // A real session, not just a spawn: the same protocol, one host away.
+    QSignalSpy ready(&client, &AcpClient::ready);
+    QVERIFY(client.newSession(m_dir->path()));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 10000);
+    client.shutdown();
 }
 
 void AcpClientTest::resolvesExecutableFromPathAndNegotiates() {

@@ -18,6 +18,8 @@ find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Svg Sql Test)
 add_library(HermesAcp STATIC
     src/acpclient.cpp
     src/acpclient.h
+    src/acptransport.cpp
+    src/acptransport.h
     src/commandcatalog.cpp
     src/commandcatalog.h
     src/hermessetup.cpp
