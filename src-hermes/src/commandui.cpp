@@ -1,5 +1,6 @@
 #include "commandui.h"
 
+#include "commandhost.h"
 #include "theme.h"
 #include "uiutil.h"
 
@@ -283,6 +284,17 @@ CommandHostDialog::CommandHostDialog(const CommandPlan &plan, const CommandCatal
     updateSaveEnabled();
 }
 
+CommandHostDialog::~CommandHostDialog() { delete m_host; }
+
+QWidget *CommandHostDialog::bodyWidget() const {
+    return findChild<QWidget *>(QStringLiteral("commandBody"));
+}
+
+QVBoxLayout *CommandHostDialog::bodyLayout() const {
+    auto *body = bodyWidget();
+    return body ? qobject_cast<QVBoxLayout *>(body->layout()) : nullptr;
+}
+
 QString CommandHostDialog::defaultTitle() const {
     if (!m_plan.title.isEmpty()) return m_plan.title;
     if (!m_command.label.isEmpty()) return m_command.label;
@@ -388,31 +400,15 @@ void CommandHostDialog::buildShell() {
 }
 
 void CommandHostDialog::buildBody() {
-    // Body container is the widget before the status row. Find it.
-    auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
-    auto *layout = body ? qobject_cast<QVBoxLayout *>(body->layout()) : nullptr;
-    if (!layout) return;
-    switch (m_plan.archetype) {
-    case CommandArchetype::Picker:      buildPicker(); break;
-    case CommandArchetype::Info:        buildInfo(); break;
-    case CommandArchetype::Confirm:     buildConfirm(); break;
-    case CommandArchetype::TextPrompt:  buildTextPrompt(); break;
-    case CommandArchetype::Form:
-        if (m_plan.name == QLatin1String("undo")) buildUndoForm();
-        else if (m_plan.name == QLatin1String("compress")) buildCompressForm();
-        else if (m_plan.name == QLatin1String("branch")) buildBranchForm();
-        else if (m_plan.name == QLatin1String("save")) buildSaveForm();
-        else if (m_plan.name == QLatin1String("tools")) buildToolsForm();
-        else buildTextPrompt();
-        break;
-    default:
-        buildTextPrompt();
-        break;
-    }
-    if (m_plan.name == QLatin1String("personality")) buildPersonalityExtras();
+    // The body belongs to the command's own host; the shell only supplies the
+    // container and the rendering primitives. Unknown names fall back to the
+    // archetype's generic host inside the factory, so nothing is ever hidden.
+    m_host = createCommandHost(m_plan, m_command);
+    if (!m_host) return;
+    m_host->build(*this);
 }
 
-void CommandHostDialog::buildPicker() {
+void CommandHostDialog::buildPickerBody() {
     auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
     auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
     auto &t = Theme::instance();
@@ -487,7 +483,7 @@ void CommandHostDialog::buildPicker() {
     }
 }
 
-void CommandHostDialog::buildInfo() {
+void CommandHostDialog::buildInfoBody() {
     auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
     auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
     auto &t = Theme::instance();
@@ -501,7 +497,7 @@ void CommandHostDialog::buildInfo() {
     m_body->setPlainText(tr("Loading…"));
 }
 
-void CommandHostDialog::buildConfirm() {
+void CommandHostDialog::buildConfirmBody() {
     auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
     auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
     auto *card = new QFrame(body);
@@ -518,7 +514,7 @@ void CommandHostDialog::buildConfirm() {
     layout->addStretch(1);
 }
 
-void CommandHostDialog::buildTextPrompt() {
+void CommandHostDialog::buildTextPromptBody() {
     auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
     auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
     layout->addWidget(section(tr("Value"), body));
@@ -679,17 +675,6 @@ void CommandHostDialog::buildPersonalityExtras() {
     }
 }
 
-AcpClient::ConfigOption CommandHostDialog::matchingOption(const QList<AcpClient::ConfigOption> &options) const {
-    if (!m_plan.configId.isEmpty()) {
-        for (const auto &o : options) if (o.id == m_plan.configId) return o;
-    }
-    if (!m_plan.configCategory.isEmpty()) {
-        for (const auto &o : options)
-            if (o.category == m_plan.configCategory || o.id == m_plan.configCategory) return o;
-    }
-    return {};
-}
-
 void CommandHostDialog::splitModelIdentity(const CommandPickerItem &item,
                                            QString *provider, QString *model, QString *id) {
     *id = item.value;
@@ -707,41 +692,12 @@ void CommandHostDialog::splitModelIdentity(const CommandPickerItem &item,
     }
 }
 
-QList<CommandPickerItem> CommandHostDialog::itemsFromOption(const AcpClient::ConfigOption &opt,
-                                                            const QStringList &availableModels) const {
-    QList<CommandPickerItem> items;
-    QStringList seen;
-    for (const auto &c : opt.choices) {
-        CommandPickerItem it{c.value, c.name.isEmpty() ? c.value : c.name, c.description, c.group};
-        items.push_back(it);
-        seen << c.value;
-    }
-    for (const QString &id : availableModels) {
-        if (id.isEmpty() || seen.contains(id)) continue;
-        items.push_back({id, id, QString(), QString()});
-        seen << id;
-    }
-    if (!opt.currentValue.isEmpty() && !seen.contains(opt.currentValue)) {
-        items.push_front({opt.currentValue, opt.currentValue, QString(), QString()});
-    }
-    return items;
-}
-
 void CommandHostDialog::setConfigOptions(const QList<AcpClient::ConfigOption> &options,
                                          const QStringList &availableModels) {
-    if (m_plan.archetype != CommandArchetype::Picker) return;
-    const auto opt = matchingOption(options);
-    if (opt.id.isEmpty() && availableModels.isEmpty() && m_command.choices().isEmpty()) {
-        updateInfoPanel();
-        return;
-    }
-    QList<CommandPickerItem> items = itemsFromOption(opt, availableModels);
-    if (items.isEmpty()) {
-        for (const QString &c : m_command.choices())
-            items.push_back({c, c, QString(), QString()});
-    }
-    setPickerItems(items, opt.currentValue);
+    if (m_host) m_host->seedConfig(options, availableModels);
 }
+
+void CommandHostDialog::refreshPickerPreview() { updateInfoPanel(); }
 
 void CommandHostDialog::setPickerItems(const QList<CommandPickerItem> &items, const QString &currentValue) {
     m_items = items;
@@ -855,8 +811,7 @@ void CommandHostDialog::updateInfoPanel() {
 }
 
 void CommandHostDialog::setSessionTitle(const QString &title) {
-    if (m_text && m_plan.name == QLatin1String("title") && m_text->text().isEmpty())
-        m_text->setText(title);
+    if (m_host) m_host->seedSessionTitle(title);
 }
 
 void CommandHostDialog::setBodyText(const QString &text) {
@@ -912,27 +867,8 @@ QString CommandHostDialog::previewBody() const {
 }
 
 bool CommandHostDialog::isDirty() const {
-    switch (m_plan.archetype) {
-    case CommandArchetype::Picker:
-        if (persistAsDefault() && !selectedValue().isEmpty()) return true;
-        if (m_currentValue.isEmpty()) return !selectedValue().isEmpty();
-        return selectedValue() != m_currentValue;
-    case CommandArchetype::TextPrompt:
-        return m_text && !m_text->text().trimmed().isEmpty();
-    case CommandArchetype::Form:
-        if (m_plan.name == QLatin1String("undo") || m_plan.name == QLatin1String("compress")
-            || m_plan.name == QLatin1String("branch") || m_plan.name == QLatin1String("save"))
-            return true;
-        if (m_plan.name == QLatin1String("tools"))
-            return !toolsAction().isEmpty() && !toolsNames().isEmpty();
-        return false;
-    case CommandArchetype::Confirm:
-        return true;
-    case CommandArchetype::Info:
-        return true; // Close is always available
-    default:
-        return false;
-    }
+    // The command's host decides what a change is; the shell only reports it.
+    return m_host && m_host->dirty();
 }
 
 bool CommandHostDialog::persistAsDefault() const { return m_persist && m_persist->isChecked(); }
@@ -974,68 +910,19 @@ QString CommandHostDialog::toolsNames() const { return m_toolsNames ? m_toolsNam
 void CommandHostDialog::setToolsNames(const QString &names) { if (m_toolsNames) m_toolsNames->setText(names); }
 
 QString CommandHostDialog::commandLine() const {
-    const QString name = m_command.name.isEmpty() ? m_plan.name : m_command.name;
-    const QString slash = QLatin1Char('/') + name;
-    if (m_plan.archetype == CommandArchetype::Confirm) return slash;
-    if (name == QLatin1String("undo")) {
-        const int n = undoCount();
-        return n <= 1 ? slash : QStringLiteral("%1 %2").arg(slash).arg(n);
-    }
-    if (name == QLatin1String("compress")) {
-        QString line = slash;
-        if (compressPreviewOnly()) line += QStringLiteral(" --preview");
-        const QString focus = textArgument();
-        if (!focus.isEmpty()) line += QStringLiteral(" focus ") + focus;
-        return line;
-    }
-    if (name == QLatin1String("branch")) {
-        QString line = slash;
-        if (branchStayHere()) line += QStringLiteral(" --here");
-        if (!textArgument().isEmpty()) line += QLatin1Char(' ') + textArgument();
-        return line;
-    }
-    if (name == QLatin1String("save")) {
-        QString line = slash + QLatin1Char(' ') + saveFormat();
-        if (!saveFilename().isEmpty()) line += QLatin1Char(' ') + saveFilename();
-        if (saveRedact()) line += QStringLiteral(" redact");
-        return line;
-    }
-    if (name == QLatin1String("tools")) {
-        if (toolsAction().isEmpty()) return slash;
-        return QStringLiteral("%1 %2 %3").arg(slash, toolsAction(), toolsNames()).trimmed();
-    }
-    if (name == QLatin1String("model")) {
-        QString line = slash;
-        const QString value = selectedValue();
-        if (!value.isEmpty()) line += QLatin1Char(' ') + value;
-        if (persistAsDefault()) line += QStringLiteral(" --global");
-        else line += QStringLiteral(" --session");
-        return line;
-    }
-    const QString value = (m_plan.archetype == CommandArchetype::Picker) ? selectedValue() : textArgument();
-    return value.isEmpty() ? slash : slash + QLatin1Char(' ') + value;
+    // Transport only: the exact line Hermes receives. The command's host owns
+    // the argument syntax; the shell never renders it as UI text.
+    return m_host ? m_host->line() : QString();
 }
 
 CommandApplyRequest CommandHostDialog::applyRequest() const {
-    CommandApplyRequest req;
-    req.method = m_plan.apply;
-    req.configId = m_plan.configId;
-    if (m_plan.archetype == CommandArchetype::Picker) req.value = selectedValue();
-    else if (m_plan.archetype == CommandArchetype::TextPrompt) req.value = textArgument();
-    req.quietLine = commandLine();
-    if (m_plan.name == QLatin1String("model") && persistAsDefault() && !req.value.isEmpty())
-        req.persistLine = QStringLiteral("/model %1 --global").arg(req.value);
-    if (m_plan.apply == CommandApply::ConfigOption && req.configId.isEmpty())
-        req.configId = m_plan.configCategory;
-    // If this picker has no config option at apply time, MainWindow should
-    // fall back to the quiet command. We still report ConfigOption as planned.
-    return req;
+    return m_host ? m_host->request() : CommandApplyRequest();
 }
 
 bool CommandHostDialog::canApply() const {
     if (m_busy || m_applying) return false;
     if (m_plan.archetype == CommandArchetype::Info) return true;
-    return isDirty();
+    return m_host && m_host->canApply();
 }
 
 QString CommandHostDialog::errorText() const { return m_error && m_error->isVisible() ? m_error->text() : QString(); }
