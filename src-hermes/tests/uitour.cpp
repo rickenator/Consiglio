@@ -215,7 +215,7 @@ static void tourDialogs(MainWindow &w, bool real) {
     // Settings pages.
     SettingsDialog *s = w.openSettings(QStringLiteral("appearance"));
     s->resize(980, 680);
-    for (const char *page : {"appearance", "session", "agent", "config", "shortcuts"}) {
+    for (const char *page : {"appearance", "session", "agent", "connection", "config", "shortcuts"}) {
         s->showPage(QString::fromLatin1(page));
         if (QLatin1String(page) == QLatin1String("config")) {
             s->loadConfiguration();

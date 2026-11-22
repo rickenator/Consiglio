@@ -24,6 +24,8 @@ add_library(HermesAcp STATIC
     src/commandcatalog.h
     src/hermessetup.cpp
     src/hermessetup.h
+    src/hermesremote.cpp
+    src/hermesremote.h
     src/appsandbox.cpp
     src/appsandbox.h
     src/sessioncatalog.cpp
@@ -176,6 +178,10 @@ add_executable(test_sessionmetrics tests/test_sessionmetrics.cpp)
 target_link_libraries(test_sessionmetrics PRIVATE Qt5::Test HermesUi)
 add_test(NAME SessionMetricsTests COMMAND test_sessionmetrics)
 set_tests_properties(SessionMetricsTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_hermesremote tests/test_hermesremote.cpp)
+target_link_libraries(test_hermesremote PRIVATE Qt5::Test HermesAcp)
+add_test(NAME HermesRemoteTests COMMAND test_hermesremote)
 
 add_executable(setuptour tests/setuptour.cpp)
 target_link_libraries(setuptour PRIVATE Qt5::Test HermesUi)
