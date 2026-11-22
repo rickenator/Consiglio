@@ -4,7 +4,9 @@
 #include "commanddialog.h"
 #include "commandui.h"
 #include "hermescli.h"
+#include "sessionmetrics.h"
 #include "settingsdialog.h"
+#include "sparkline.h"
 #include "theme.h"
 #include "uiutil.h"
 
@@ -191,6 +193,10 @@ void MainWindow::init(const Options &options) {
     m_cwd = s.value(QStringLiteral("session/workspace")).toString();
     if (!m_cwd.isEmpty() && !QDir(m_cwd).exists()) m_cwd.clear();
     m_client.setAutoRestart(s.value(QStringLiteral("hermes/autoRestart"), true).toBool());
+
+    // Measurements Consiglio keeps itself (never conversation text). Loading is
+    // best-effort: a missing or unreadable store must not stop the app.
+    SessionMetrics::instance().load();
 
     setupUI();
     setupActions();
@@ -493,6 +499,14 @@ void MainWindow::setupStatusBar() {
     m_contextBar->setRange(0, 100);
     m_contextBar->setTextVisible(false);
     ui::describe(m_contextBar, tr("Context window used"));
+    // The trend sits beside the bar: the bar says where you are now, the line
+    // says how you got there. Numbers live in the tooltip.
+    m_contextSpark = new ui::Sparkline(bar);
+    m_contextSpark->setObjectName(QStringLiteral("contextSpark"));
+    m_contextSpark->setFixedSize(theme().px(72), theme().px(16));
+    m_contextSpark->setFixedRange(0.0, 100.0);
+    m_contextSpark->setToolTip(tr("Context use across this session"));
+    ui::describe(m_contextSpark, tr("Context trend"), tr("Context window use over this session"));
     m_timerLabel = new QLabel(QStringLiteral("0:00"), bar);
     m_timerLabel->setObjectName(QStringLiteral("statusTimer"));
     ui::describe(m_timerLabel, tr("Duration of the last response"));
@@ -501,11 +515,13 @@ void MainWindow::setupStatusBar() {
     ui::describe(m_tokensLabel, tr("Tokens in ↑ and out ↓ for the last response"));
     bar->addPermanentWidget(m_modelLabel);
     bar->addPermanentWidget(m_contextLabel);
+    bar->addPermanentWidget(m_contextSpark);
     bar->addPermanentWidget(m_contextBar);
     bar->addPermanentWidget(m_timerLabel);
     bar->addPermanentWidget(m_tokensLabel);
     m_contextLabel->hide();
     m_contextBar->hide();
+    m_contextSpark->hide();
 }
 
 void MainWindow::connectClient() {
@@ -1205,6 +1221,8 @@ void MainWindow::onSessionsListed(QList<AcpClient::SessionInfo> sessions) {
 void MainWindow::onReady() {
     m_opening = false;
     setActive(true);
+    SessionMetrics::instance().beginSession(m_client.sessionId());
+    updateContextTrend();
     rebuildConfigCombos();
     startDiscovery(false);
     if (!m_pendingPrompt.isEmpty()) {
@@ -1237,6 +1255,7 @@ void MainWindow::onMessageChunk(const QString &text) {
 void MainWindow::onThoughtChunk(const QString &text) { m_chat->appendThoughtChunk(text); }
 
 void MainWindow::onToolCallStarted(const QString &id, const QString &title, const QString &kind) {
+    SessionMetrics::instance().noteToolCall();
     m_chat->addToolCall(id, title, kind);
 }
 
@@ -1246,6 +1265,9 @@ void MainWindow::onToolCallUpdated(const QString &id, const QString &status, con
 
 void MainWindow::onContextUsage(int used, int size) {
     if (size <= 0) return;
+    SessionMetrics::instance().noteContext(used, size);
+    updateContextTrend();
+
     const int pct = qBound(0, int((qint64(used) * 100) / size), 100);
     m_contextBar->setValue(pct);
     const char *level = pct >= 90 ? "danger" : pct >= 70 ? "warn" : "ok";
@@ -1255,11 +1277,33 @@ void MainWindow::onContextUsage(int used, int size) {
         m_contextBar->style()->polish(m_contextBar);
     }
     m_contextLabel->setText(tr("Context %1%").arg(pct));
-    const QString tip = tr("Context window: %1 of %2 tokens used (%3%)").arg(shortCount(used), shortCount(size)).arg(pct);
+
+    int peak = pct;
+    for (double v : m_contextSpark->values()) peak = qMax(peak, qRound(v));
+    const QString tip = tr("Context window: %1 of %2 tokens used (%3%)\n"
+                           "Peak this session: %4% — the line is Hermes's own usage over time")
+                            .arg(shortCount(used), shortCount(size))
+                            .arg(pct)
+                            .arg(peak);
     m_contextLabel->setToolTip(tip);
     m_contextBar->setToolTip(tip);
+    m_contextSpark->setToolTip(tip);
     m_contextLabel->show();
     m_contextBar->show();
+    m_contextSpark->setVisible(!m_contextSpark->values().isEmpty());
+}
+
+// Redraw the trend from what Hermes reported for this session. The series is
+// percentages of the window, so two sessions stay comparable (fixed 0…100).
+void MainWindow::updateContextTrend() {
+    if (!m_contextSpark) return;
+    auto &metrics = SessionMetrics::instance();
+    const QString id = m_client.sessionId();
+    if (id.isEmpty()) return;
+    const QList<double> series = metrics.contextPercentSeries(id);
+    m_contextSpark->setValues(series);
+    m_contextSpark->setVisible(!series.isEmpty());
+    m_contextSpark->setFixedSize(theme().px(72), theme().px(16));
 }
 
 void MainWindow::onSessionTitle(const QString &title) {
@@ -1275,6 +1319,8 @@ void MainWindow::onCommandsUpdated() {
 
 void MainWindow::onTurnCompleted(const QString &stopReason, qint64 inputTokens, qint64 outputTokens) {
     endTurnUi();
+    SessionMetrics::instance().endTurn(stopReason, inputTokens, outputTokens,
+                                       QDateTime::currentMSecsSinceEpoch());
     const double secs = qMax<qint64>(1, QDateTime::currentMSecsSinceEpoch() - m_turnStartMs) / 1000.0;
     if (inputTokens > 0 || outputTokens > 0) {
         m_tokensLabel->setText(tr("↑ %1  ↓ %2 · %3 tok/s")
@@ -1369,6 +1415,8 @@ void MainWindow::onSessionRestored(const QString &sessionId) {
     Q_UNUSED(sessionId);
     m_opening = false;
     setActive(true);
+    SessionMetrics::instance().beginSession(m_client.sessionId());
+    updateContextTrend();
     m_chat->appendNotice(tr("Reconnected — session restored"), ChatBlock::Success);
     rebuildConfigCombos();
     startDiscovery(false);
@@ -1609,6 +1657,7 @@ void MainWindow::beginTurnUi() {
     m_busy = true;
     m_streamedChars = 0;
     m_turnStartMs = QDateTime::currentMSecsSinceEpoch();
+    SessionMetrics::instance().beginTurn(m_turnStartMs);
     m_timerLabel->setText(QStringLiteral("0:00"));
     m_tokensLabel->clear();
     m_turnTimer->start();
@@ -1656,6 +1705,10 @@ void MainWindow::restyle() {
     m_rail->setFixedWidth(t.px(268));
     m_toolbar->setIconSize(QSize(t.px(16), t.px(16)));
     m_contextBar->setFixedWidth(t.px(72));
+    if (m_contextSpark) {
+        m_contextSpark->setFixedSize(t.px(72), t.px(16));
+        m_contextSpark->restyle();
+    }
     for (const char *id : {"app:theme-system", "app:theme-light", "app:theme-dark"}) {
         const Theme::Mode mode = Theme::modeFromName(QString::fromLatin1(id).mid(10));
         if (QAction *a = m_actions.value(QString::fromLatin1(id))) a->setChecked(t.mode() == mode);

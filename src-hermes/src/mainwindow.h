@@ -22,7 +22,7 @@ class QDialog;
 class QMenu;
 class QToolBar;
 class SettingsDialog;
-namespace ui { class StatusDot; }
+namespace ui { class StatusDot; class Sparkline; }
 
 // The main window.
 //
@@ -148,6 +148,8 @@ private:
     void showToast(const QString &text, int ms = 4000);
     void restyle();
     void applyZoom(double delta);
+    // Redraw the status-bar context trend from the session's recorded samples.
+    void updateContextTrend();
     void updateResponsive();   // fit the chrome to the window width (no clipped toolbar)
     bool handleCommandAppLink(const CommandPlan &plan);
     void seedCommandHost(class CommandHostDialog *dialog);
@@ -183,6 +185,8 @@ private:
     QLabel *m_modelLabel = nullptr;
     QLabel *m_contextLabel = nullptr;
     QProgressBar *m_contextBar = nullptr;
+    // Context trend for this session, drawn from Hermes's own usage numbers.
+    ui::Sparkline *m_contextSpark = nullptr;
     QLabel *m_timerLabel = nullptr;
     QLabel *m_tokensLabel = nullptr;
 
