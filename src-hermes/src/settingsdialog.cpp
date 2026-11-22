@@ -4,10 +4,12 @@
 #include "fontsettings.h"
 #include "hermescli.h"
 #include "hermesremote.h"
+#include "hostmanager.h"
 #include "hermessetupdialog.h"
 #include "theme.h"
 #include "uiutil.h"
 
+#include <QProcess>
 #include <QTimer>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -703,33 +705,63 @@ void SettingsDialog::openTerminal(const QStringList &args) {
     }
 }
 
-// ─── Connection (remote Hermes over SSH) ─────────────────────────────────
+// ─── Connection: which host runs Hermes ──────────────────────────────────
 
 QWidget *SettingsDialog::buildConnection() {
     QWidget *w;
     QVBoxLayout *l;
     QWidget *pageWidget = page(tr("Connection"),
-                               tr("Where Hermes runs. A local install is the default; point Consiglio at "
-                                  "another machine to use that machine's Hermes over SSH."),
+                               tr("Which machine runs Hermes. This machine by default; a saved SSH host "
+                                  "connects to the Hermes installed there."),
                                &w, &l);
 
     QVBoxLayout *cl;
     auto *c = card(w, &cl);
-    m_remoteEnabled = new QCheckBox(tr("Run Hermes on another machine (SSH)"), c);
-    m_remoteEnabled->setChecked(HermesRemote::enabled());
-    ui::describe(m_remoteEnabled, tr("Remote Hermes"),
-                 tr("Connect to `hermes acp` on a remote host instead of a local install"));
-    cl->addWidget(m_remoteEnabled);
+
+    auto *row = new QWidget(c);
+    auto *rl = new QHBoxLayout(row);
+    rl->setContentsMargins(0, 0, 0, 0);
+    rl->setSpacing(th().px(8));
+    m_remoteHosts = new ui::ElidedCombo(row);
+    m_remoteHosts->setMinimumWidth(th().px(200));
+    m_remoteHosts->setMaximumWidth(th().px(300));
+    m_remoteHosts->setAccessibleName(tr("Host"));
+    rl->addWidget(m_remoteHosts, 1);
+    cl->addWidget(settingRow(tr("Run Hermes on"), tr("A different host is a reconnect, not a second window."),
+                             row, c));
+
+    // Actions sit on their own row: three buttons beside a combo do not fit a
+    // 680 px page, and clipping a control is worse than adding a line.
+    auto *actions = new QWidget(c);
+    auto *al = new QHBoxLayout(actions);
+    al->setContentsMargins(0, 0, 0, 0);
+    al->setSpacing(th().px(8));
+    m_remoteAdd = button(tr("Add Host…"), "plus", tr("Add a remote host over SSH"), actions);
+    m_remoteRemove = button(tr("Remove"), "trash-2", tr("Forget the selected remote host"), actions);
+    auto *test = button(tr("Test"), "network", tr("Run the lookup over SSH and report what it found"), actions);
+    m_remoteSpinner = new ui::Spinner(actions, 14);
+    m_remoteSpinner->setVisible(false);
+    m_remoteResult = label(QString(), "faint", actions);
+    m_remoteResult->setWordWrap(true);
+    m_remoteResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    al->addWidget(m_remoteAdd);
+    al->addWidget(m_remoteRemove);
+    al->addWidget(test);
+    al->addWidget(m_remoteSpinner);
+    al->addWidget(m_remoteResult, 1);
+    cl->addWidget(actions);
     cl->addWidget(divider(c));
 
-    m_remoteDestination = new QLineEdit(HermesRemote::destination(), c);
+    m_remoteDestination = new QLineEdit(c);
+    m_remoteDestination->setMaximumWidth(th().px(300));
     m_remoteDestination->setPlaceholderText(tr("user@host, or a host from ~/.ssh/config"));
     m_remoteDestination->setClearButtonEnabled(true);
     ui::describe(m_remoteDestination, tr("SSH destination"),
                  tr("Anything ssh accepts as a host: user@host, a Host alias, or an address"));
     cl->addWidget(settingRow(tr("Destination"), tr("The machine that runs Hermes."), m_remoteDestination, c));
 
-    m_remoteOptions = new QLineEdit(HermesRemote::optionsLine(), c);
+    m_remoteOptions = new QLineEdit(c);
+    m_remoteOptions->setMaximumWidth(th().px(300));
     m_remoteOptions->setPlaceholderText(tr("-p 2222 -i ~/.ssh/id_ed25519"));
     m_remoteOptions->setClearButtonEnabled(true);
     ui::describe(m_remoteOptions, tr("Extra ssh options"),
@@ -737,7 +769,8 @@ QWidget *SettingsDialog::buildConnection() {
     cl->addWidget(settingRow(tr("SSH options"), tr("Optional: port, identity file, jump host."),
                              m_remoteOptions, c));
 
-    m_remoteLauncher = new QLineEdit(HermesRemote::launcher(), c);
+    m_remoteLauncher = new QLineEdit(c);
+    m_remoteLauncher->setMaximumWidth(th().px(300));
     m_remoteLauncher->setPlaceholderText(QStringLiteral("hermes"));
     m_remoteLauncher->setClearButtonEnabled(true);
     ui::describe(m_remoteLauncher, tr("Remote launcher"),
@@ -745,53 +778,83 @@ QWidget *SettingsDialog::buildConnection() {
     cl->addWidget(settingRow(tr("Launcher"), tr("Consiglio looks it up on every connection; nothing is pinned."),
                              m_remoteLauncher, c));
 
-    auto *row = new QWidget(c);
-    auto *rl = new QHBoxLayout(row);
-    rl->setContentsMargins(0, 0, 0, 0);
-    rl->setSpacing(th().px(8));
-    auto *test = button(tr("Test Connection"), "network",
-                        tr("Run the lookup over SSH and report what it found"), row);
-    m_remoteSpinner = new ui::Spinner(row, 14);
-    m_remoteSpinner->setVisible(false);
-    m_remoteResult = label(QString(), "faint", row);
-    m_remoteResult->setWordWrap(true);
-    m_remoteResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    rl->addWidget(test);
-    rl->addWidget(m_remoteSpinner);
-    rl->addWidget(m_remoteResult, 1);
-    cl->addWidget(row);
     l->addWidget(c);
 
-    l->addWidget(label(tr("Hermes keeps its own configuration, keys and sessions on the machine it runs on; "
-                          "Consiglio never copies them. Approvals and sessions behave the same way one hop away. "
+    l->addWidget(label(tr("Hermes keeps its configuration, keys and sessions on the machine it runs on. "
                           "SSH must already work non-interactively (key-based, no password prompt)."),
                        "faint", w));
     l->addStretch(1);
 
-    auto applyState = [this, test]() {
-        const bool on = m_remoteEnabled->isChecked();
-        m_remoteDestination->setEnabled(on);
-        m_remoteOptions->setEnabled(on);
-        m_remoteLauncher->setEnabled(on);
-        test->setEnabled(on && !m_remoteDestination->text().trimmed().isEmpty());
+    // ── behaviour ────────────────────────────────────────────────────────
+    const auto fillHosts = [this]() {
+        const QString keep = m_remoteHosts->currentData().toString();
+        m_remoteHosts->clear();
+        for (const HostProfile &p : HostManager::profiles()) {
+            m_remoteHosts->addItem(p.isLocal() ? tr("This machine") : p.displayName(), p.id);
+        }
+        const int idx = m_remoteHosts->findData(keep.isEmpty() ? HostManager::activeId() : keep);
+        if (idx >= 0) m_remoteHosts->setCurrentIndex(idx);
     };
-    applyState();
+    const auto loadFields = [this]() {
+        const HostProfile p = HostManager::profile(m_remoteHosts->currentData().toString());
+        const bool remote = !p.isLocal();
+        m_remoteDestination->setEnabled(remote);
+        m_remoteOptions->setEnabled(remote);
+        m_remoteLauncher->setEnabled(remote);
+        m_remoteRemove->setEnabled(remote);
+        m_remoteDestination->setText(p.destination);
+        m_remoteOptions->setText(p.options);
+        m_remoteLauncher->setText(p.launcher);
+        m_remoteResult->setText(QString());
+        m_remoteSpinner->setVisible(false);
+    };
+    fillHosts();
+    loadFields();
 
-    connect(m_remoteEnabled, &QCheckBox::toggled, this, [this, applyState](bool on) {
-        HermesRemote::setEnabled(on);
-        applyState();
+    connect(m_remoteHosts, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, loadFields](int) {
+        const QString id = m_remoteHosts->currentData().toString();
+        if (id.isEmpty()) return;
+        HostManager::setActiveId(id);
+        loadFields();
         emit connectionChanged();
     });
-    auto persist = [this]() {
-        HermesRemote::setDestination(m_remoteDestination->text());
-        HermesRemote::setOptions(m_remoteOptions->text());
-        HermesRemote::setLauncher(m_remoteLauncher->text());
+
+    connect(m_remoteAdd, &QPushButton::clicked, this, [this, fillHosts, loadFields]() {
+        const QString id = HostManager::addProfile(QString());
+        HostManager::setActiveId(id);
+        fillHosts();
+        m_remoteHosts->setCurrentIndex(m_remoteHosts->findData(id));
+        loadFields();
+        m_remoteDestination->setFocus();
+        emit connectionChanged();
+    });
+
+    connect(m_remoteRemove, &QPushButton::clicked, this, [this, fillHosts, loadFields]() {
+        const QString id = m_remoteHosts->currentData().toString();
+        if (id.isEmpty() || id == QLatin1String(HostManager::localId())) return;
+        HostManager::removeProfile(id);
+        HostManager::setActiveId(QLatin1String(HostManager::localId()));
+        fillHosts();
+        loadFields();
+        emit connectionChanged();
+    });
+
+    const auto persist = [this]() {
+        HostProfile p = HostManager::profile(m_remoteHosts->currentData().toString());
+        if (p.isLocal() || p.id.isEmpty()) return;
+        p.destination = m_remoteDestination->text().trimmed();
+        if (p.label.isEmpty() || p.label == p.destination) p.label = p.destination;
+        p.options = m_remoteOptions->text().trimmed();
+        p.launcher = m_remoteLauncher->text().trimmed();
+        HostManager::updateProfile(p);
+        // Keep the host list readable while typing: the label follows the destination.
+        const int idx = m_remoteHosts->currentIndex();
+        if (idx >= 0) m_remoteHosts->setItemText(idx, p.displayName());
         emit connectionChanged();
     };
     connect(m_remoteDestination, &QLineEdit::editingFinished, this, persist);
     connect(m_remoteOptions, &QLineEdit::editingFinished, this, persist);
     connect(m_remoteLauncher, &QLineEdit::editingFinished, this, persist);
-    connect(m_remoteDestination, &QLineEdit::textChanged, this, [applyState]() { applyState(); });
     connect(test, &QPushButton::clicked, this, &SettingsDialog::testConnection);
 
     return pageWidget;
@@ -799,20 +862,21 @@ QWidget *SettingsDialog::buildConnection() {
 
 void SettingsDialog::testConnection() {
     if (!m_remoteResult) return;
+    HostProfile p = HostManager::profile(m_remoteHosts->currentData().toString());
+    if (p.isLocal()) {
+        m_remoteResult->setText(tr("This machine is the local default — nothing to look up."));
+        return;
+    }
     const QString dest = m_remoteDestination->text().trimmed();
     if (dest.isEmpty()) {
         m_remoteResult->setText(tr("Enter a destination first (user@host)."));
         return;
     }
-    // Persist what is on screen before probing, so a passing test is the saved one.
-    HermesRemote::setDestination(dest);
-    HermesRemote::setOptions(m_remoteOptions->text());
-    HermesRemote::setLauncher(m_remoteLauncher->text());
-
+    // Test what is typed, and keep it: a passing test is the saved answer.
     m_remoteResult->setText(tr("Looking for hermes on %1…").arg(dest));
     m_remoteSpinner->setVisible(true);
     m_remoteSpinner->setRunning(true);
-    const QStringList opts = HermesRemote::options();
+    const QStringList opts = QProcess::splitCommand(m_remoteOptions->text());
     HermesRemote::probeAsync(this, dest, opts, [this](const RemoteProbe &probe) {
         if (!m_remoteResult) return;
         m_remoteSpinner->setRunning(false);

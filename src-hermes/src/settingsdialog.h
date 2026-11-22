@@ -8,6 +8,7 @@
 class AcpClient;
 class FontSettings;
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -26,7 +27,7 @@ namespace ui { class Spinner; class StatusDot; }
 //                  approvals… whatever Hermes advertises)
 //   Hermes Agent   connection, version, executable, restart, updates,
 //                  provider setup, doctor
-//   Connection     run Hermes on another machine over SSH
+//   Connection     which host runs Hermes: this machine, or a saved SSH host
 //   Configuration  `hermes config show`, rendered; set a value; open the file
 //   Shortcuts      every keyboard shortcut
 class SettingsDialog : public QDialog {
@@ -82,8 +83,10 @@ private:
     QVBoxLayout *m_sessionLayout = nullptr;
     QWidget *m_sessionContent = nullptr;
 
-    // Connection (remote Hermes)
-    QCheckBox *m_remoteEnabled = nullptr;
+    // Connection (which host runs Hermes)
+    QComboBox *m_remoteHosts = nullptr;
+    QPushButton *m_remoteAdd = nullptr;
+    QPushButton *m_remoteRemove = nullptr;
     QLineEdit *m_remoteDestination = nullptr;
     QLineEdit *m_remoteOptions = nullptr;
     QLineEdit *m_remoteLauncher = nullptr;
