@@ -26,6 +26,7 @@ namespace ui { class Spinner; class StatusDot; }
 //                  approvals… whatever Hermes advertises)
 //   Hermes Agent   connection, version, executable, restart, updates,
 //                  provider setup, doctor
+//   Connection     run Hermes on another machine over SSH
 //   Configuration  `hermes config show`, rendered; set a value; open the file
 //   Shortcuts      every keyboard shortcut
 class SettingsDialog : public QDialog {
@@ -33,7 +34,7 @@ class SettingsDialog : public QDialog {
 public:
     SettingsDialog(AcpClient *client, FontSettings *fonts, QWidget *parent = nullptr);
 
-    void showPage(const QString &id);   // "appearance", "session", "agent", "config", "shortcuts"
+    void showPage(const QString &id);   // "appearance", "session", "agent", "connection", "config", "shortcuts"
     QString currentPage() const;
     void setShortcuts(const QList<QPair<QString, QString>> &shortcuts);
     // Load `hermes config show` now instead of on first view (tests, screenshots).
@@ -44,16 +45,20 @@ signals:
     void restartRequested();
     void executableChanged();
     void autoRestartChanged(bool enabled);
+    // The remote (SSH) target changed; the next connection uses it.
+    void connectionChanged();
 
 private:
     QWidget *buildAppearance();
     QWidget *buildSession();
     QWidget *buildAgent();
+    QWidget *buildConnection();
     QWidget *buildConfig();
     QWidget *buildShortcuts();
     QWidget *page(const QString &title, const QString &subtitle, QWidget **content, QVBoxLayout **layout);
     void rebuildSession();
     void refreshAgent();
+    void testConnection();
     void runToOutput(const QString &title, const QStringList &args, int timeoutMs = 120000,
                      std::function<void(int)> after = {});
     void renderConfig(const QString &output);
@@ -76,6 +81,14 @@ private:
     // Session
     QVBoxLayout *m_sessionLayout = nullptr;
     QWidget *m_sessionContent = nullptr;
+
+    // Connection (remote Hermes)
+    QCheckBox *m_remoteEnabled = nullptr;
+    QLineEdit *m_remoteDestination = nullptr;
+    QLineEdit *m_remoteOptions = nullptr;
+    QLineEdit *m_remoteLauncher = nullptr;
+    QLabel *m_remoteResult = nullptr;
+    ui::Spinner *m_remoteSpinner = nullptr;
 
     // Agent
     ui::StatusDot *m_agentDot = nullptr;

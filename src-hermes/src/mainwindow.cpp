@@ -4,6 +4,7 @@
 #include "commanddialog.h"
 #include "commandui.h"
 #include "hermescli.h"
+#include "hermesremote.h"
 #include "sessionmetrics.h"
 #include "settingsdialog.h"
 #include "sparkline.h"
@@ -232,6 +233,41 @@ void MainWindow::connectToHermes() {
     m_conn = Conn::Connecting;
     m_connError.clear();
     updateUiState();
+
+    // A remote Hermes is found the same way the local one is: by asking, every
+    // time. The lookup runs asynchronously so an unreachable host is an error
+    // banner, not a frozen window.
+    if (HermesRemote::enabled()) {
+        const QString dest = HermesRemote::destination();
+        if (dest.isEmpty()) {
+            m_conn = Conn::Failed;
+            m_connError = tr("Settings → Connection has SSH turned on but no destination.");
+            updateUiState();
+            return;
+        }
+        m_connError = tr("Looking for Hermes on %1…").arg(dest);
+        updateUiState();
+        const QStringList opts = HermesRemote::options();
+        HermesRemote::probeAsync(this, dest, opts, [this, dest, opts](const RemoteProbe &probe) {
+            if (!probe.ok) {
+                m_conn = Conn::Failed;
+                m_connError = tr("%1: %2").arg(dest, probe.text());
+                updateUiState();
+                return;
+            }
+            m_conn = Conn::Connecting;
+            m_connError.clear();
+            m_client.setRemote(dest, opts, probe.executable);
+            if (!m_client.launch()) {
+                m_conn = Conn::Failed;
+                if (m_connError.isEmpty()) m_connError = tr("Couldn't start Hermes on %1.").arg(dest);
+            }
+            updateUiState();
+        });
+        return;
+    }
+
+    m_client.clearRemote();
     const QString exe = !m_executable.isEmpty() ? m_executable : HermesSetup::launchExecutable();
     if (!m_client.launch(exe)) {
         m_conn = Conn::Failed;
@@ -1094,6 +1130,10 @@ SettingsDialog *MainWindow::openSettings(const QString &page) {
             if (m_conn == Conn::Failed) connectToHermes();
             else showToast(tr("The new Hermes executable is used the next time the agent restarts."), 6000);
         });
+        connect(dlg, &SettingsDialog::connectionChanged, this, [this]() {
+            if (m_conn == Conn::Failed || !m_client.isConnected()) connectToHermes();
+            else showToast(tr("The connection setting is used the next time the agent restarts."), 6000);
+        });
         m_settings = dlg;
     }
     if (!page.isEmpty()) m_settings->showPage(page);
@@ -1539,6 +1579,8 @@ void MainWindow::updateUiState() {
     }
     if (connected && !m_client.agentVersion().isEmpty() && !m_busy && !m_opening)
         label += QStringLiteral(" · Hermes %1").arg(m_client.agentVersion());
+    if (connected && m_client.isRemote() && !m_busy && !m_opening)
+        label += QStringLiteral(" · %1").arg(HermesRemote::destination());
     m_stateDot->setState(dot);
     m_stateLabel->setText(label);
 
