@@ -47,6 +47,8 @@ add_library(HermesUi STATIC
     src/commanddialog.h
     src/commandui.cpp
     src/commandui.h
+    src/commandhost.cpp
+    src/commandhost.h
     src/hermescli.cpp
     src/hermescli.h
     src/settingsdialog.cpp

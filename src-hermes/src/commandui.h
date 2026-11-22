@@ -21,6 +21,8 @@ class QScrollArea;
 class QSpinBox;
 class QPlainTextEdit;
 class QComboBox;
+class QVBoxLayout;
+class CommandHost;
 
 // How a discovered Hermes command is presented in Consiglio. Discovery itself
 // stays dynamic (ACP + /commands); this only decides the surface. Unknown or
@@ -102,9 +104,31 @@ class CommandHostDialog : public QDialog {
 public:
     CommandHostDialog(const CommandPlan &plan, const CommandCatalog::Command &command,
                       QWidget *parent = nullptr);
+    ~CommandHostDialog() override;
 
     const CommandPlan &plan() const { return m_plan; }
     const CommandCatalog::Command &command() const { return m_command; }
+    // The command-specific host this dialog is showing (never null for a
+    // dialog: the factory falls back to the archetype's generic host).
+    CommandHost *host() const { return m_host; }
+
+    // ── Rendering primitives ─────────────────────────────────────────────
+    // Used by CommandHost implementations. Each adds its widgets to the body
+    // container; the chrome and the apply lifecycle stay in this class.
+    QWidget *bodyWidget() const;
+    QVBoxLayout *bodyLayout() const;
+    void buildPickerBody();
+    void buildInfoBody();
+    void buildConfirmBody();
+    void buildTextPromptBody();
+    void buildUndoForm();
+    void buildCompressForm();
+    void buildBranchForm();
+    void buildSaveForm();
+    void buildToolsForm();
+    void buildPersonalityExtras();
+    // Re-render the picker's preview panel from the current selection.
+    void refreshPickerPreview();
 
     // Seed pickers from ACP session config and any extra model ids.
     void setConfigOptions(const QList<AcpClient::ConfigOption> &options,
@@ -120,6 +144,8 @@ public:
     // Preview / selection.
     QString selectedValue() const;
     void setSelectedValue(const QString &value);
+    // The value the session currently uses (what the picker opened with).
+    QString currentPickerValue() const { return m_currentValue; }
     QString previewHeadline() const;
     QString previewBody() const;
     bool isDirty() const;
@@ -173,25 +199,12 @@ signals:
 private:
     void buildShell();
     void buildBody();
-    void buildPicker();
-    void buildInfo();
-    void buildConfirm();
-    void buildTextPrompt();
-    void buildUndoForm();
-    void buildCompressForm();
-    void buildBranchForm();
-    void buildSaveForm();
-    void buildToolsForm();
-    void buildPersonalityExtras();
     void populatePicker(const QList<CommandPickerItem> &items, const QString &current);
     void rebuildPickerList();
     void onPickerCurrentChanged();
     void updateInfoPanel();
     void updateSaveEnabled();
     void onSave();
-    AcpClient::ConfigOption matchingOption(const QList<AcpClient::ConfigOption> &options) const;
-    QList<CommandPickerItem> itemsFromOption(const AcpClient::ConfigOption &opt,
-                                             const QStringList &availableModels) const;
     static void splitModelIdentity(const CommandPickerItem &item,
                                    QString *provider, QString *model, QString *id);
     QString defaultTitle() const;
@@ -199,6 +212,8 @@ private:
 
     CommandPlan m_plan;
     CommandCatalog::Command m_command;
+    // The command's own body. Owned here; outlives every widget the shell has.
+    CommandHost *m_host = nullptr;
 
     QLabel *m_error = nullptr;
     QFrame *m_infoPanel = nullptr;

@@ -1,6 +1,7 @@
 // Unit tests for the command UI map and the shared dialog shell: pickers
 // preview without applying, Save is required, unknown commands are passthrough.
 #include "commandui.h"
+#include "commandhost.h"
 #include "commanddialog.h"
 #include "theme.h"
 
@@ -220,6 +221,53 @@ private slots:
         QVERIFY(d->canRun());
         d->setArguments(QStringLiteral("steer turn left"));
         QCOMPARE(d->commandLine(), QString("/steer turn left"));
+    }
+
+    // The ledger: every command with a native surface must actually get one.
+    // A plan added without a host (or a host claiming the wrong archetype)
+    // fails here instead of silently degrading to a text fallback.
+    void everyNativePlanResolvesToAHost() {
+        int dialogs = 0;
+        for (const QString &name : CommandUi::nativeCommandNames()) {
+            const CommandPlan p = CommandUi::planFor(name);
+            CommandCatalog::Command cmd;
+            cmd.name = name;
+            cmd.label = CommandCatalog::labelFor(name);
+            QScopedPointer<CommandHostDialog> d(new CommandHostDialog(p, cmd));
+            if (p.archetype == CommandArchetype::AppLink) continue;  // existing surface, no dialog
+            ++dialogs;
+            QVERIFY2(d->host() != nullptr, qPrintable(name));
+            QCOMPARE(int(d->host()->archetype()), int(p.archetype));
+            // The line Hermes receives is transport, never UI text: it must be
+            // a real slash command and never empty.
+            QVERIFY2(d->commandLine().startsWith(QLatin1Char('/')), qPrintable(name));
+        }
+        QVERIFY(dialogs >= 20);  // sanity: the loop really built dialogs
+    }
+
+    // A command this build has never seen still gets a surface when a future
+    // Hermes maps it onto an archetype, and archetypes with no dialog get none.
+    void factoryFallsBackToTheArchetype() {
+        CommandCatalog::Command cmd;
+        cmd.name = QStringLiteral("zz-newform");
+
+        CommandPlan form;
+        form.name = QStringLiteral("zz-newform");
+        form.archetype = CommandArchetype::Form;
+        QScopedPointer<CommandHost> fallback(createCommandHost(form, cmd));
+        QVERIFY(fallback);
+        QCOMPARE(int(fallback->archetype()), int(CommandArchetype::Form));
+        QCOMPARE(fallback->line(), QString("/zz-newform"));
+
+        CommandPlan link;
+        link.name = QStringLiteral("zz-newform");
+        link.archetype = CommandArchetype::AppLink;
+        QVERIFY(createCommandHost(link, cmd) == nullptr);
+
+        CommandPlan passthrough;
+        passthrough.name = QStringLiteral("zz-newform");
+        passthrough.archetype = CommandArchetype::Passthrough;
+        QVERIFY(createCommandHost(passthrough, cmd) == nullptr);
     }
 
     void lightThemeShellBuilds() {
