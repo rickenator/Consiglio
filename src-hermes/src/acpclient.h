@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QObject>
-#include <QProcess>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMap>
@@ -10,6 +9,7 @@
 #include "sessioncatalog.h"
 
 class QTimer;
+class AcpTransport;
 
 // AcpClient drives a single persistent `hermes acp` process speaking the
 // Agent Client Protocol (newline-delimited JSON-RPC over stdio). The process
@@ -133,6 +133,18 @@ public:
     // Kill the process entirely (app exit).
     void shutdown();
 
+    // Where the agent runs. Default: a local `hermes acp` process. setRemote()
+    // points the same protocol at `ssh [-o …] <destination> -- <executable> acp`;
+    // everything above the transport is identical, and failures surface ssh's
+    // own message. Call before launch()/restartAgent().
+    void setRemote(const QString &destination, const QStringList &sshOptions = QStringList(),
+                   const QString &remoteExecutable = QStringLiteral("hermes"));
+    void clearRemote();
+    bool isRemote() const { return !m_remoteHost.isEmpty(); }
+    QString remoteHost() const { return m_remoteHost; }
+    // What the last launch actually ran, e.g. "hermes acp" or "spark: hermes acp".
+    QString transportDescription() const;
+
     // A pending agent->client permission request (session/request_permission).
     struct PermissionOption {
         QString optionId;     // opaque id chosen by the agent; echoed back verbatim
@@ -246,8 +258,8 @@ signals:
     void configChangeFailed(const QString &configId, const QString &message);
 
 private slots:
-    void onStdout();
-    void onProcessFinished(int code, QProcess::ExitStatus status);
+    void onTransportData(const QByteArray &data);
+    void onTransportExited(int code, bool crashed);
 
 private:
     enum class ReqKind { Initialize, NewSession, ResumeSession, LoadSession, ListSessions, Prompt,
@@ -277,9 +289,14 @@ private:
     void parseConfigOptions(const QJsonArray &options);
     static QString idKey(const QJsonValue &id);
 
-    QPointer<QProcess> m_proc;
+    QPointer<AcpTransport> m_transport;
     QString m_requestedExecutable;   // what the caller asked for ("" = resolve)
     QString m_resolvedExecutable;    // what the last launch actually ran
+    // Remote target ("" = local). argv-only: ssh options are already split.
+    QString m_remoteHost;
+    QString m_remoteExe = QStringLiteral("hermes");
+    QStringList m_sshOptions;
+    QString m_lastStderr;            // tail of the agent's/ssh's stderr, for diagnostics
     QByteArray m_stdoutBuf;
     int m_nextReqId = 1;
     QMap<QString, ReqKind> m_pending;  // outstanding request id -> kind
