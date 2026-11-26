@@ -30,6 +30,24 @@ REPLY_DELAY = float(os.environ.get("FAKE_ACP_REPLY_DELAY", "0") or 0)
 session_counter = 0
 config = {"edit_approval_policy": "ask", "model": "fake/model", "reasoning_effort": "medium"}
 goal = {"text": "", "state": "none"}
+subgoals = []
+heartbeat = {"interval": "10m", "prompt": "", "state": "none"}
+loop = {"interval": "", "prompt": "", "state": "none"}
+queue_items = ["Review the latest diff"]
+memory_pending = [("mem01", "Remember the project uses Qt 5")]
+memory_gate = "on"
+skills_pending = [("sk01", "Write a skill note about ACP sessions")]
+skill_gate = "on"
+checkpoints = [
+    (1, "a1b2c3d", "2026-11-20 17:01", "before edit"),
+    (2, "d4e5f6a", "2026-11-20 17:10", "after tools"),
+]
+snapshots = [("snap-1", "3 files", "12K", "before refactor")]
+cron_jobs = [{"id": "job-1", "state": "active", "when": "every 1h", "label": "status ping"}]
+suggestions = [(1, "Add a README section on ACP"), (2, "Extract the live panel into its own file")]
+blueprints = [("weekly-review", "Recurring weekly review session"), ("bug-triage", "Triage open issues")]
+agents = [("worker-1", "running", "summarize the log")]
+usage = {"tokens": 1204, "reset_available": True}
 
 # What ACP advertises (the adapter's own short list, like Hermes v0.23).
 ADVERTISED = [
@@ -69,6 +87,16 @@ REGISTRY = [
     ("subgoal", "[text | remove N | clear]", "Add or manage extra criteria on the active goal", []),
     ("heartbeat", "[every <interval> <prompt> | status | pause | resume | clear]",
      "Set a recurring prompt that re-enters this session when idle", ["hb"]),
+    ("loop", "[<interval> <prompt> | stop | status]", "Run a recurring instruction while the session is open", ["proactive"]),
+    ("agents", "", "List active subagents and background tasks", ["tasks"]),
+    ("rollback", "[N | --diff [N] | --all]", "Restore files from a checkpoint", []),
+    ("snapshot", "[list | create | restore <id> | prune]", "Create or restore workspace snapshots", ["snap"]),
+    ("debug", "[--upload]", "Write a debug report for this session", []),
+    ("insights", "[days]", "Show usage insights for recent days", []),
+    ("diff", "[--stat|--branch|--all] [path]", "Show a diff of session file changes", []),
+    ("cron", "[pause|resume|run|remove] [id]", "List or control scheduled tasks", []),
+    ("suggestions", "[accept|dismiss N]", "Review suggested follow-ups", ["suggest"]),
+    ("blueprint", "[name [slot=value...]]", "List or apply a session blueprint", ["bp"]),
     ("plan", "[task]", "Write a markdown implementation plan to .hermes/plans/ without executing anything", []),
     ("status", "", "Show session, model, token, and context info", []),
     ("context", "[all]", "Show detailed context window view with usage gauge", ["ctx"]),
@@ -190,8 +218,13 @@ def slash(sid, text):
     known = {r[0] for r in REGISTRY} | {a for r in REGISTRY for a in r[3]} | {s[0] for s in SKILLS}
     if NEW_COMMAND:
         known.add(NEW_COMMAND)
+    alias = {r[0]: r[0] for r in REGISTRY}
+    for r in REGISTRY:
+        for a in r[3]:
+            alias[a] = r[0]
     if name not in known:
         return None
+    name = alias.get(name, name)
     if name == "commands":
         try:
             return commands_page(int(arg or "1"))
@@ -222,11 +255,295 @@ def slash(sid, text):
             had = bool(goal["text"])
             goal.update(text="", state="none")
             return "✓ Goal cleared." if had else "No active goal."
-        text = arg[6:] if arg.startswith("draft ") else (arg[3:] if arg.startswith("-- ") else arg)
+        if arg.startswith("set "):
+            text = arg[4:]
+        elif arg.startswith("draft "):
+            text = arg[6:]
+        elif arg.startswith("-- "):
+            text = arg[3:]
+        else:
+            text = arg
         goal.update(text=text, state="active", turns=0)
         return ("⊙ Goal set (20-turn budget): %s\nAfter each turn, a judge model checks if the goal is done. "
                 "Hermes keeps working until it is, you pause/clear it, or the budget is exhausted. "
                 "Use /goal status, /goal show, /goal pause, /goal resume, /goal clear." % text)
+    if name == "subgoal":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        if verb in ("", "list"):
+            if not subgoals:
+                return "No subgoals."
+            return "Subgoals:\n" + "\n".join("  %d. %s" % (i + 1, s) for i, s in enumerate(subgoals))
+        if verb in ("add",) or (verb and verb not in ("remove", "rm", "clear")):
+            text = rest if verb == "add" else arg
+            if not text:
+                return "Usage: /subgoal add <text>"
+            subgoals.append(text)
+            return "✓ Subgoal added: %s" % text
+        if verb in ("remove", "rm"):
+            try:
+                n = int(rest or "0")
+            except ValueError:
+                return "Usage: /subgoal rm <N>"
+            if n < 1 or n > len(subgoals):
+                return "No subgoal %s." % rest
+            gone = subgoals.pop(n - 1)
+            return "✓ Removed subgoal %d: %s" % (n, gone)
+        if verb == "clear":
+            n = len(subgoals)
+            subgoals[:] = []
+            return "✓ Cleared %d subgoal(s)." % n
+        return "Usage: /subgoal [add <text> | rm N | clear]"
+    if name == "heartbeat":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        if verb in ("", "status"):
+            if not heartbeat["prompt"]:
+                return "No heartbeat set. Use /heartbeat set <interval> <prompt>."
+            mark = "♥" if heartbeat["state"] != "paused" else "⏸"
+            return "%s Heartbeat (every %s, next in ~60s): %s" % (
+                mark, heartbeat["interval"] or "10m", heartbeat["prompt"])
+        if verb in ("set", "every"):
+            bits = rest.split(None, 1)
+            interval = bits[0] if bits else "10m"
+            prompt = bits[1] if len(bits) > 1 else ""
+            if not prompt:
+                return "Usage: /heartbeat set <interval> <prompt>"
+            heartbeat.update(interval=interval, prompt=prompt, state="active")
+            return "♥ Heartbeat set (every %s): %s" % (interval, prompt)
+        if verb == "pause":
+            if not heartbeat["prompt"]:
+                return "No heartbeat set."
+            heartbeat["state"] = "paused"
+            return "⏸ Heartbeat paused."
+        if verb == "resume":
+            if not heartbeat["prompt"]:
+                return "No heartbeat set."
+            heartbeat["state"] = "active"
+            return "♥ Heartbeat resumed."
+        if verb == "clear":
+            heartbeat.update(interval="", prompt="", state="none")
+            return "✓ Heartbeat cleared."
+        return "Usage: /heartbeat set <interval> <prompt>"
+    if name == "loop":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        if verb in ("", "status"):
+            if not loop["prompt"]:
+                return "No loop set."
+            return "Loop every %s (3 ticks remaining): %s" % (loop["interval"] or "15m", loop["prompt"])
+        if verb == "stop":
+            loop.update(interval="", prompt="", state="none")
+            return "✓ Loop stopped."
+        interval, prompt = verb, rest
+        if not prompt:
+            prompt = arg
+            interval = "15m"
+        loop.update(interval=interval, prompt=prompt, state="active")
+        return "Loop set every %s: %s" % (interval, prompt)
+    if name == "queue":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        def list_q():
+            if not queue_items:
+                return "0 prompts queued"
+            out = "%d prompt%s queued\n" % (len(queue_items), "" if len(queue_items) == 1 else "s")
+            out += "\n".join("    %d. %s" % (i + 1, q) for i, q in enumerate(queue_items))
+            return out
+        if verb in ("", "list"):
+            return list_q()
+        if verb == "add":
+            if not rest:
+                return "Usage: /queue add <prompt>"
+            queue_items.append(rest)
+            return "Queued: %s\n" % rest + list_q()
+        if verb == "clear":
+            n = len(queue_items)
+            queue_items[:] = []
+            return "✓ Cleared %d queued prompt(s)." % n
+        if verb in ("rm", "remove"):
+            try:
+                n = int(rest)
+            except ValueError:
+                return "Usage: /queue rm <N>"
+            if n < 1 or n > len(queue_items):
+                return "No queued prompt %s." % rest
+            gone = queue_items.pop(n - 1)
+            return "✓ Removed: %s\n" % gone + list_q()
+        queue_items.append(arg)
+        return "Queued: %s\n" % arg + list_q()
+    if name == "agents":
+        if not agents:
+            return "No active agents."
+        return "Agents:\n" + "\n".join("  %d. %s  %s  %s" % (i + 1, a[0], a[1], a[2]) for i, a in enumerate(agents))
+    if name == "memory":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        def pending():
+            lines = ["memory.write_approval = %s" % memory_gate]
+            if not memory_pending:
+                lines.append("No pending memory writes.")
+            else:
+                for mid, summary in memory_pending:
+                    lines.append("  %s  %s" % (mid, summary))
+            return "\n".join(lines)
+        if verb in ("", "pending"):
+            return pending()
+        if verb == "approve":
+            before = len(memory_pending)
+            memory_pending[:] = [p for p in memory_pending if p[0] != rest]
+            return ("✓ Approved %s.\n" % rest + pending()) if before != len(memory_pending) else "No pending write %s." % rest
+        if verb == "reject":
+            before = len(memory_pending)
+            memory_pending[:] = [p for p in memory_pending if p[0] != rest]
+            return ("✓ Rejected %s.\n" % rest + pending()) if before != len(memory_pending) else "No pending write %s." % rest
+        if verb == "write-approval":
+            if rest in ("on", "off"):
+                globals()["memory_gate"] = rest
+                return "memory.write_approval = %s" % rest
+            return "Usage: /memory write-approval on|off"
+        return pending()
+    if name == "skills":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        catalog = "Installed skills:\n  1. arxiv  Search arXiv papers by keyword.\n  2. ascii-video  Convert video to ASCII."
+        if verb in ("", "browse", "list"):
+            lines = [catalog, "skills.write_approval = %s" % skill_gate]
+            if skills_pending:
+                lines.append("Pending skill writes:")
+                for sid_, summary in skills_pending:
+                    lines.append("  %s  %s" % (sid_, summary))
+            return "\n".join(lines)
+        if verb == "search":
+            return "Skill search: %s\n  1. arxiv  Search arXiv papers by keyword." % (rest or "*")
+        if verb == "inspect":
+            return "Skill %s\nName: %s\nDescription: A sample skill from the fake agent." % (rest, rest or "arxiv")
+        if verb == "install":
+            return "✓ Installed skill: %s (dry run in the test agent)." % (rest or "unknown")
+        if verb in ("approve", "reject"):
+            skills_pending[:] = [p for p in skills_pending if p[0] != rest]
+            return "✓ %s %s." % (verb.title(), rest)
+        if verb == "write-approval":
+            if rest in ("on", "off"):
+                globals()["skill_gate"] = rest
+                return "skills.write_approval = %s" % rest
+            return "Usage: /skills write-approval on|off"
+        return catalog
+    if name == "rollback":
+        parts = arg.split()
+        if not parts or parts[0] in ("list",):
+            lines = ["Checkpoints:"]
+            for n, hsh, ts, reason in checkpoints:
+                lines.append("  %d. %s  %s  %s" % (n, hsh, ts, reason))
+            return "\n".join(lines)
+        if parts[0] in ("--diff", "diff") or (len(parts) >= 1 and parts[0] == "--diff"):
+            n = parts[-1] if parts[-1].lstrip("-").isdigit() or parts[-1] != "--diff" else "1"
+            return "Diff against checkpoint %s:\n README.md | 2 +++---\n 1 file changed, 2 insertions(+), 2 deletions(-)" % n
+        if parts[0].lstrip("-").isdigit() or parts[0] not in ("--all",):
+            n = parts[0]
+            extra = " (all files)" if "--all" in parts else ""
+            return "✓ Restored checkpoint %s%s." % (n, extra)
+        return "Usage: /rollback [N] [--all] [--diff N]"
+    if name == "snapshot":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        def slist():
+            lines = ["Snapshots:"]
+            for i, (sid_, files, size, label) in enumerate(snapshots, 1):
+                lines.append("  %d. %s  %s  %s  %s" % (i, sid_, files, size, label))
+            if not snapshots:
+                lines.append("  (none)")
+            return "\n".join(lines)
+        if verb in ("", "list"):
+            return slist()
+        if verb == "restore":
+            return "✓ Restored snapshot %s." % (rest or "snap-1")
+        if verb == "prune":
+            n = len(snapshots)
+            snapshots[:] = snapshots[:1]
+            return "✓ Pruned snapshots (kept 1 of %d)." % n
+        # create
+        label = arg if verb != "create" else rest
+        sid_ = "snap-%d" % (len(snapshots) + 1)
+        snapshots.append((sid_, "2 files", "8K", label or "snapshot"))
+        return "✓ Created %s.\n" % sid_ + slist()
+    if name == "debug":
+        if "--upload" in arg:
+            return "✓ Debug report uploaded (test agent, nothing left the machine)."
+        return ("Debug report\n------------\nHermes  test-agent %s\nSession  %s\nModel  %s\n"
+                "Platform  linux\nThis is a local report only." % (VERSION, sid, config["model"]))
+    if name == "insights":
+        days = arg.strip() or "7"
+        return ("Usage insights (%s days)\n  Prompts   12\n  Tokens    8,432\n  Errors    0\n  Top model   fake/model" % days)
+    if name == "diff":
+        return ("Diff%s\n README.md | 4 ++++\n src/app.cpp | 12 ++++++------\n 2 files changed, 10 insertions(+), 6 deletions(-)"
+                % ((" " + arg) if arg else " --stat"))
+    if name == "cron":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        def clist():
+            if not cron_jobs:
+                return "No scheduled tasks."
+            lines = ["Scheduled tasks:"]
+            for i, job in enumerate(cron_jobs, 1):
+                lines.append("  %d. %s  %s  %s  %s" % (i, job["id"], job["state"], job["when"], job["label"]))
+            return "\n".join(lines)
+        if verb in ("", "list"):
+            return clist()
+        job = next((j for j in cron_jobs if j["id"] == rest), None)
+        if not job:
+            return "No scheduled task %s." % rest
+        if verb == "pause":
+            job["state"] = "paused"
+            return "⏸ Paused %s.\n" % rest + clist()
+        if verb == "resume":
+            job["state"] = "active"
+            return "▶ Resumed %s.\n" % rest + clist()
+        if verb == "run":
+            return "✓ Triggered %s." % rest
+        if verb == "remove":
+            cron_jobs[:] = [j for j in cron_jobs if j["id"] != rest]
+            return "✓ Removed %s.\n" % rest + clist()
+        return clist()
+    if name == "suggestions":
+        parts = arg.split(None, 1)
+        verb = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        def slist():
+            if not suggestions:
+                return "No suggestions."
+            return "Suggestions:\n" + "\n".join("  %d. %s" % (n, text) for n, text in suggestions)
+        if verb in ("", "list"):
+            return slist()
+        try:
+            n = int(rest)
+        except ValueError:
+            return "Usage: /suggestions accept|dismiss N"
+        before = len(suggestions)
+        suggestions[:] = [s for s in suggestions if s[0] != n]
+        if before == len(suggestions):
+            return "No suggestion %s." % rest
+        return "✓ %s suggestion %d.\n" % (verb.title(), n) + slist()
+    if name == "blueprint":
+        if not arg:
+            return "Blueprints:\n" + "\n".join("  %d. %s  %s" % (i + 1, n, d) for i, (n, d) in enumerate(blueprints))
+        return "✓ Created session from blueprint %s." % arg
+    if name == "usage":
+        if arg.startswith("reset"):
+            if usage["reset_available"]:
+                usage["reset_available"] = False
+                return "✓ Redeemed a banked Codex usage reset."
+            return "No banked Codex reset is available."
+        bank = "available" if usage["reset_available"] else "none"
+        return "Session usage: %s tokens\nBanked Codex reset: %s" % (format(usage["tokens"], ","), bank)
     if name == "status":
         return ("**Session** `%s`\n\n| | |\n|---|---|\n| Model | `%s` |\n| Reasoning | %s |\n"
                 "| Context | 1,204 / 65,536 tokens |" % (sid, config["model"], config["reasoning_effort"]))

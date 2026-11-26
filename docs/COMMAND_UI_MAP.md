@@ -28,6 +28,16 @@ auxiliary interface) and only go to chat when the user presses Send.
   `/command` when an option is missing.
 - Never break `hermes update`. Resolve the `hermes` executable on every call.
 
+## Command hosts
+
+Each native command has its own `CommandHost` class. The dialog shell
+(`CommandHostDialog`) owns the shared chrome (header, description, error banner,
+busy row, Save / Cancel, apply lifecycle). Adding a surface means a host class
+plus one factory row in `createCommandHost()` — not another branch in a shared
+switch. Live-panel commands share `LivePanelHost` only for widgets and
+apply-on-Save machinery; goal, queue, rollback, and the rest each have their
+own host. Unknown or future names still open the Command console.
+
 ## Flow archetypes
 
 | Archetype | Layout | Buttons | Apply |
@@ -96,20 +106,21 @@ Aliases share the canonical row (they open the same surface).
 | `branch` (`fork`) | Branch this session (new thread on messaging; `--here` stays here). | Text prompt | Quiet `/branch [--here] [name]`. | P1 | Name + “stay here” + Save |
 | `stop` | Stop the in-flight turn / background work. | App link | Existing Stop action. | P1 | No extra dialog |
 | `sessions` | Browse and resume previous sessions. | App link | Existing session rail. | P1 | Focus the sidebar |
-| `queue` (`q`) | Queue a follow-up prompt, or list/edit/remove queued items. | Text prompt (list is P2 live panel) | Quiet `/queue <prompt>` for the common case; other subcommands stay in the console. | P1 | Prompt field + Save |
+| `queue` (`q`) | Queue follow-up prompts; edit, reorder, or clear the list. | **Live panel** | Seed quiet `/queue list`. Local add/remove/move until Save. Save applies append-only `/queue add` when possible, otherwise `/queue clear` then re-add. Keep open and refresh. | P2 | Editable list + Add/Remove/Move + Save/Cancel |
 | `steer` (`s`) | Inject guidance after the next tool call. | Text prompt | Quiet `/steer <prompt>`. | P1 | Guidance field + Save |
 | `save` | Export the conversation as json/md/html. | Settings form | Quiet `/save <fmt> [file] [redact]`. | P1 | Format, filename, redact + Save |
 | `plan` | Write a markdown plan under `.hermes/plans/` without executing it. | Text prompt | Quiet `/plan [task]`. | P1 | Task field + Save |
 | `status` | Session, model, token, and context report. | Info | Quiet `/status`, seeded with ACP usage when present. | P1 | Read-only report |
 | `context` (`ctx`) | Context-window breakdown. | Info | Quiet `/context` (`all` toggle). | P1 | Read-only report + optional All |
-| `rollback` | List or restore filesystem checkpoints. | Picker (P2) | Quiet `/rollback` to list; apply quiet `/rollback <n>`. | P2 | Console in phase 1 |
+| `rollback` | List or restore filesystem checkpoints. | **Live panel** | Seed quiet `/rollback`. Restore is Confirm (`/rollback <n> [--all]`) and closes. Diff selected runs `/rollback --diff N` and stays open. | P2 | Status + list + Restore/Diff + Confirm |
 | `resume` | Resume a named session. | App link / picker (P2) | Session rail covers the common case. | P2 | Console in phase 1 |
 | `bg`, `btw`, `moa` | Side / background / mixture-of-agents prompt. | Text prompt | Quiet or send as a structured run once we have a result view. | P2 | Console in phase 1 |
-| `agents` (`tasks`) | Active agents and tasks. | Live panel | Quiet `/agents`; refresh while open. | P2 | Console in phase 1 |
-| `goal`, `subgoal` | Standing goal and extra criteria across turns. | Settings form + live status | Quiet `/goal …` / `/subgoal …`. Many subcommands. | P2 | Console in phase 1 (still in the catalog) |
-| `heartbeat` (`hb`), `loop` (`proactive`) | Recurring prompts in this session. | Settings form | Quiet `/heartbeat …` / `/loop …`. | P2 | Console in phase 1 |
+| `agents` (`tasks`) | Active agents and tasks. | **Live panel** | Seed quiet `/agents`. View-only this pass (Refresh, no Save). | P2 | Status + list + report + Refresh |
+| `goal`, `subgoal` | Standing goal and extra criteria across turns. | **Live panel** (shared Goal dialog) | Seed `/goal status` then `/subgoal`. Save applies quiet `/goal set\|pause\|resume\|clear` or `/subgoal add\|rm\|clear`. Keep open and refresh, except where a restore-style close is clearer. | P2 | Status + subgoal list + action + Save/Cancel |
+| `heartbeat` (`hb`), `loop` (`proactive`) | Recurring prompts in this session. | **Live panel** | Seed `/heartbeat status` or `/loop status`. Save applies set/pause/resume/clear or set/stop. Keep open and refresh. | P2 | Status + interval + prompt + Save/Cancel |
 | `refine`, `review` | Memory extraction / independent review subagent. | Text prompt + confirm | Quiet `/refine` / `/review`. | P2 | Console in phase 1 |
-| `history`, `prompt` (`compose`), `rewind`, `clear`, `redraw`, `worktree`, `snapshot` (`snap`) | CLI/TUI session tools. | — | Terminal-oriented; no ACP GUI equivalent. | P3 | Hidden or console if advertised |
+| `snapshot` (`snap`) | Create, list, restore, or prune workspace snapshots. | **Live panel** | Seed `/snapshot list`. Create is Save; restore and prune are Confirm. Keep open after create; close after restore. | P2 | Status + list + Create/Restore/Prune |
+| `history`, `prompt` (`compose`), `rewind`, `clear`, `redraw`, `worktree` | CLI/TUI session tools. | — | Terminal-oriented; no ACP GUI equivalent. | P3 | Hidden or console if advertised |
 | `start`, `topic`, `discard`, `pause`, `approve`, `deny`, `sethome`, `restart` | Gateway / messaging only. | — | Not meaningful in the desktop ACP client. | P3 | Console only if advertised |
 
 ### Configuration
@@ -137,17 +148,17 @@ Aliases share the canonical row (they open the same surface).
 
 | Command | What it does | Archetype | Data / apply | Priority | Phase 1 dialog |
 | --- | --- | --- | --- | --- | --- |
-| `usage` | Token usage and rate limits; `reset` redeems a banked Codex limit. | Info (+ confirm for reset) | Quiet `/usage`. Reset is a Confirm, not a silent extra button. | P1 | Read-only report |
+| `usage` | Token usage and rate limits; `reset` redeems a banked Codex limit. | Info + in-dialog confirm | Seed quiet `/usage`. **Reset…** arms a confirmation, then Save-equivalent runs `/usage reset --force` and refreshes the report. | P1/P2 | Report + Reset… / Confirm reset + Close |
 | `version` (`v`) | Hermes Agent version. | Info | Quiet `/version`. Do not pin or display a Consiglio-bundled path as “the” install. | P1 | Read-only report |
 | `profile` | Active profile name and home directory. | Info | Quiet `/profile`. | P1 | Read-only report |
 | `whoami` | Slash-command access (admin / user). | Info | Quiet `/whoami`. | P1 | Read-only report |
 | `help` | Browse available commands. | App link / Info | Opens the command palette (already the fuzzy catalog). `/help <filter>` can pre-fill the search. | P1 | Palette |
 | `commands` | Paginated command list (gateway). | App link | Palette / catalog refresh. | P1 | Palette |
 | `palette` | Fuzzy command palette. | App link | Existing Ctrl+K/P palette. | P1 | Palette |
-| `debug` | Debug report (versions, config keys; optional upload). | Info + confirm | Quiet `/debug`; upload is Confirm. | P2 | Console in phase 1 |
-| `insights` | Usage insights. | Info | Quiet `/insights [days]`. | P2 | Console in phase 1 |
+| `debug` | Debug report (versions, config keys; optional upload). | **Live panel** | Seed quiet `/debug`. Upload is Confirm (`/debug --upload`) and closes. | P2 | Report + Refresh + optional Confirm upload |
+| `insights` | Usage insights. | **Live panel** | Seed `/insights`. Days spinner + Run refreshes with `/insights <days>` and stays open. | P2 | Report + days + Run / Refresh |
 | `subscription` (`upgrade`), `topup` | Nous plan / billing portal. | Info + link | Quiet `/subscription` / `/topup`, then open the portal URL if present. | P2 | Console in phase 1 |
-| `diff` | Git changes in the workspace. | Info | Quiet `/diff …`. | P2 | Console in phase 1 |
+| `diff` | Git changes in the workspace. | **Live panel** | Seed `/diff --stat`. Mode / summary / optional path + Run stays open with the new report. | P2 | Report + mode + Run / Refresh |
 | `platforms` (`gateway`), `platform`, `egress` | Gateway / Docker egress status. | Info | Meaningful mainly for gateway hosts. | P3 | Console if advertised |
 | `copy`, `paste`, `image` | TUI clipboard / attach image. | — | Consiglio already has its own attach/copy path. | P3 | — |
 | `quit` (`exit`) | Exit the CLI. | App link | App Quit, never `/quit` in chat. | P1 | App quit (if it appears in the catalog, route to Quit) |
@@ -157,10 +168,12 @@ Aliases share the canonical row (they open the same surface).
 | Command | What it does | Archetype | Data / apply | Priority | Phase 1 dialog |
 | --- | --- | --- | --- | --- | --- |
 | `tools` | List, disable, or enable tools. | Info + picker (enable/disable is a second step) | Quiet `/tools` to list. Apply quiet `/tools enable\|disable <name…>` on Save. ACP advertises this even though the CLI marks it `cli_only`. | P1 | Report + optional selection + Save when changing |
-| `skills` | Search, install, inspect, manage skills. | Live panel / picker | Large surface; ACP does not advertise the full family. | P2 | Console in phase 1 (plus any advertised skill commands stay in the catalog) |
-| `memory` | Pending memory writes and the approval gate. | Live panel | Quiet `/memory pending` etc. | P2 | Console in phase 1 |
+| `skills` | Search, inspect, and manage skills; optional install with confirm. | **Live panel** | Seed `/skills`. Search/inspect refresh the report. Install is an explicit confirmed action (`/skills install …`). Pending write approve/reject and the write-approval gate use quiet `/skills …`. | P2 | Status + list + action + Save/Confirm |
+| `memory` | Pending memory writes and the approval gate. | **Live panel** | Seed `/memory pending`. Save applies `/memory approve\|reject <id>` or `/memory write-approval on\|off`, then refreshes. | P2 | Status + pending list + action + Save/Cancel |
 | `bundles`, `learn`, `init` | Skill bundles, learn-a-skill, generate `AGENTS.md`. | Text prompt / form | Quiet commands. | P2 | Console in phase 1 |
-| `cron`, `suggestions` (`suggest`), `blueprint` (`bp`) | Scheduled tasks and automations. | Live panel / form | CLI-heavy. | P2 | Console in phase 1 |
+| `cron` | List or control scheduled tasks. | **Live panel** | Seed `/cron`. Pause/resume/run/remove the selected id. No add wizard this pass. | P2 | List + action + Confirm/Save |
+| `suggestions` (`suggest`) | Review suggested follow-ups. | **Live panel** | Seed `/suggestions`. Save applies `/suggestions accept\|dismiss N` and refreshes. | P2 | List + Accept/Dismiss + Save |
+| `blueprint` (`bp`) | List or apply a session blueprint. | **Live panel** | Seed `/blueprint`. Save runs `/blueprint <name> [slot=value…]` directly (bare name may start a conversation on real Hermes). | P2 | Catalog list + optional slots + Save |
 | `curator`, `kanban`, `plugins`, `reload`, `reload-mcp`, `reload-skills`, `browser`, `toolsets` | Maintenance and extras. | Confirm or info | Quiet command or console. | P2/P3 | Console in phase 1 |
 | `pet`, `hatch` | Petdex mascot (CLI fun). | — | Out of scope for a polished desktop wrap. | P3 | Console if advertised |
 
@@ -182,7 +195,7 @@ commands:
 11. `compress` / `compact`
 12. `branch` / `fork`
 13. `status`
-14. `usage`
+14. `usage` (Reset… confirm added in phase 2)
 15. `context` / `ctx`
 16. `version` / `v`
 17. `profile`
@@ -190,7 +203,7 @@ commands:
 19. `tools`
 20. `save`
 21. `plan`
-22. `queue` / `q`
+22. `queue` / `q` (upgraded to a live list in phase 2)
 23. `steer` / `s`
 24. `help`, `commands`, `palette` — command palette
 25. `sessions` — session rail
@@ -204,21 +217,40 @@ Everything else, including any command Hermes adds after an update, uses the
 **Command console**. The palette marks each Hermes command as **Dialog**
 (native or app link) or **Chat** (console / passthrough).
 
-## Phase 2+ plan (remaining)
+## Phase 2 surfaces (this pass)
 
-1. **Live session controls:** `goal` / `subgoal` status + editor, `heartbeat`
-   and `loop` schedules, `queue` as a reorderable list, `agents`.
-2. **Memory and skills:** pending memory approval queue, skills browse /
-   install (without widening CLI-only verbs such as unattended install if the
-   desktop surface restricts them), `learn` / `init` / `bundles`.
-3. **Checkpoints and recovery:** `rollback` picker, `snapshot` if we can do
-   it safely from the GUI, `resume` by name.
-4. **Reports:** `debug`, `insights`, `diff`, `/usage reset` confirm, billing
-   / subscription pages with a clearly-labeled link out.
-5. **Automations:** `cron`, `suggestions`, `blueprint`.
-6. **Keep as console or hide:** gateway-only, TUI chrome, petdex, and any
+The same dialog shell as phase 1, plus a reusable **Live panel** (status,
+optional report, item list, action + fields, Refresh, apply-on-Save). Seeds
+and applies go through quiet slash commands (ACP when a config option exists).
+Unknown or post-update commands still use the **Command console**.
+
+1. `goal` / `subgoal` — shared Goal live panel
+2. `heartbeat` / `hb`, `loop` / `proactive`
+3. `queue` / `q` — editable list (add/remove/move, apply on Save)
+4. `agents` / `tasks` — view-only list + report
+5. `memory` — pending writes + write-approval gate
+6. `skills` — search/inspect; install only with Confirm
+7. `rollback` — checkpoint list; restore Confirm (optional `--all`); in-dialog diff
+8. `snapshot` / `snap` — list/create/restore/prune with Confirm where destructive
+9. `debug` — report; upload Confirm
+10. `insights` — days + refresh
+11. `diff` — mode / `--stat` / path + refresh
+12. `usage reset` — Reset… then Confirm reset (`/usage reset --force`)
+13. `cron` — list; pause/resume/run/remove selected (no add wizard)
+14. `suggestions` / `suggest` — accept/dismiss selected
+15. `blueprint` / `bp` — pick a template + optional `slot=value`
+
+## Remaining (phase 3+)
+
+1. **Still console or later UI:** `learn` / `init` / `bundles`, `resume` by name
+   (session rail already covers the common case), `bg` / `btw` / `moa`,
+   `refine` / `review`, `autoprune`, `codex-runtime`, `busy`, `export` /
+   `import`, `voice` / `wake`, billing / `subscription` / `topup` with a
+   clearly-labeled link out.
+2. **Cron add wizard**, richer skills marketplace, and any new Hermes command
+   after an update (those stay on the Command console until mapped).
+3. **Keep as console or hide:** gateway-only, TUI chrome, petdex, and any
    command whose only honest interface is a terminal wizard.
 
-Each of those should still prefer ACP or `hermes config` over chat text, and
-should reuse the same dialog shell (info panel, list, Save/Cancel, error
-banner, keyboard, light/dark) introduced in phase 1.
+Dynamic, natural-language generation of command references and descriptions
+is a future note, not part of this pass.

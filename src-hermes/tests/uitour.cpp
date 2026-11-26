@@ -19,6 +19,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QHash>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPainter>
@@ -173,7 +174,10 @@ static void tourDialogs(MainWindow &w, bool real) {
     // Native command surfaces (light and dark tours both run this).
     const QStringList native = {"model", "reasoning", "approvals", "personality", "title",
                                 "new", "undo", "retry", "compress", "status", "usage",
-                                "context", "version", "tools", "save", "plan", "queue", "steer", "yolo"};
+                                "context", "version", "tools", "save", "plan", "queue", "steer", "yolo",
+                                "goal", "heartbeat", "loop", "agents", "memory", "skills",
+                                "rollback", "snapshot", "debug", "insights", "diff",
+                                "cron", "suggestions", "blueprint"};
     for (const QString &name : native) {
         QDialog *d = w.createCommandDialog(name);
         if (auto *host = qobject_cast<CommandHostDialog *>(d)) {
@@ -193,6 +197,30 @@ static void tourDialogs(MainWindow &w, bool real) {
                     {QStringLiteral("kawaii"), QStringLiteral("kawaii"), {}, {}},
                 }, QStringLiteral("concise"));
             }
+            if (host->plan().archetype == CommandArchetype::LivePanel) {
+                const QHash<QString, QString> reports = {
+                    {QStringLiteral("goal"), QStringLiteral("⊙ Goal (active, 0/20 turns, 2 subgoals): Write release notes\nSubgoals:\n  1. Draft the changelog\n  2. Add screenshots")},
+                    {QStringLiteral("heartbeat"), QStringLiteral("♥ Heartbeat (every 10m, next in ~60s): check the inbox")},
+                    {QStringLiteral("loop"), QStringLiteral("Loop every 15m (3 ticks remaining): summarize new mail")},
+                    {QStringLiteral("queue"), QStringLiteral("2 prompts queued\n    1. Review the latest diff\n    2. then write tests")},
+                    {QStringLiteral("agents"), QStringLiteral("Agents:\n  1. worker-1  running  summarize the log")},
+                    {QStringLiteral("memory"), QStringLiteral("memory.write_approval = on\n  mem01  Remember the project uses Qt 5")},
+                    {QStringLiteral("skills"), QStringLiteral("Installed skills:\n  1. arxiv  Search arXiv papers by keyword.\nPending skill writes:\n  sk01  Write a skill note about ACP sessions")},
+                    {QStringLiteral("rollback"), QStringLiteral("Checkpoints:\n  1. a1b2c3d  2026-11-20 17:01  before edit\n  2. d4e5f6a  2026-11-20 17:10  after tools")},
+                    {QStringLiteral("snapshot"), QStringLiteral("Snapshots:\n  1. snap-1  3 files  12K  before refactor")},
+                    {QStringLiteral("debug"), QStringLiteral("Debug report\n------------\nHermes  test-agent\nSession  demo\nPlatform  linux")},
+                    {QStringLiteral("insights"), QStringLiteral("Usage insights (7 days)\n  Prompts   12\n  Tokens    8,432\n  Errors    0")},
+                    {QStringLiteral("diff"), QStringLiteral("Diff --stat\n README.md | 4 ++++\n 1 file changed, 4 insertions(+)")},
+                    {QStringLiteral("cron"), QStringLiteral("Scheduled tasks:\n  1. job-1  active  every 1h  status ping")},
+                    {QStringLiteral("suggestions"), QStringLiteral("Suggestions:\n  1. Add a README section on ACP\n  2. Extract the live panel into its own file")},
+                    {QStringLiteral("blueprint"), QStringLiteral("Blueprints:\n  1. weekly-review  Recurring weekly review session\n  2. bug-triage  Triage open issues")},
+                };
+                const QString report = reports.value(name);
+                if (!report.isEmpty()) host->ingestReport(name, report);
+                if (name == QLatin1String("goal"))
+                    host->ingestReport(QStringLiteral("subgoal"),
+                                       QStringLiteral("Subgoals:\n  1. Draft the changelog\n  2. Add screenshots"));
+            }
         }
         d->show();
         QSize minSize(560, 360);
@@ -200,7 +228,8 @@ static void tourDialogs(MainWindow &w, bool real) {
             if (host->plan().archetype == CommandArchetype::Confirm
                 || host->plan().archetype == CommandArchetype::TextPrompt)
                 minSize = QSize(560, 0);
-            else if (host->plan().archetype == CommandArchetype::Picker)
+            else if (host->plan().archetype == CommandArchetype::Picker
+                     || host->plan().archetype == CommandArchetype::LivePanel)
                 minSize = QSize(560, 560);
         }
         d->resize(d->sizeHint().expandedTo(minSize));
@@ -315,12 +344,17 @@ int main(int argc, char **argv) {
         shot(&w, "tools-command");
     }
 
-    // /goal is one command among the others: the generic command form, then
-    // run it like any command.
+    // /goal opens the Goal live panel; a typed line in chat still works.
     {
         QDialog *d = w.createCommandDialog(QStringLiteral("goal"));
-        if (auto *c = qobject_cast<CommandDialog *>(d)) c->setArguments(QStringLiteral("Write release notes for 0.1 with a changelog"));
+        if (auto *host = qobject_cast<CommandHostDialog *>(d)) {
+            host->ingestReport(QStringLiteral("goal"),
+                               QStringLiteral("No active goal. Set one with /goal <text>."));
+            host->setLiveAction(QStringLiteral("set"));
+            host->setTextArgument(QStringLiteral("Write release notes for 0.1 with a changelog"));
+        }
         d->show();
+        d->resize(d->sizeHint().expandedTo(QSize(560, 520)));
         shot(d, "command-dialog-goal");
         d->deleteLater();
     }

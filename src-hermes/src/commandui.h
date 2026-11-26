@@ -33,6 +33,7 @@ enum class CommandArchetype {
     Info,
     Confirm,
     TextPrompt,
+    LivePanel,
     AppLink,
     Passthrough
 };
@@ -71,12 +72,20 @@ struct CommandPickerItem {
     QString group;
 };
 
+inline bool operator==(const CommandPickerItem &a, const CommandPickerItem &b) {
+    return a.value == b.value && a.name == b.name && a.description == b.description && a.group == b.group;
+}
+inline bool operator!=(const CommandPickerItem &a, const CommandPickerItem &b) { return !(a == b); }
+
 struct CommandApplyRequest {
     CommandApply method = CommandApply::Passthrough;
     QString configId;
     QString value;
     QString quietLine;
     QString persistLine;          // optional follow-up (e.g. /model id --global)
+    QStringList quietLines;       // when applying more than one quiet command (e.g. queue sync)
+    bool keepOpen = false;        // live panels: apply, then refresh instead of closing
+    bool reseedAfter = true;      // when keepOpen, ask Hermes for a fresh list
     QString settingsPage;
     QString paletteQuery;
 };
@@ -93,6 +102,11 @@ public:
     // (personalities, approval modes, …). Empty when nothing looks like a list.
     static QList<CommandPickerItem> itemsFromReport(const QString &text);
     static QString currentFromReport(const QString &text, const QStringList &known = QStringList());
+    // Quiet commands used to fill a dialog (status/list). Empty → no seed.
+    static QStringList seedCommands(const CommandPlan &plan);
+    // Numbered or id-tagged rows from a quiet /command report (queue, memory, …).
+    static QList<CommandPickerItem> itemsFromLiveReport(const QString &commandName, const QString &text);
+    static QString statusFromReport(const QString &text);
 };
 
 // Shared dialog shell for the native archetypes. Preview-on-select, apply
@@ -191,6 +205,34 @@ public:
     QListWidget *pickerList() const { return m_list; }
     QLineEdit *filterEdit() const { return m_filter; }
     int pickerCount() const;
+
+    // Chrome hooks used by command-specific hosts.
+    QPushButton *addChromeButton(const QString &label);
+    void setSaveText(const QString &text);
+    void setSaveVisible(bool visible);
+    void submitApply(const CommandApplyRequest &request);
+    void refreshSaveEnabled() { updateSaveEnabled(); }
+
+    // Live-panel test / apply helpers (forwarded to the LivePanelHost when present).
+    QString liveAction() const;
+    void setLiveAction(const QString &action);
+    QList<CommandPickerItem> liveItems() const;
+    void setLiveItems(const QList<CommandPickerItem> &items, bool markClean = false);
+    void addLiveItem(const QString &text);
+    void removeSelectedLiveItem();
+    void moveSelectedLiveItem(int delta);
+    QString intervalText() const;
+    void setIntervalText(const QString &text);
+    int insightDays() const;
+    void setInsightDays(int days);
+    QString diffMode() const;
+    void setDiffMode(const QString &mode);
+    bool optionAll() const;
+    void setOptionAll(bool on);
+    bool optionStat() const;
+    void setOptionStat(bool on);
+    void ingestReport(const QString &command, const QString &output);
+    QStringList applyLines() const;
 
 signals:
     void applyRequested(const CommandApplyRequest &request);
