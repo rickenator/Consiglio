@@ -245,9 +245,17 @@ private slots:
             ++dialogs;
             QVERIFY2(d->host() != nullptr, qPrintable(name));
             QCOMPARE(int(d->host()->archetype()), int(p.archetype));
-            // The line Hermes receives is transport, never UI text: it must be
-            // a real slash command and never empty.
-            QVERIFY2(d->commandLine().startsWith(QLatin1Char('/')), qPrintable(name));
+            // The line Hermes receives is transport, never UI text. Live panels
+            // have no line until there is something to apply (queue edits,
+            // a selected checkpoint, …).
+            const QString line = d->commandLine();
+            if (p.archetype == CommandArchetype::LivePanel) {
+                QVERIFY2(line.isEmpty() || line.startsWith(QLatin1Char('/')), qPrintable(name));
+                if (d->canApply())
+                    QVERIFY2(line.startsWith(QLatin1Char('/')), qPrintable(name));
+            } else {
+                QVERIFY2(line.startsWith(QLatin1Char('/')), qPrintable(name));
+            }
         }
         QVERIFY(dialogs >= 20);  // sanity: the loop really built dialogs
     }
