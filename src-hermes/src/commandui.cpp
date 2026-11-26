@@ -1,6 +1,7 @@
 #include "commandui.h"
 
 #include "commandhost.h"
+#include "commandlivehosts.h"
 #include "theme.h"
 #include "uiutil.h"
 
@@ -141,8 +142,53 @@ const CommandPlan kPlans[] = {
      CommandArchetype::TextPrompt, CommandApply::QuietCommand,
      QStringLiteral("Write a plan"), {}, {}, {}, {}, false},
     {QStringLiteral("queue"), {QStringLiteral("q")},
-     CommandArchetype::TextPrompt, CommandApply::QuietCommand,
-     QStringLiteral("Queue a prompt"), {}, {}, {}, {}, false},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Queue"), {}, {}, {}, {}, false},
+    {QStringLiteral("goal"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Goal"), {}, {}, {}, {}, false},
+    {QStringLiteral("subgoal"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Goal"), {}, {}, {}, {}, false},
+    {QStringLiteral("heartbeat"), {QStringLiteral("hb")},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Heartbeat"), {}, {}, {}, {}, false},
+    {QStringLiteral("loop"), {QStringLiteral("proactive")},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Loop"), {}, {}, {}, {}, false},
+    {QStringLiteral("agents"), {QStringLiteral("tasks")},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Agents"), {}, {}, {}, {}, false},
+    {QStringLiteral("memory"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Memory"), {}, {}, {}, {}, false},
+    {QStringLiteral("skills"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Skills"), {}, {}, {}, {}, false},
+    {QStringLiteral("rollback"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Checkpoints"), {}, {}, {}, {}, true},
+    {QStringLiteral("snapshot"), {QStringLiteral("snap")},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Snapshots"), {}, {}, {}, {}, false},
+    {QStringLiteral("debug"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Debug report"), {}, {}, {}, {}, false},
+    {QStringLiteral("insights"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Usage insights"), {}, {}, {}, {}, false},
+    {QStringLiteral("diff"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Diff"), {}, {}, {}, {}, false},
+    {QStringLiteral("cron"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Scheduled tasks"), {}, {}, {}, {}, false},
+    {QStringLiteral("suggestions"), {QStringLiteral("suggest")},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Suggestions"), {}, {}, {}, {}, false},
+    {QStringLiteral("blueprint"), {QStringLiteral("bp")},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Blueprints"), {}, {}, {}, {}, false},
     {QStringLiteral("steer"), {QStringLiteral("s")},
      CommandArchetype::TextPrompt, CommandApply::QuietCommand,
      QStringLiteral("Steer this turn"), {}, {}, {}, {}, false},
@@ -371,11 +417,14 @@ void CommandHostDialog::buildShell() {
     ui::describe(m_cancel, tr("Cancel"), ui::withShortcut(tr("Close without changing anything"),
                                                           QKeySequence(Qt::Key_Escape)));
     const bool info = m_plan.archetype == CommandArchetype::Info;
+    const bool live = m_plan.archetype == CommandArchetype::LivePanel;
     const bool confirm = m_plan.archetype == CommandArchetype::Confirm;
-    if (info) {
+    if (info || live) {
         m_refresh = m_buttons->addButton(tr("Refresh"), QDialogButtonBox::ActionRole);
         ui::describe(m_refresh, tr("Refresh"), tr("Ask Hermes for a fresh report"));
         connect(m_refresh, &QPushButton::clicked, this, &CommandHostDialog::refreshRequested);
+    }
+    if (info) {
         m_save = m_buttons->addButton(tr("Close"), QDialogButtonBox::AcceptRole);
         m_save->setDefault(true);
         ui::describe(m_save, tr("Close"), ui::withShortcut(tr("Close this dialog"), QKeySequence(Qt::Key_Return)));
@@ -838,12 +887,18 @@ void CommandHostDialog::setBusy(bool busy) {
 }
 
 QString CommandHostDialog::selectedValue() const {
+    if (auto *live = dynamic_cast<LivePanelHost *>(m_host))
+        return live->selectedValue();
     if (m_plan.name == QLatin1String("personality") && m_text && !m_text->text().trimmed().isEmpty())
         return m_text->text().trimmed();
     return m_selected;
 }
 
 void CommandHostDialog::setSelectedValue(const QString &value) {
+    if (auto *live = dynamic_cast<LivePanelHost *>(m_host)) {
+        live->setSelectedValue(value);
+        return;
+    }
     m_selected = value;
     if (m_list) {
         for (int i = 0; i < m_list->count(); ++i) {
@@ -877,8 +932,18 @@ void CommandHostDialog::setPersistAsDefault(bool on) { if (m_persist) m_persist-
 int CommandHostDialog::undoCount() const { return m_undoSpin ? m_undoSpin->value() : 1; }
 void CommandHostDialog::setUndoCount(int n) { if (m_undoSpin) m_undoSpin->setValue(n); }
 
-QString CommandHostDialog::textArgument() const { return m_text ? m_text->text().trimmed() : QString(); }
-void CommandHostDialog::setTextArgument(const QString &text) { if (m_text) m_text->setText(text); }
+QString CommandHostDialog::textArgument() const {
+    if (auto *live = dynamic_cast<LivePanelHost *>(m_host))
+        return live->textArgument();
+    return m_text ? m_text->text().trimmed() : QString();
+}
+void CommandHostDialog::setTextArgument(const QString &text) {
+    if (auto *live = dynamic_cast<LivePanelHost *>(m_host)) {
+        live->setTextArgument(text);
+        return;
+    }
+    if (m_text) m_text->setText(text);
+}
 
 bool CommandHostDialog::compressPreviewOnly() const { return m_previewOnly && m_previewOnly->isChecked(); }
 void CommandHostDialog::setCompressPreviewOnly(bool on) { if (m_previewOnly) m_previewOnly->setChecked(on); }
@@ -972,9 +1037,9 @@ int CommandHostDialog::pickerCount() const {
 
 void CommandHostDialog::updateSaveEnabled() {
     if (!m_save) return;
+    if (m_refresh) m_refresh->setEnabled(!m_busy && !m_applying);
     if (m_plan.archetype == CommandArchetype::Info) {
         m_save->setEnabled(!m_applying);
-        if (m_refresh) m_refresh->setEnabled(!m_busy && !m_applying);
         return;
     }
     m_save->setEnabled(canApply());
@@ -990,3 +1055,83 @@ void CommandHostDialog::onSave() {
     emit applyRequested(applyRequest());
 }
 
+
+QPushButton *CommandHostDialog::addChromeButton(const QString &label) {
+    if (!m_buttons) return nullptr;
+    return m_buttons->addButton(label, QDialogButtonBox::ActionRole);
+}
+
+void CommandHostDialog::setSaveText(const QString &text) {
+    if (m_save) m_save->setText(text);
+}
+
+void CommandHostDialog::setSaveVisible(bool visible) {
+    if (m_save) m_save->setVisible(visible);
+}
+
+void CommandHostDialog::submitApply(const CommandApplyRequest &request) {
+    clearError();
+    emit applyRequested(request);
+}
+
+static LivePanelHost *liveHost(CommandHost *host) {
+    return dynamic_cast<LivePanelHost *>(host);
+}
+
+QString CommandHostDialog::liveAction() const {
+    return liveHost(m_host) ? liveHost(m_host)->liveAction() : QString();
+}
+void CommandHostDialog::setLiveAction(const QString &action) {
+    if (auto *h = liveHost(m_host)) h->setLiveAction(action);
+}
+QList<CommandPickerItem> CommandHostDialog::liveItems() const {
+    return liveHost(m_host) ? liveHost(m_host)->liveItems() : QList<CommandPickerItem>();
+}
+void CommandHostDialog::setLiveItems(const QList<CommandPickerItem> &items, bool markClean) {
+    if (auto *h = liveHost(m_host)) h->setLiveItems(items, markClean);
+}
+void CommandHostDialog::addLiveItem(const QString &text) {
+    if (auto *h = liveHost(m_host)) h->addLiveItem(text);
+}
+void CommandHostDialog::removeSelectedLiveItem() {
+    if (auto *h = liveHost(m_host)) h->removeSelectedLiveItem();
+}
+void CommandHostDialog::moveSelectedLiveItem(int delta) {
+    if (auto *h = liveHost(m_host)) h->moveSelectedLiveItem(delta);
+}
+QString CommandHostDialog::intervalText() const {
+    return liveHost(m_host) ? liveHost(m_host)->intervalText() : QString();
+}
+void CommandHostDialog::setIntervalText(const QString &text) {
+    if (auto *h = liveHost(m_host)) h->setIntervalText(text);
+}
+int CommandHostDialog::insightDays() const {
+    return liveHost(m_host) ? liveHost(m_host)->insightDays() : 7;
+}
+void CommandHostDialog::setInsightDays(int days) {
+    if (auto *h = liveHost(m_host)) h->setInsightDays(days);
+}
+QString CommandHostDialog::diffMode() const {
+    return liveHost(m_host) ? liveHost(m_host)->diffMode() : QString();
+}
+void CommandHostDialog::setDiffMode(const QString &mode) {
+    if (auto *h = liveHost(m_host)) h->setDiffMode(mode);
+}
+bool CommandHostDialog::optionAll() const {
+    return liveHost(m_host) && liveHost(m_host)->optionAll();
+}
+void CommandHostDialog::setOptionAll(bool on) {
+    if (auto *h = liveHost(m_host)) h->setOptionAll(on);
+}
+bool CommandHostDialog::optionStat() const {
+    return liveHost(m_host) && liveHost(m_host)->optionStat();
+}
+void CommandHostDialog::setOptionStat(bool on) {
+    if (auto *h = liveHost(m_host)) h->setOptionStat(on);
+}
+void CommandHostDialog::ingestReport(const QString &command, const QString &output) {
+    if (auto *h = liveHost(m_host)) h->ingestReport(command, output);
+}
+QStringList CommandHostDialog::applyLines() const {
+    return liveHost(m_host) ? liveHost(m_host)->applyLines() : QStringList();
+}

@@ -156,10 +156,9 @@ private slots:
         }
     }
 
-    // /goal is an ordinary command: grouped with the other planning and
-    // automation commands, nothing special. Unmapped commands use the Command
-    // console rather than a choices submenu that echoes into the chat.
-    void goalIsAnOrdinaryCommand() {
+    // Goal lives with the other automation commands — no dedicated Goal menu —
+    // and opens the live panel rather than echoing a /command into chat.
+    void goalOpensLivePanel() {
         QScopedPointer<MainWindow> w(makeWindow());
         QVERIFY(waitDiscovered(w.data()));
         for (QAction *top : w->menuBar()->actions())
@@ -174,21 +173,28 @@ private slots:
             if (a->menu() && a->menu()->actions().contains(goal)) group = a;
         QVERIFY(group);
         QCOMPARE(group->property("catalogGroup").toString(), QString("automation"));
+        // A typed /goal line in the chat still works.
         QVERIFY(w->runCommand("/goal ship the release notes"));
         QTRY_VERIFY_WITH_TIMEOUT(w->stateText().startsWith("Ready"), 10000);
         QScopedPointer<QDialog> d(w->createCommandDialog("goal"));
-        auto *cd = qobject_cast<CommandDialog *>(d.data());
-        QVERIFY(cd);
-        cd->setArguments("write the changelog");
-        QCOMPARE(cd->commandLine(), QString("/goal write the changelog"));
+        auto *host = qobject_cast<CommandHostDialog *>(d.data());
+        QVERIFY(host);
+        QCOMPARE(host->plan().archetype, CommandArchetype::LivePanel);
+        host->setLiveAction(QStringLiteral("set"));
+        host->setTextArgument(QStringLiteral("write the changelog"));
+        QCOMPARE(host->commandLine(), QString("/goal set write the changelog"));
+        QCOMPARE(host->applyRequest().keepOpen, true);
+        QCOMPARE(host->applyRequest().quietLines, QStringList() << QStringLiteral("/goal set write the changelog"));
         bool inPalette = false;
         QString badge;
         for (const auto &p : w->palette()->actions()) {
             if (p.id == "/goal") { inPalette = true; badge = p.badge; }
         }
         QVERIFY(inPalette);
-        QCOMPARE(badge, QString("Chat"));
+        QCOMPARE(badge, QString("Dialog"));
+        QCOMPARE(CommandUi::badgeFor(QStringLiteral("subgoal")), QString("Dialog"));
     }
+
 
     void modelsDialogAppliesOnlyOnSave() {
         QScopedPointer<MainWindow> w(makeWindow());
@@ -264,9 +270,12 @@ private slots:
         auto *host = qobject_cast<CommandHostDialog *>(d.data());
         QVERIFY(host);
         QVERIFY(!host->canApply());
-        host->setTextArgument("then write tests");
-        QCOMPARE(host->commandLine(), QString("/queue then write tests"));
+        QCOMPARE(host->plan().archetype, CommandArchetype::LivePanel);
+        host->addLiveItem(QStringLiteral("then write tests"));
+        QCOMPARE(host->commandLine(), QString("/queue add then write tests"));
+        QCOMPARE(host->applyLines(), QStringList() << QStringLiteral("/queue add then write tests"));
         QVERIFY(host->canApply());
+        QVERIFY(host->applyRequest().keepOpen);
     }
 
     void badExecutableShowsDisconnected() {

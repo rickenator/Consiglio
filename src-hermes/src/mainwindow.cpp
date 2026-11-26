@@ -993,24 +993,22 @@ bool MainWindow::handleCommandAppLink(const CommandPlan &plan) {
 
 void MainWindow::seedCommandHost(CommandHostDialog *dialog) {
     if (!dialog) return;
-    const QString name = dialog->plan().name;
-    const bool wants = dialog->plan().archetype == CommandArchetype::Info
-                       || name == QLatin1String("tools")
-                       || name == QLatin1String("personality")
-                       || name == QLatin1String("approvals");
-    if (!wants) return;
+    const QStringList seeds = CommandUi::seedCommands(dialog->plan());
+    if (seeds.isEmpty()) return;
     if (!m_client.isReady()) {
         dialog->setBodyText(tr("Connect to Hermes to load this report."));
         return;
     }
-    const QString line = QLatin1Char('/') + name;
-    if (!m_client.runQuietCommand(line)) {
-        dialog->setError(tr("Couldn't ask Hermes for that just now."));
-        return;
-    }
     m_commandUi = dialog;
+    m_pendingQuietLines = seeds.mid(1);
     m_commandUiWait = CommandUiWait::Seed;
     dialog->setBusy(true);
+    if (!m_client.runQuietCommand(seeds.first())) {
+        dialog->setBusy(false);
+        dialog->setError(tr("Couldn't ask Hermes for that just now."));
+        m_commandUiWait = CommandUiWait::None;
+        m_pendingQuietLines.clear();
+    }
 }
 
 void MainWindow::applyCommandHost(CommandHostDialog *dialog, const CommandApplyRequest &request) {
@@ -1055,11 +1053,18 @@ void MainWindow::applyCommandHost(CommandHostDialog *dialog, const CommandApplyR
         }
         // No matching ACP option (or the write was rejected locally): quiet slash.
     }
-    if (!m_client.isReady() || !m_client.runQuietCommand(request.quietLine)) {
+    QStringList lines = request.quietLines;
+    if (lines.isEmpty() && !request.quietLine.isEmpty()) lines << request.quietLine;
+    if (!m_client.isReady() || lines.isEmpty() || !m_client.runQuietCommand(lines.first())) {
         dialog->endApply(false, tr("Couldn't apply that change right now."));
         m_commandUiWait = CommandUiWait::None;
+        m_pendingQuietLines.clear();
+        m_pendingKeepOpen = false;
         return;
     }
+    m_pendingQuietLines = lines.mid(1);
+    m_pendingKeepOpen = request.keepOpen;
+    m_pendingReseedAfter = request.reseedAfter;
     m_pendingPersistLine = request.persistLine;
     m_commandUiWait = CommandUiWait::Apply;
 }
@@ -1068,37 +1073,74 @@ void MainWindow::finishCommandHostQuiet(const QString &command, const QString &o
     CommandHostDialog *dialog = m_commandUi;
     if (!dialog) {
         m_commandUiWait = CommandUiWait::None;
+        m_pendingQuietLines.clear();
+        m_pendingKeepOpen = false;
         return;
     }
+    auto commandName = [](QString line) {
+        line = line.trimmed();
+        if (line.startsWith(QLatin1Char('/'))) line.remove(0, 1);
+        return line.section(QLatin1Char(' '), 0, 0).toLower();
+    };
+    auto ingest = [&](const QString &line, const QString &text) {
+        const QString name = commandName(line);
+        if (dialog->plan().archetype == CommandArchetype::LivePanel) {
+            dialog->ingestReport(name, text);
+            return;
+        }
+        if (dialog->plan().archetype == CommandArchetype::Info
+            || dialog->plan().name == QLatin1String("tools")) {
+            dialog->setBodyText(text);
+        }
+        if (dialog->plan().archetype == CommandArchetype::Picker) {
+            const auto items = CommandUi::itemsFromReport(text);
+            if (!items.isEmpty()) {
+                QStringList known;
+                for (const auto &it : items) known << it.value;
+                dialog->setPickerItems(items, CommandUi::currentFromReport(text, known));
+            } else if (dialog->pickerCount() == 0 && !text.trimmed().isEmpty()) {
+                // Couldn't parse a list; still show the report so the user isn't stuck.
+                dialog->setBodyText(text);
+            }
+        }
+    };
+    auto runNextQuiet = [&](CommandUiWait stay) -> bool {
+        if (m_pendingQuietLines.isEmpty()) return false;
+        const QString next = m_pendingQuietLines.takeFirst();
+        if (!m_client.runQuietCommand(next)) {
+            m_pendingQuietLines.clear();
+            return false;
+        }
+        m_commandUiWait = stay;
+        dialog->setBusy(true);
+        return true;
+    };
+
     if (m_commandUiWait == CommandUiWait::Seed) {
-        dialog->setBusy(false);
-        m_commandUiWait = CommandUiWait::None;
         if (!ok) {
+            m_pendingQuietLines.clear();
+            dialog->setBusy(false);
+            m_commandUiWait = CommandUiWait::None;
             dialog->setError(output.isEmpty() ? tr("Hermes didn't answer that command.") : output);
             return;
         }
         dialog->clearError();
-        if (dialog->plan().archetype == CommandArchetype::Info
-            || dialog->plan().name == QLatin1String("tools")) {
-            dialog->setBodyText(output);
-        }
-        if (dialog->plan().archetype == CommandArchetype::Picker) {
-            const auto items = CommandUi::itemsFromReport(output);
-            if (!items.isEmpty()) {
-                QStringList known;
-                for (const auto &it : items) known << it.value;
-                dialog->setPickerItems(items, CommandUi::currentFromReport(output, known));
-            } else if (dialog->pickerCount() == 0 && !output.trimmed().isEmpty()) {
-                // Couldn't parse a list; still show the report so the user isn't stuck.
-                dialog->setBodyText(output);
-            }
-        }
+        ingest(command, output);
+        if (runNextQuiet(CommandUiWait::Seed)) return;
+        dialog->setBusy(false);
+        m_commandUiWait = CommandUiWait::None;
         return;
     }
     if (m_commandUiWait == CommandUiWait::Persist) {
         m_commandUiWait = CommandUiWait::None;
         m_pendingPersistLine.clear();
         if (!ok) showToast(tr("The session was updated, but saving it as the default didn't work."));
+        if (m_pendingKeepOpen) {
+            m_pendingKeepOpen = false;
+            dialog->releaseApply();
+            if (m_pendingReseedAfter) seedCommandHost(dialog);
+            return;
+        }
         dialog->endApply(true);
         return;
     }
@@ -1111,16 +1153,27 @@ void MainWindow::finishCommandHostQuiet(const QString &command, const QString &o
         return;
     }
     if (!ok) {
+        m_pendingQuietLines.clear();
+        m_pendingKeepOpen = false;
         m_commandUiWait = CommandUiWait::None;
         dialog->endApply(false, output.isEmpty() ? tr("Hermes couldn't run that command.") : output);
         return;
     }
+    ingest(command, output);
+    if (runNextQuiet(CommandUiWait::Apply)) return;
     if (!m_pendingPersistLine.isEmpty() && m_client.runQuietCommand(m_pendingPersistLine)) {
         m_commandUiWait = CommandUiWait::Persist;
         return;
     }
     m_commandUiWait = CommandUiWait::None;
     m_pendingPersistLine.clear();
+    if (m_pendingKeepOpen) {
+        const bool reseed = m_pendingReseedAfter;
+        m_pendingKeepOpen = false;
+        dialog->releaseApply();
+        if (reseed) seedCommandHost(dialog);
+        return;
+    }
     dialog->endApply(true);
 }
 

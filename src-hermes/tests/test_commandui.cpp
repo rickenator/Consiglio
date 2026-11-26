@@ -13,6 +13,13 @@
 #include <QPushButton>
 #include <QtTest>
 
+static CommandCatalog::Command liveCmd(const QString &name, const QString &label) {
+    CommandCatalog::Command c;
+    c.name = name;
+    c.label = label;
+    return c;
+}
+
 class CommandUiTest : public QObject {
     Q_OBJECT
 private slots:
@@ -238,9 +245,17 @@ private slots:
             ++dialogs;
             QVERIFY2(d->host() != nullptr, qPrintable(name));
             QCOMPARE(int(d->host()->archetype()), int(p.archetype));
-            // The line Hermes receives is transport, never UI text: it must be
-            // a real slash command and never empty.
-            QVERIFY2(d->commandLine().startsWith(QLatin1Char('/')), qPrintable(name));
+            // The line Hermes receives is transport, never UI text. Live panels
+            // have no line until there is something to apply (queue edits,
+            // a selected checkpoint, …).
+            const QString line = d->commandLine();
+            if (p.archetype == CommandArchetype::LivePanel) {
+                QVERIFY2(line.isEmpty() || line.startsWith(QLatin1Char('/')), qPrintable(name));
+                if (d->canApply())
+                    QVERIFY2(line.startsWith(QLatin1Char('/')), qPrintable(name));
+            } else {
+                QVERIFY2(line.startsWith(QLatin1Char('/')), qPrintable(name));
+            }
         }
         QVERIFY(dialogs >= 20);  // sanity: the loop really built dialogs
     }
@@ -286,6 +301,176 @@ private slots:
         d.show();
         QVERIFY(d.pickerCount() == 2);
         Theme::instance().setMode(Theme::Mode::Dark);
+    }
+
+    void livePanelPlansAndSeeds() {
+        QCOMPARE(CommandUi::planFor(QStringLiteral("goal")).archetype, CommandArchetype::LivePanel);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("subgoal")).name, QString("subgoal"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("hb")).name, QString("heartbeat"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("proactive")).name, QString("loop"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("q")).archetype, CommandArchetype::LivePanel);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("tasks")).name, QString("agents"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("snap")).name, QString("snapshot"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("suggest")).name, QString("suggestions"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("bp")).name, QString("blueprint"));
+        QVERIFY(CommandUi::planFor(QStringLiteral("rollback")).dangerous);
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("memory")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("skills")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("cron")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("debug")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("insights")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("diff")));
+        QCOMPARE(CommandUi::badgeFor(QStringLiteral("goal")), QString("Dialog"));
+        const auto goalSeeds = CommandUi::seedCommands(CommandUi::planFor(QStringLiteral("goal")));
+        QCOMPARE(goalSeeds, QStringList() << QStringLiteral("/goal status") << QStringLiteral("/subgoal"));
+        QCOMPARE(CommandUi::seedCommands(CommandUi::planFor(QStringLiteral("queue"))),
+                 QStringList() << QStringLiteral("/queue list"));
+        QCOMPARE(CommandUi::seedCommands(CommandUi::planFor(QStringLiteral("usage"))),
+                 QStringList() << QStringLiteral("/usage"));
+    }
+
+    void parseLiveReports() {
+        auto names = [](const QList<CommandPickerItem> &items) {
+            QStringList out;
+            for (const auto &it : items) out << it.value + QLatin1Char(':') + it.name;
+            return out;
+        };
+        const auto queue = CommandUi::itemsFromLiveReport(
+            QStringLiteral("queue"),
+            QStringLiteral("2 prompts queued\n    1. Review the latest diff\n    2. then write tests\n"));
+        QCOMPARE(queue.size(), 2);
+        QCOMPARE(queue[0].name, QString("Review the latest diff"));
+        QCOMPARE(queue[1].name, QString("then write tests"));
+
+        const auto memory = CommandUi::itemsFromLiveReport(
+            QStringLiteral("memory"),
+            QStringLiteral("memory.write_approval = on\n  mem01  Remember the project uses Qt 5\n"));
+        QCOMPARE(memory.size(), 1);
+        QCOMPARE(memory[0].value, QString("mem01"));
+        QVERIFY(memory[0].description.contains("Qt 5"));
+
+        const auto rollback = CommandUi::itemsFromLiveReport(
+            QStringLiteral("rollback"),
+            QStringLiteral("Checkpoints:\n  1. a1b2c3d  2026-11-20 17:01  before edit\n  2. d4e5f6a  2026-11-20 17:10  after tools\n"));
+        QCOMPARE(rollback.size(), 2);
+        QCOMPARE(rollback[0].value, QString("a1b2c3d"));
+        QVERIFY(rollback[0].name.contains("before edit"));
+
+        const auto suggestions = CommandUi::itemsFromLiveReport(
+            QStringLiteral("suggestions"),
+            QStringLiteral("Suggestions:\n  1. Add a README section on ACP\n"));
+        QCOMPARE(suggestions.size(), 1);
+        QCOMPARE(CommandUi::statusFromReport(QStringLiteral("⊙ Goal (active, 0/20 turns): ship it\nMore")),
+                 QString("⊙ Goal (active, 0/20 turns): ship it"));
+        QCOMPARE(CommandUi::statusFromReport(QStringLiteral("No heartbeat set. Use /heartbeat set 10m prompt.")),
+                 QString("No heartbeat set. Use /heartbeat set 10m prompt."));
+        Q_UNUSED(names);
+    }
+
+    void queueEditsApplyOnSave() {
+        CommandHostDialog d(CommandUi::planFor(QStringLiteral("queue")), liveCmd("queue", "Queue"));
+        d.ingestReport(QStringLiteral("queue"),
+                       QStringLiteral("1 prompt queued\n    1. Review the latest diff\n"));
+        QCOMPARE(d.liveItems().size(), 1);
+        QVERIFY(!d.isDirty());
+        QVERIFY(!d.canApply());
+        d.addLiveItem(QStringLiteral("then write tests"));
+        QVERIFY(d.isDirty());
+        QCOMPARE(d.applyLines(), QStringList() << QStringLiteral("/queue add then write tests"));
+        d.removeSelectedLiveItem(); // may remove last or first depending on selection
+        // Rebuild a known list and move.
+        d.setLiveItems({
+            {QStringLiteral("1"), QStringLiteral("first"), {}, {}},
+            {QStringLiteral("2"), QStringLiteral("second"), {}, {}},
+        }, true);
+        d.setSelectedValue(QStringLiteral("1"));
+        d.moveSelectedLiveItem(1);
+        QCOMPARE(d.liveItems()[0].name, QString("second"));
+        QCOMPARE(d.liveItems()[1].name, QString("first"));
+        QCOMPARE(d.applyLines().first(), QString("/queue clear"));
+        QVERIFY(d.applyLines().contains(QStringLiteral("/queue add first")));
+        d.setLiveAction(QStringLiteral("clear"));
+        QCOMPARE(d.commandLine(), QString("/queue clear"));
+        QVERIFY(d.applyRequest().keepOpen);
+    }
+
+    void goalHeartbeatAndRollbackLines() {
+        CommandHostDialog goal(CommandUi::planFor(QStringLiteral("goal")), liveCmd("goal", "Goal"));
+        goal.ingestReport(QStringLiteral("goal"), QStringLiteral("⊙ Goal (active, 0/20 turns): ship it"));
+        goal.ingestReport(QStringLiteral("subgoal"), QStringLiteral("Subgoals:\n  1. Write the changelog\n"));
+        QCOMPARE(goal.liveItems().size(), 1);
+        goal.setLiveAction(QStringLiteral("pause"));
+        QCOMPARE(goal.commandLine(), QString("/goal pause"));
+        goal.setLiveAction(QStringLiteral("subgoal-add"));
+        goal.setTextArgument(QStringLiteral("Add screenshots"));
+        QCOMPARE(goal.commandLine(), QString("/subgoal add Add screenshots"));
+        goal.setLiveAction(QStringLiteral("subgoal-remove"));
+        goal.setSelectedValue(QStringLiteral("1"));
+        QCOMPARE(goal.commandLine(), QString("/subgoal rm 1"));
+
+        CommandHostDialog hb(CommandUi::planFor(QStringLiteral("heartbeat")), liveCmd("heartbeat", "Heartbeat"));
+        hb.setLiveAction(QStringLiteral("set"));
+        hb.setIntervalText(QStringLiteral("10m"));
+        hb.setTextArgument(QStringLiteral("check the inbox"));
+        QCOMPARE(hb.commandLine(), QString("/heartbeat set 10m check the inbox"));
+
+        CommandHostDialog rb(CommandUi::planFor(QStringLiteral("rollback")), liveCmd("rollback", "Checkpoints"));
+        rb.ingestReport(QStringLiteral("rollback"),
+                        QStringLiteral("Checkpoints:\n  1. a1b2c3d  2026-11-20 17:01  before edit\n"));
+        rb.setLiveAction(QStringLiteral("restore"));
+        rb.setSelectedValue(QStringLiteral("a1b2c3d"));
+        rb.setOptionAll(true);
+        QCOMPARE(rb.commandLine(), QString("/rollback a1b2c3d --all"));
+        QVERIFY(rb.canApply());
+        QVERIFY(!rb.applyRequest().keepOpen); // restore closes
+
+        CommandHostDialog insights(CommandUi::planFor(QStringLiteral("insights")), liveCmd("insights", "Insights"));
+        insights.setInsightDays(14);
+        insights.setLiveAction(QStringLiteral("refresh"));
+        QCOMPARE(insights.commandLine(), QString("/insights 14"));
+
+        CommandHostDialog usage(CommandUi::planFor(QStringLiteral("usage")), liveCmd("usage", "Usage"));
+        QCOMPARE(usage.plan().archetype, CommandArchetype::Info);
+        QVERIFY(usage.findChild<QPushButton *>(QString(), Qt::FindDirectChildrenOnly) || usage.saveButton());
+        // Arming is a button click; the Reset control exists on the button box.
+        QVERIFY(usage.findChildren<QPushButton *>().size() >= 2);
+    }
+
+    void memorySkillsAndAutomations() {
+        CommandHostDialog mem(CommandUi::planFor(QStringLiteral("memory")), liveCmd("memory", "Memory"));
+        mem.ingestReport(QStringLiteral("memory"),
+                         QStringLiteral("memory.write_approval = on\n  mem01  Remember the project uses Qt 5\n"));
+        mem.setLiveAction(QStringLiteral("approve"));
+        mem.setSelectedValue(QStringLiteral("mem01"));
+        QCOMPARE(mem.commandLine(), QString("/memory approve mem01"));
+        mem.setLiveAction(QStringLiteral("gate-off"));
+        QCOMPARE(mem.commandLine(), QString("/memory write-approval off"));
+
+        CommandHostDialog sk(CommandUi::planFor(QStringLiteral("skills")), liveCmd("skills", "Skills"));
+        sk.setLiveAction(QStringLiteral("install"));
+        sk.setTextArgument(QStringLiteral("arxiv"));
+        QCOMPARE(sk.commandLine(), QString("/skills install arxiv"));
+
+        CommandHostDialog cron(CommandUi::planFor(QStringLiteral("cron")), liveCmd("cron", "Scheduled tasks"));
+        cron.ingestReport(QStringLiteral("cron"),
+                          QStringLiteral("Scheduled tasks:\n  1. job-1  active  every 1h  status ping\n"));
+        cron.setLiveAction(QStringLiteral("pause"));
+        cron.setSelectedValue(QStringLiteral("job-1"));
+        QCOMPARE(cron.commandLine(), QString("/cron pause job-1"));
+
+        CommandHostDialog sug(CommandUi::planFor(QStringLiteral("suggestions")), liveCmd("suggestions", "Suggestions"));
+        sug.ingestReport(QStringLiteral("suggestions"), QStringLiteral("Suggestions:\n  1. Add a README section on ACP\n"));
+        sug.setLiveAction(QStringLiteral("accept"));
+        sug.setSelectedValue(QStringLiteral("1"));
+        QCOMPARE(sug.commandLine(), QString("/suggestions accept 1"));
+
+        CommandHostDialog bp(CommandUi::planFor(QStringLiteral("blueprint")), liveCmd("blueprint", "Blueprints"));
+        bp.ingestReport(QStringLiteral("blueprint"),
+                        QStringLiteral("Blueprints:\n  1. weekly-review  Recurring weekly review session\n"));
+        bp.setLiveAction(QStringLiteral("apply"));
+        bp.setSelectedValue(QStringLiteral("weekly-review"));
+        bp.setTextArgument(QStringLiteral("slot=demo"));
+        QCOMPARE(bp.commandLine(), QString("/blueprint weekly-review slot=demo"));
     }
 };
 

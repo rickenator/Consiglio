@@ -212,6 +212,9 @@ private:
     QPointer<CommandHostDialog> m_commandUi;
     QString m_pendingConfigId;
     QString m_pendingPersistLine;
+    QStringList m_pendingQuietLines;
+    bool m_pendingKeepOpen = false;
+    bool m_pendingReseedAfter = true;
     enum class CommandUiWait { None, Seed, Apply, Persist } m_commandUiWait = CommandUiWait::None;
 };
 

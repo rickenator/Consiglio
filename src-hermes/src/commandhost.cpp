@@ -1,6 +1,7 @@
 #include "commandhost.h"
 
 #include "commandui.h"
+#include "commandlivehosts.h"
 #include "theme.h"
 
 #include <QCheckBox>
@@ -295,6 +296,22 @@ CommandHost *createCommandHost(const CommandPlan &plan, const CommandCatalog::Co
     if (n == QLatin1String("branch")) return new BranchHost(plan, command);
     if (n == QLatin1String("save")) return new SaveHost(plan, command);
     if (n == QLatin1String("tools")) return new ToolsHost(plan, command);
+    if (n == QLatin1String("usage")) return new UsageHost(plan, command);
+    if (n == QLatin1String("goal") || n == QLatin1String("subgoal")) return new GoalHost(plan, command);
+    if (n == QLatin1String("heartbeat")) return new HeartbeatHost(plan, command);
+    if (n == QLatin1String("loop")) return new LoopHost(plan, command);
+    if (n == QLatin1String("queue")) return new QueueHost(plan, command);
+    if (n == QLatin1String("agents")) return new AgentsHost(plan, command);
+    if (n == QLatin1String("memory")) return new MemoryHost(plan, command);
+    if (n == QLatin1String("skills")) return new SkillsHost(plan, command);
+    if (n == QLatin1String("rollback")) return new RollbackHost(plan, command);
+    if (n == QLatin1String("snapshot")) return new SnapshotHost(plan, command);
+    if (n == QLatin1String("debug")) return new DebugHost(plan, command);
+    if (n == QLatin1String("insights")) return new InsightsHost(plan, command);
+    if (n == QLatin1String("diff")) return new DiffHost(plan, command);
+    if (n == QLatin1String("cron")) return new CronHost(plan, command);
+    if (n == QLatin1String("suggestions")) return new SuggestionsHost(plan, command);
+    if (n == QLatin1String("blueprint")) return new BlueprintHost(plan, command);
 
     // Everything else is handled by the archetype's generic host, so a command
     // this build has never heard of still gets a real surface.
@@ -304,6 +321,10 @@ CommandHost *createCommandHost(const CommandPlan &plan, const CommandCatalog::Co
     case CommandArchetype::Confirm: return new ConfirmHost(plan, command);
     case CommandArchetype::TextPrompt: return new TextPromptHost(plan, command);
     case CommandArchetype::Form: return new TextPromptHost(plan, command);  // unmodelled form
+    case CommandArchetype::LivePanel:
+        // Named hosts above cover every live-panel plan; an unexpected name
+        // still gets a dialog rather than falling through to the console.
+        return new AgentsHost(plan, command);
     case CommandArchetype::AppLink:
     case CommandArchetype::Passthrough:
         break;
