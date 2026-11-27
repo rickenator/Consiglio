@@ -2,6 +2,7 @@
 
 #include "commandhost.h"
 
+#include <QHash>
 #include <QList>
 #include <QPair>
 #include <QString>
@@ -257,6 +258,76 @@ public:
     Kind kindOf(const QString &action) const override;
     QStringList applyLines() const override;
     QString placeholder(const QString &action) const override;
+};
+
+// View-only live report (agents, bundles, plugins, toolsets, curator, kanban).
+class ViewReportHost : public LivePanelHost {
+public:
+    ViewReportHost(const CommandPlan &p, const CommandCatalog::Command &c) : LivePanelHost(p, c) {}
+    QList<QPair<QString, QString>> actions() const override;
+    Kind kindOf(const QString &action) const override;
+    bool showBody() const override { return true; }
+    QStringList applyLines() const override { return {}; }
+};
+
+// Fixed-choice picker (busy, autoprune, codex-runtime). Seed highlights the current value.
+class ChoicePickerHost : public CommandHost {
+public:
+    ChoicePickerHost(const CommandPlan &plan, const CommandCatalog::Command &command,
+                     QList<CommandPickerItem> choices)
+        : CommandHost(plan, command), m_choices(std::move(choices)) {}
+    void build(CommandHostDialog &shell) override;
+    void seedReport(const QString &report) override;
+    bool dirty() const override;
+    QString line() const override;
+    CommandApplyRequest request() const override;
+
+private:
+    QList<CommandPickerItem> m_choices;
+};
+
+// /subscription and /topup: report plus an Open portal button when a URL is present.
+class BillingHost : public CommandHost {
+public:
+    BillingHost(const CommandPlan &plan, const CommandCatalog::Command &command)
+        : CommandHost(plan, command) {}
+    void build(CommandHostDialog &shell) override;
+    void seedReport(const QString &report) override;
+    bool dirty() const override { return true; }
+    QString line() const override { return slash(); }
+    bool canApply() const override { return true; }
+
+private:
+    void setPortal(const QString &report);
+    QPushButton *m_open = nullptr;
+    QString m_portalUrl;
+};
+
+// /init [notes] — optional notes, apply on Save, stay open with the report.
+class InitHost : public CommandHost {
+public:
+    InitHost(const CommandPlan &plan, const CommandCatalog::Command &command)
+        : CommandHost(plan, command) {}
+    void build(CommandHostDialog &shell) override;
+    void seedReport(const QString &report) override;
+    bool dirty() const override { return true; }
+    QString line() const override;
+    CommandApplyRequest request() const override;
+};
+
+// /resume — picker of sessions from ACP listSessions, or a typed name.
+class ResumeHost : public CommandHost {
+public:
+    ResumeHost(const CommandPlan &plan, const CommandCatalog::Command &command)
+        : CommandHost(plan, command) {}
+    void build(CommandHostDialog &shell) override;
+    void setSessions(const QList<AcpClient::SessionInfo> &sessions);
+    bool dirty() const override;
+    QString line() const override;
+    CommandApplyRequest request() const override;
+
+private:
+    QHash<QString, QString> m_cwdById;
 };
 
 // /usage is an Info report plus an in-dialog confirm for `reset --force`.

@@ -3,6 +3,7 @@
 
 #include "commanddialog.h"
 #include "commandui.h"
+#include "commandlivehosts.h"
 #include "hermescli.h"
 #include "hermesremote.h"
 #include "hostmanager.h"
@@ -666,7 +667,10 @@ void MainWindow::rebuildCommandMenus() {
     if (!sessionCmds.isEmpty()) {
         track(m_sessionMenu, m_dynamicSessionActions, [&]() {
             m_sessionMenu->addSection(tr("Hermes Session Commands"));
-            for (const auto &c : sessionCmds) addCommandToMenu(m_sessionMenu, c);
+            for (const auto &c : sessionCmds) {
+                if (CommandUi::isHiddenChrome(c.name)) continue;
+                addCommandToMenu(m_sessionMenu, c);
+            }
         });
     }
 
@@ -675,12 +679,17 @@ void MainWindow::rebuildCommandMenus() {
     for (const auto &g : CommandCatalog::groups()) {
         if (g.id == QLatin1String("session")) continue;
         const auto cmds = m_catalog.commandsInGroup(g.id);
-        if (cmds.isEmpty()) continue;
+        bool anyVisible = false;
+        for (const auto &c : cmds) if (!CommandUi::isHiddenChrome(c.name)) { anyVisible = true; break; }
+        if (!anyVisible) continue;
         QMenu *sub = m_hermesMenu->addMenu(theme().icon(g.icon), QString(g.title).replace(QLatin1Char('&'), QStringLiteral("&&")));
         sub->menuAction()->setProperty("themeIcon", g.icon);
         sub->menuAction()->setProperty("catalogGroup", g.id);
         sub->setToolTipsVisible(true);
-        for (const auto &c : cmds) addCommandToMenu(sub, c);
+        for (const auto &c : cmds) {
+            if (CommandUi::isHiddenChrome(c.name)) continue;
+            addCommandToMenu(sub, c);
+        }
         any = true;
     }
     if (!any) {
@@ -814,6 +823,7 @@ void MainWindow::rebuildPalette() {
         app(id, setup);
 
     for (const auto &c : m_catalog.commands()) {
+        if (CommandUi::isHiddenChrome(c.name)) continue;
         PaletteAction p;
         p.id = QLatin1Char('/') + c.name;
         p.label = c.label;
@@ -1011,6 +1021,12 @@ void MainWindow::seedCommandDialog(CommandHostDialog *dialog) { seedCommandHost(
 
 void MainWindow::seedCommandHost(CommandHostDialog *dialog) {
     if (!dialog) return;
+    if (dialog->plan().name == QLatin1String("resume")) {
+        m_commandUi = dialog;
+        dialog->setBusy(true);
+        refreshSessionList();
+        return;
+    }
     const QStringList seeds = CommandUi::seedCommands(dialog->plan());
     if (seeds.isEmpty()) return;
     if (!m_client.isReady()) {
@@ -1038,6 +1054,29 @@ void MainWindow::applyCommandHost(CommandHostDialog *dialog, const CommandApplyR
     if (request.method == CommandApply::NewSession) {
         startNewSession();
         dialog->endApply(true);
+        return;
+    }
+    if (request.method == CommandApply::ResumeSession) {
+        const QString id = request.value;
+        const QString dir = request.sessionCwd.isEmpty() ? cwd() : request.sessionCwd;
+        if (id.isEmpty()) {
+            dialog->endApply(false, tr("Pick a session to resume."));
+            return;
+        }
+        dialog->endApply(true);
+        resumeSession(id, dir);
+        return;
+    }
+    if (request.method == CommandApply::SendPrompt) {
+        const QString line = request.quietLine.isEmpty()
+            ? (request.quietLines.isEmpty() ? QString() : request.quietLines.first())
+            : request.quietLine;
+        if (line.isEmpty()) {
+            dialog->endApply(false, tr("Enter the text to send."));
+            return;
+        }
+        dialog->endApply(true);
+        runCommand(line);
         return;
     }
     if (request.method == CommandApply::ConfigOption) {
@@ -1113,20 +1152,13 @@ void MainWindow::finishCommandHostQuiet(const QString &command, const QString &o
             dialog->ingestReport(name, text);
             return;
         }
+        if (dialog->host()) {
+            dialog->host()->seedReport(text);
+            return;
+        }
         if (dialog->plan().archetype == CommandArchetype::Info
             || dialog->plan().name == QLatin1String("tools")) {
             dialog->setBodyText(text);
-        }
-        if (dialog->plan().archetype == CommandArchetype::Picker) {
-            const auto items = CommandUi::itemsFromReport(text);
-            if (!items.isEmpty()) {
-                QStringList known;
-                for (const auto &it : items) known << it.value;
-                dialog->setPickerItems(items, CommandUi::currentFromReport(text, known));
-            } else if (dialog->pickerCount() == 0 && !text.trimmed().isEmpty()) {
-                // Couldn't parse a list; still show the report so the user isn't stuck.
-                dialog->setBodyText(text);
-            }
         }
     };
     auto runNextQuiet = [&](CommandUiWait stay) -> bool {
@@ -1322,6 +1354,12 @@ void MainWindow::onConnected() {
 }
 
 void MainWindow::onSessionsListed(QList<AcpClient::SessionInfo> sessions) {
+    if (m_commandUi && m_commandUi->plan().name == QLatin1String("resume")) {
+        if (auto *host = dynamic_cast<ResumeHost *>(m_commandUi->host()))
+            host->setSessions(sessions);
+        else
+            m_commandUi->setBusy(false);
+    }
     m_rail->setSessions(sessions);
     m_sessionCount = sessions.size();
     m_recentMenu->clear();

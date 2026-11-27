@@ -21,8 +21,10 @@
 #include <QScrollBar>
 #include <QShortcut>
 #include <QSignalBlocker>
+#include <QSet>
 #include <QSpinBox>
 #include <QStyle>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace {
@@ -192,6 +194,72 @@ const CommandPlan kPlans[] = {
     {QStringLiteral("steer"), {QStringLiteral("s")},
      CommandArchetype::TextPrompt, CommandApply::QuietCommand,
      QStringLiteral("Steer this turn"), {}, {}, {}, {}, false},
+    {QStringLiteral("busy"), {},
+     CommandArchetype::Picker, CommandApply::QuietCommand,
+     QStringLiteral("Busy input"), {}, {}, {}, {}, false},
+    {QStringLiteral("autoprune"), {},
+     CommandArchetype::Picker, CommandApply::QuietCommand,
+     QStringLiteral("Auto-prune"), {}, {}, {}, {}, false},
+    {QStringLiteral("codex-runtime"), {},
+     CommandArchetype::Picker, CommandApply::QuietCommand,
+     QStringLiteral("Codex runtime"), {}, {}, {}, {}, false},
+    {QStringLiteral("bg"), {},
+     CommandArchetype::TextPrompt, CommandApply::SendPrompt,
+     QStringLiteral("Run in background"), {}, {}, {}, {}, false},
+    {QStringLiteral("btw"), {},
+     CommandArchetype::TextPrompt, CommandApply::SendPrompt,
+     QStringLiteral("Side question"), {}, {}, {}, {}, false},
+    {QStringLiteral("moa"), {},
+     CommandArchetype::TextPrompt, CommandApply::SendPrompt,
+     QStringLiteral("Mixture of agents"), {}, {}, {}, {}, false},
+    {QStringLiteral("refine"), {},
+     CommandArchetype::TextPrompt, CommandApply::SendPrompt,
+     QStringLiteral("Refine and learn"), {}, {}, {}, {}, false},
+    {QStringLiteral("review"), {},
+     CommandArchetype::TextPrompt, CommandApply::SendPrompt,
+     QStringLiteral("Independent review"), {}, {}, {}, {}, false},
+    {QStringLiteral("learn"), {},
+     CommandArchetype::TextPrompt, CommandApply::SendPrompt,
+     QStringLiteral("Learn a skill"), {}, {}, {}, {}, false},
+    {QStringLiteral("init"), {},
+     CommandArchetype::TextPrompt, CommandApply::QuietCommand,
+     QStringLiteral("Generate AGENTS.md"), {}, {}, {}, {}, false},
+    {QStringLiteral("resume"), {},
+     CommandArchetype::Picker, CommandApply::ResumeSession,
+     QStringLiteral("Resume session"), {}, {}, {}, {}, false},
+    {QStringLiteral("bundles"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Skill bundles"), {}, {}, {}, {}, false},
+    {QStringLiteral("plugins"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Plugins"), {}, {}, {}, {}, false},
+    {QStringLiteral("toolsets"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Toolsets"), {}, {}, {}, {}, false},
+    {QStringLiteral("curator"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Skill curator"), {}, {}, {}, {}, false},
+    {QStringLiteral("kanban"), {},
+     CommandArchetype::LivePanel, CommandApply::QuietCommand,
+     QStringLiteral("Kanban"), {}, {}, {}, {}, false},
+    {QStringLiteral("subscription"), {QStringLiteral("upgrade")},
+     CommandArchetype::Info, CommandApply::QuietCommand,
+     QStringLiteral("Subscription"), {}, {}, {}, {}, false},
+    {QStringLiteral("topup"), {},
+     CommandArchetype::Info, CommandApply::QuietCommand,
+     QStringLiteral("Nous balance"), {}, {}, {}, {}, false},
+    {QStringLiteral("reload"), {},
+     CommandArchetype::Confirm, CommandApply::QuietCommand,
+     QStringLiteral("Reload environment"), {}, {}, {},
+     QStringLiteral("Reload the environment from disk? Skills, tools, and MCP servers are re-read."), true},
+    {QStringLiteral("reload-mcp"), {},
+     CommandArchetype::Confirm, CommandApply::QuietCommand,
+     QStringLiteral("Reload MCP servers"), {}, {}, {},
+     QStringLiteral("Reload MCP servers from the Hermes config?"), true},
+    {QStringLiteral("reload-skills"), {},
+     CommandArchetype::Confirm, CommandApply::QuietCommand,
+     QStringLiteral("Reload skills"), {}, {}, {},
+     QStringLiteral("Re-scan skills for anything newly installed or removed?"), true},
     {QStringLiteral("help"), {},
      CommandArchetype::AppLink, CommandApply::OpenPalette, {}, {}, {}, {}, {}, false},
     {QStringLiteral("commands"), {},
@@ -240,6 +308,20 @@ bool CommandUi::hasNativeUi(const QString &name) {
 
 bool CommandUi::isAppLink(const QString &name) {
     return planFor(name).archetype == CommandArchetype::AppLink;
+}
+
+bool CommandUi::isHiddenChrome(const QString &name) {
+    const QString n = planFor(name).name.isEmpty() ? name.trimmed().toLower() : planFor(name).name;
+    static const QSet<QString> hidden = {
+        QStringLiteral("history"), QStringLiteral("prompt"), QStringLiteral("compose"),
+        QStringLiteral("rewind"), QStringLiteral("clear"), QStringLiteral("redraw"),
+        QStringLiteral("worktree"), QStringLiteral("statusbar"), QStringLiteral("battery"),
+        QStringLiteral("timestamps"), QStringLiteral("verbose"), QStringLiteral("focus"),
+        QStringLiteral("footer"), QStringLiteral("skin"), QStringLiteral("indicator"),
+        QStringLiteral("copy"), QStringLiteral("paste"), QStringLiteral("image"),
+        QStringLiteral("pet"), QStringLiteral("hatch")
+    };
+    return hidden.contains(n) || hidden.contains(name.trimmed().toLower());
 }
 
 QString CommandUi::badgeFor(const QString &name) {
@@ -328,6 +410,7 @@ CommandHostDialog::CommandHostDialog(const CommandPlan &plan, const CommandCatal
     buildShell();
     buildBody();
     updateSaveEnabled();
+    QTimer::singleShot(0, this, [this]() { focusFirstField(); });
 }
 
 CommandHostDialog::~CommandHostDialog() { delete m_host; }
@@ -357,7 +440,8 @@ void CommandHostDialog::buildShell() {
     setWindowTitle(defaultTitle());
     setModal(true);
     setObjectName(QStringLiteral("commandHost"));
-    setMinimumWidth(t.px(560));
+    setMinimumWidth(t.px(440));
+    setSizeGripEnabled(true);
     ui::fitOnShow(this);
     auto *l = new QVBoxLayout(this);
     l->setContentsMargins(t.px(22), t.px(20), t.px(22), t.px(18));
@@ -1134,4 +1218,25 @@ void CommandHostDialog::ingestReport(const QString &command, const QString &outp
 }
 QStringList CommandHostDialog::applyLines() const {
     return liveHost(m_host) ? liveHost(m_host)->applyLines() : QStringList();
+}
+
+void CommandHostDialog::focusFirstField() {
+    const auto want = [](QWidget *w) {
+        return w && w->isVisible() && w->isEnabled() && w->focusPolicy() != Qt::NoFocus;
+    };
+    QWidget *candidates[] = { m_filter, m_text, m_list };
+    for (QWidget *w : candidates) {
+        if (want(w)) { w->setFocus(Qt::TabFocusReason); return; }
+    }
+    for (auto *w : findChildren<QComboBox *>()) {
+        if (want(w)) { w->setFocus(Qt::TabFocusReason); return; }
+    }
+    for (auto *w : findChildren<QPlainTextEdit *>()) {
+        if (want(w) && !w->isReadOnly()) { w->setFocus(Qt::TabFocusReason); return; }
+    }
+    for (auto *w : findChildren<QLineEdit *>()) {
+        if (want(w)) { w->setFocus(Qt::TabFocusReason); return; }
+    }
+    if (m_save && m_save->isVisible() && m_save->isEnabled())
+        m_save->setFocus(Qt::TabFocusReason);
 }

@@ -303,6 +303,42 @@ private slots:
         Theme::instance().setMode(Theme::Mode::Dark);
     }
 
+    void phase3PlansAndHiddenChrome() {
+        QCOMPARE(CommandUi::planFor(QStringLiteral("busy")).archetype, CommandArchetype::Picker);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("autoprune")).archetype, CommandArchetype::Picker);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("codex-runtime")).archetype, CommandArchetype::Picker);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("bg")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("moa")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("refine")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("review")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("learn")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("init")).archetype, CommandArchetype::TextPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("resume")).apply, CommandApply::ResumeSession);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("subscription")).archetype, CommandArchetype::Info);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("upgrade")).name, QString("subscription"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("topup")).archetype, CommandArchetype::Info);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("reload-mcp")).archetype, CommandArchetype::Confirm);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("bundles")).archetype, CommandArchetype::LivePanel);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("kanban")).archetype, CommandArchetype::LivePanel);
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("busy")));
+        QCOMPARE(CommandUi::badgeFor(QStringLiteral("busy")), QString("Dialog"));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("footer")));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("statusbar")));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("pet")));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("history")));
+        QVERIFY(!CommandUi::isHiddenChrome(QStringLiteral("busy")));
+        QVERIFY(!CommandUi::isHiddenChrome(QStringLiteral("goal")));
+        CommandHostDialog busy(CommandUi::planFor(QStringLiteral("busy")), liveCmd("busy", "Busy input"));
+        busy.setSelectedValue(QStringLiteral("steer"));
+        QCOMPARE(busy.commandLine(), QString("/busy steer"));
+        CommandHostDialog init(CommandUi::planFor(QStringLiteral("init")), liveCmd("init", "Generate AGENTS.md"));
+        QVERIFY(init.canApply());
+        QCOMPARE(init.commandLine(), QString("/init"));
+        init.setTextArgument(QStringLiteral("prefer Qt 5"));
+        QCOMPARE(init.commandLine(), QString("/init prefer Qt 5"));
+        QVERIFY(init.applyRequest().keepOpen);
+    }
+
     void livePanelPlansAndSeeds() {
         QCOMPARE(CommandUi::planFor(QStringLiteral("goal")).archetype, CommandArchetype::LivePanel);
         QCOMPARE(CommandUi::planFor(QStringLiteral("subgoal")).name, QString("subgoal"));

@@ -15,6 +15,9 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QRegularExpression>
 #include <QVBoxLayout>
 
 namespace {
@@ -115,7 +118,7 @@ void LivePanelHost::build(CommandHostDialog &shell) {
     m_list->setObjectName(QStringLiteral("commandLiveList"));
     m_list->setAlternatingRowColors(true);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_list->setMinimumHeight(t.px(160));
+    m_list->setMinimumHeight(t.px(100));
     ui::describe(m_list, CommandHostDialog::tr("Items"),
                  CommandHostDialog::tr("Select a row to act on. Nothing is changed until you Save."));
     QObject::connect(m_list, &QListWidget::currentItemChanged, &shell, [this]() {
@@ -165,7 +168,7 @@ void LivePanelHost::build(CommandHostDialog &shell) {
     m_body = new QPlainTextEdit(page);
     m_body->setObjectName(QStringLiteral("commandLiveBody"));
     m_body->setReadOnly(true);
-    m_body->setMinimumHeight(t.px(120));
+    m_body->setMinimumHeight(t.px(72));
     m_body->setPlaceholderText(CommandHostDialog::tr("Report"));
     m_body->setStyleSheet(QStringLiteral("font-family: \"JetBrains Mono\", \"DejaVu Sans Mono\", monospace;"));
     ui::describe(m_body, CommandHostDialog::tr("Report"),
@@ -196,8 +199,13 @@ void LivePanelHost::refreshChrome() {
     if (m_optionStat) m_optionStat->setVisible(showDiffOpts());
     if (m_optionAll) m_optionAll->setVisible(showOptionAll());
     if (m_list) m_list->setVisible(showList());
+    const bool reportFirst = n == QLatin1String("debug") || n == QLatin1String("insights")
+        || n == QLatin1String("diff");
     const bool bodyOn = showBody() || !showList() || n == QLatin1String("memory");
-    if (m_body) m_body->setVisible(bodyOn);
+    if (m_body) {
+        const bool hasText = !m_body->toPlainText().trimmed().isEmpty();
+        m_body->setVisible(bodyOn && (hasText || reportFirst));
+    }
     const bool editorOn = showQueueEditor() && a != QLatin1String("clear");
     if (m_addItem) m_addItem->setVisible(editorOn);
     if (m_removeItem) m_removeItem->setVisible(editorOn);
@@ -975,6 +983,176 @@ CommandApplyRequest UsageHost::request() const {
         req.quietLines = QStringList{req.quietLine};
         req.keepOpen = true;
         req.reseedAfter = true;
+    }
+    return req;
+}
+
+// ─── View-only reports ────────────────────────────────────────────────────
+
+QList<QPair<QString, QString>> ViewReportHost::actions() const {
+    return {{QStringLiteral("refresh"), CommandHostDialog::tr("View only")}};
+}
+
+LivePanelHost::Kind ViewReportHost::kindOf(const QString &action) const {
+    Q_UNUSED(action);
+    return Kind::Never;
+}
+
+// ─── Fixed-choice pickers ─────────────────────────────────────────────────
+
+void ChoicePickerHost::build(CommandHostDialog &shell) {
+    m_shell = &shell;
+    shell.buildPickerBody();
+    shell.setPickerItems(m_choices, QString());
+}
+
+void ChoicePickerHost::seedReport(const QString &report) {
+    if (!this->shell()) return;
+    QStringList known;
+    for (const auto &it : m_choices) known << it.value;
+    QString current = CommandUi::currentFromReport(report, known);
+    if (current.isEmpty()) {
+        const QString lower = report.toLower();
+        for (const auto &it : m_choices) {
+            if (lower.contains(it.value.toLower())) { current = it.value; break; }
+        }
+    }
+    this->shell()->setPickerItems(m_choices, current);
+    if (!report.trimmed().isEmpty() && this->shell()->previewBody().isEmpty())
+        this->shell()->setBodyText(report);
+}
+
+bool ChoicePickerHost::dirty() const {
+    if (!this->shell()) return false;
+    const QString selected = this->shell()->selectedValue();
+    if (selected.isEmpty()) return false;
+    const QString current = this->shell()->currentPickerValue();
+    return current.isEmpty() || selected != current;
+}
+
+QString ChoicePickerHost::line() const {
+    const QString value = this->shell() ? this->shell()->selectedValue() : QString();
+    return value.isEmpty() ? slash() : slash() + QLatin1Char(' ') + value;
+}
+
+CommandApplyRequest ChoicePickerHost::request() const {
+    CommandApplyRequest req = CommandHost::request();
+    if (this->shell()) req.value = this->shell()->selectedValue();
+    return req;
+}
+
+// ─── Billing ──────────────────────────────────────────────────────────────
+
+void BillingHost::build(CommandHostDialog &shell) {
+    m_shell = &shell;
+    shell.buildInfoBody();
+    m_open = shell.addChromeButton(CommandHostDialog::tr("Open portal"));
+    if (m_open) {
+        ui::describe(m_open, CommandHostDialog::tr("Open portal"),
+                     CommandHostDialog::tr("Open the billing or subscription page in your browser"));
+        m_open->setEnabled(false);
+        QObject::connect(m_open, &QPushButton::clicked, &shell, [this]() {
+            if (!m_portalUrl.isEmpty())
+                QDesktopServices::openUrl(QUrl(m_portalUrl));
+        });
+    }
+}
+
+void BillingHost::setPortal(const QString &report) {
+    m_portalUrl.clear();
+    const QRegularExpression url(QStringLiteral("https?://[^\\s\\)>\"']+"),
+                                 QRegularExpression::CaseInsensitiveOption);
+    const auto m = url.match(report);
+    if (m.hasMatch()) m_portalUrl = m.captured(0);
+    if (m_open) m_open->setEnabled(!m_portalUrl.isEmpty());
+}
+
+void BillingHost::seedReport(const QString &report) {
+    if (this->shell()) this->shell()->setBodyText(report);
+    setPortal(report);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+
+void InitHost::build(CommandHostDialog &shell) {
+    m_shell = &shell;
+    shell.buildTextPromptBody();
+    shell.buildInfoBody();
+}
+
+void InitHost::seedReport(const QString &report) {
+    if (this->shell() && !report.trimmed().isEmpty())
+        this->shell()->setBodyText(report);
+}
+
+QString InitHost::line() const {
+    const QString notes = this->shell() ? this->shell()->textArgument() : QString();
+    return notes.isEmpty() ? slash() : slash() + QLatin1Char(' ') + notes;
+}
+
+CommandApplyRequest InitHost::request() const {
+    CommandApplyRequest req = CommandHost::request();
+    req.quietLine = line();
+    req.quietLines = QStringList{line()};
+    req.keepOpen = true;
+    req.reseedAfter = false;
+    return req;
+}
+
+// ─── Resume ───────────────────────────────────────────────────────────────
+
+void ResumeHost::build(CommandHostDialog &shell) {
+    m_shell = &shell;
+    shell.buildPickerBody();
+    shell.buildTextPromptBody();
+}
+
+void ResumeHost::setSessions(const QList<AcpClient::SessionInfo> &sessions) {
+    if (!this->shell()) return;
+    m_cwdById.clear();
+    QList<CommandPickerItem> items;
+    for (const auto &s : sessions) {
+        if (s.id.isEmpty()) continue;
+        m_cwdById.insert(s.id, s.cwd);
+        const QString title = s.title.isEmpty() ? s.id.left(8) : s.title;
+        QString desc = s.cwd;
+        if (!s.updatedAt.isEmpty())
+            desc = desc.isEmpty() ? s.updatedAt : desc + QStringLiteral(" · ") + s.updatedAt;
+        items.push_back({s.id, title, desc, s.cwd});
+    }
+    this->shell()->setPickerItems(items, QString());
+    this->shell()->setBusy(false);
+    this->shell()->refreshSaveEnabled();
+}
+
+bool ResumeHost::dirty() const {
+    if (!this->shell()) return false;
+    return !this->shell()->selectedValue().isEmpty() || !this->shell()->textArgument().isEmpty();
+}
+
+QString ResumeHost::line() const {
+    if (!this->shell()) return slash();
+    const QString typed = this->shell()->textArgument();
+    if (!typed.isEmpty()) return slash() + QLatin1Char(' ') + typed;
+    const QString id = this->shell()->selectedValue();
+    return id.isEmpty() ? slash() : slash() + QLatin1Char(' ') + id;
+}
+
+CommandApplyRequest ResumeHost::request() const {
+    CommandApplyRequest req = CommandHost::request();
+    if (!this->shell()) return req;
+    const QString typed = this->shell()->textArgument();
+    const QString id = this->shell()->selectedValue();
+    if (typed.isEmpty() && !id.isEmpty()) {
+        req.method = CommandApply::ResumeSession;
+        req.value = id;
+        req.sessionCwd = m_cwdById.value(id);
+        req.quietLine = line();
+    } else {
+        req.method = CommandApply::QuietCommand;
+        req.quietLine = line();
+        req.quietLines = QStringList{req.quietLine};
+        req.value = typed;
     }
     return req;
 }
