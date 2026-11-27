@@ -913,6 +913,8 @@ void CommandHostDialog::rebuildPickerList() {
         }
     }
 
+    if (m_list)
+        m_list->setVisible(!m_items.isEmpty());
     if (m_filter) {
         const bool needFilter = m_items.size() > 6 || !m_filter->text().isEmpty();
         m_filter->setVisible(needFilter);
