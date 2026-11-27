@@ -241,6 +241,9 @@ public:
     QList<QPair<QString, QString>> actions() const override;
     Kind kindOf(const QString &action) const override;
     QStringList applyLines() const override;
+    QString placeholder(const QString &action) const override;
+    bool showInterval() const override { return liveAction() == QLatin1String("add"); }
+    bool dirty() const override;
 };
 
 class SuggestionsHost : public LivePanelHost {

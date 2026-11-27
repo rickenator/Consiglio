@@ -303,6 +303,46 @@ public:
     }
 };
 
+
+// /export [profile] [-o path] — share a profile as a .tar.gz archive.
+class ExportHost : public CommandHost {
+public:
+    ExportHost(const CommandPlan &plan, const CommandCatalog::Command &cmd)
+        : CommandHost(plan, cmd) {}
+    void build(CommandHostDialog &shell) override {
+        m_shell = &shell;
+        shell.buildExportForm();
+    }
+    bool dirty() const override { return true; }
+    QString line() const override {
+        if (!m_shell) return slash();
+        QString l = slash();
+        if (!m_shell->profileName().isEmpty()) l += QLatin1Char(' ') + m_shell->profileName();
+        if (!m_shell->archivePath().isEmpty())
+            l += QStringLiteral(" -o ") + m_shell->archivePath();
+        return l;
+    }
+};
+
+// /import <archive.tar.gz> [--name <name>] — import a shared profile archive.
+class ImportHost : public CommandHost {
+public:
+    ImportHost(const CommandPlan &plan, const CommandCatalog::Command &cmd)
+        : CommandHost(plan, cmd) {}
+    void build(CommandHostDialog &shell) override {
+        m_shell = &shell;
+        shell.buildImportForm();
+    }
+    bool dirty() const override { return m_shell && !m_shell->archivePath().isEmpty(); }
+    QString line() const override {
+        if (!m_shell || m_shell->archivePath().isEmpty()) return slash();
+        QString l = slash() + QLatin1Char(' ') + m_shell->archivePath();
+        if (!m_shell->profileName().isEmpty())
+            l += QStringLiteral(" --name ") + m_shell->profileName();
+        return l;
+    }
+};
+
 // ─── Factory ──────────────────────────────────────────────────────────────
 
 CommandHost *createCommandHost(const CommandPlan &plan, const CommandCatalog::Command &command) {
@@ -313,6 +353,8 @@ CommandHost *createCommandHost(const CommandPlan &plan, const CommandCatalog::Co
     if (n == QLatin1String("compress")) return new CompressHost(plan, command);
     if (n == QLatin1String("branch")) return new BranchHost(plan, command);
     if (n == QLatin1String("save")) return new SaveHost(plan, command);
+    if (n == QLatin1String("export")) return new ExportHost(plan, command);
+    if (n == QLatin1String("import")) return new ImportHost(plan, command);
     if (n == QLatin1String("tools")) return new ToolsHost(plan, command);
     if (n == QLatin1String("usage")) return new UsageHost(plan, command);
     if (n == QLatin1String("goal") || n == QLatin1String("subgoal")) return new GoalHost(plan, command);

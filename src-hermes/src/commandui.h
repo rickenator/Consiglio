@@ -144,6 +144,8 @@ public:
     void buildCompressForm();
     void buildBranchForm();
     void buildSaveForm();
+    void buildExportForm();
+    void buildImportForm();
     void buildToolsForm();
     void buildPersonalityExtras();
     // Re-render the picker's preview panel from the current selection.
@@ -185,6 +187,10 @@ public:
     QString saveFilename() const;
     void setSaveFilename(const QString &name);
     bool saveRedact() const;
+    QString profileName() const;
+    void setProfileName(const QString &name);
+    QString archivePath() const;
+    void setArchivePath(const QString &path);
     QString toolsAction() const;
     void setToolsAction(const QString &action);
     QString toolsNames() const;
@@ -281,6 +287,8 @@ private:
     QComboBox *m_saveFormat = nullptr;
     QLineEdit *m_saveFile = nullptr;
     QCheckBox *m_saveRedact = nullptr;
+    QLineEdit *m_profileName = nullptr;
+    QLineEdit *m_archivePath = nullptr;
     QComboBox *m_toolsAction = nullptr;
     QLineEdit *m_toolsNames = nullptr;
     QLabel *m_busyLabel = nullptr;
