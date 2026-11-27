@@ -33,6 +33,8 @@ const QHash<QString, Known> &knownCommands() {
         {"fork", {"session", "git-fork", "Fork Session"}},
         {"compress", {"session", "minimize-2", "Compress Context"}},
         {"save", {"session", "save", "Export Conversation"}},
+        {"export", {"session", "package", "Export Profile"}},
+        {"import", {"session", "folder-open", "Import Profile"}},
         {"rollback", {"session", "archive-restore", "Restore Checkpoint"}},
         {"snapshot", {"session", "archive-restore", "State Snapshot"}},
         {"stop", {"session", "octagon-x", "Stop Background Processes"}},

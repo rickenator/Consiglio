@@ -9,6 +9,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QDialogButtonBox>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -140,6 +141,12 @@ const CommandPlan kPlans[] = {
     {QStringLiteral("save"), {},
      CommandArchetype::Form, CommandApply::QuietCommand,
      QStringLiteral("Export conversation"), {}, {}, {}, {}, false},
+    {QStringLiteral("export"), {},
+     CommandArchetype::Form, CommandApply::QuietCommand,
+     QStringLiteral("Export profile"), {}, {}, {}, {}, false},
+    {QStringLiteral("import"), {},
+     CommandArchetype::Form, CommandApply::QuietCommand,
+     QStringLiteral("Import profile"), {}, {}, {}, {}, false},
     {QStringLiteral("plan"), {},
      CommandArchetype::TextPrompt, CommandApply::QuietCommand,
      QStringLiteral("Write a plan"), {}, {}, {}, {}, false},
@@ -779,6 +786,79 @@ void CommandHostDialog::buildSaveForm() {
     layout->addStretch(1);
 }
 
+
+void CommandHostDialog::buildExportForm() {
+    auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
+    auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
+    layout->addWidget(section(tr("Profile (optional)"), body));
+    m_profileName = new QLineEdit(body);
+    m_profileName->setObjectName(QStringLiteral("commandProfileName"));
+    m_profileName->setClearButtonEnabled(true);
+    m_profileName->setPlaceholderText(tr("Leave blank for the active profile"));
+    layout->addWidget(m_profileName);
+    layout->addWidget(section(tr("Archive path (optional)"), body));
+    auto *row = new QHBoxLayout();
+    m_archivePath = new QLineEdit(body);
+    m_archivePath->setObjectName(QStringLiteral("commandArchivePath"));
+    m_archivePath->setClearButtonEnabled(true);
+    m_archivePath->setPlaceholderText(tr("Leave blank for the default location"));
+    auto *browse = new QPushButton(tr("Browse…"), body);
+    browse->setObjectName(QStringLiteral("commandArchiveBrowse"));
+    connect(browse, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getSaveFileName(
+            this, tr("Export profile archive"), m_archivePath->text(),
+            tr("Profile archives (*.tar.gz);;All files (*)"));
+        if (!path.isEmpty()) m_archivePath->setText(path);
+    });
+    row->addWidget(m_archivePath, 1);
+    row->addWidget(browse);
+    layout->addLayout(row);
+    auto *hint = new QLabel(tr("Creates a shareable .tar.gz of the profile (config, skills, theme). "
+                               "Someone else can import it with Import Profile."), body);
+    hint->setWordWrap(true);
+    hint->setProperty("role", "faint");
+    layout->addWidget(hint);
+    layout->addStretch(1);
+}
+
+void CommandHostDialog::buildImportForm() {
+    auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
+    auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
+    layout->addWidget(section(tr("Archive"), body));
+    auto *row = new QHBoxLayout();
+    m_archivePath = new QLineEdit(body);
+    m_archivePath->setObjectName(QStringLiteral("commandArchivePath"));
+    m_archivePath->setClearButtonEnabled(true);
+    m_archivePath->setPlaceholderText(tr("Path to a .tar.gz profile archive"));
+    auto *browse = new QPushButton(tr("Browse…"), body);
+    browse->setObjectName(QStringLiteral("commandArchiveBrowse"));
+    connect(browse, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Import profile archive"), m_archivePath->text(),
+            tr("Profile archives (*.tar.gz);;All files (*)"));
+        if (!path.isEmpty()) {
+            m_archivePath->setText(path);
+            updateSaveEnabled();
+        }
+    });
+    connect(m_archivePath, &QLineEdit::textChanged, this, [this](const QString &) { updateSaveEnabled(); });
+    row->addWidget(m_archivePath, 1);
+    row->addWidget(browse);
+    layout->addLayout(row);
+    layout->addWidget(section(tr("Profile name (optional)"), body));
+    m_profileName = new QLineEdit(body);
+    m_profileName->setObjectName(QStringLiteral("commandProfileName"));
+    m_profileName->setClearButtonEnabled(true);
+    m_profileName->setPlaceholderText(tr("Leave blank to use the name in the archive"));
+    layout->addWidget(m_profileName);
+    auto *hint = new QLabel(tr("Imports a shared profile archive as a new profile. "
+                               "Your current profile is left as it is."), body);
+    hint->setWordWrap(true);
+    hint->setProperty("role", "faint");
+    layout->addWidget(hint);
+    layout->addStretch(1);
+}
+
 void CommandHostDialog::buildToolsForm() {
     auto *body = findChild<QWidget *>(QStringLiteral("commandBody"));
     auto *layout = qobject_cast<QVBoxLayout *>(body->layout());
@@ -1090,6 +1170,20 @@ void CommandHostDialog::setSaveFormat(const QString &format) {
 QString CommandHostDialog::saveFilename() const { return m_saveFile ? m_saveFile->text().trimmed() : QString(); }
 void CommandHostDialog::setSaveFilename(const QString &name) { if (m_saveFile) m_saveFile->setText(name); }
 bool CommandHostDialog::saveRedact() const { return m_saveRedact && m_saveRedact->isChecked(); }
+
+
+QString CommandHostDialog::profileName() const {
+    return m_profileName ? m_profileName->text().trimmed() : QString();
+}
+void CommandHostDialog::setProfileName(const QString &name) {
+    if (m_profileName) m_profileName->setText(name);
+}
+QString CommandHostDialog::archivePath() const {
+    return m_archivePath ? m_archivePath->text().trimmed() : QString();
+}
+void CommandHostDialog::setArchivePath(const QString &path) {
+    if (m_archivePath) m_archivePath->setText(path);
+}
 
 QString CommandHostDialog::toolsAction() const {
     return m_toolsAction ? m_toolsAction->currentData().toString() : QString();

@@ -22,6 +22,13 @@
 
 namespace {
 
+QString quoteArg(const QString &s) {
+    QString out = s;
+    out.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+    out.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+    return QLatin1Char('"') + out + QLatin1Char('"');
+}
+
 bool textAction(const QString &action) {
     return action == QLatin1String("set") || action == QLatin1String("draft")
         || action == QLatin1String("subgoal-add") || action == QLatin1String("add")
@@ -193,7 +200,20 @@ void LivePanelHost::refreshChrome() {
         m_prompt->setPlaceholderText(placeholder(a));
         if (showQueueEditor()) m_prompt->setMaximumHeight(56);
     }
-    if (m_interval) m_interval->setVisible(showInterval());
+    if (m_interval) {
+        m_interval->setVisible(showInterval());
+        if (showInterval() && n == QLatin1String("cron")) {
+            m_interval->setPlaceholderText(CommandHostDialog::tr("Schedule (e.g. every 2h)"));
+            m_interval->setMaximumWidth(220);
+            ui::describe(m_interval, CommandHostDialog::tr("Schedule"),
+                         CommandHostDialog::tr("When the task should run, such as every 2h or a cron expression"));
+        } else {
+            m_interval->setPlaceholderText(CommandHostDialog::tr("Interval (e.g. 10m)"));
+            m_interval->setMaximumWidth(140);
+            ui::describe(m_interval, CommandHostDialog::tr("Interval"),
+                         CommandHostDialog::tr("How often the heartbeat or loop should run"));
+        }
+    }
     if (m_days) m_days->setVisible(showDays());
     if (m_diffMode) m_diffMode->setVisible(showDiffOpts());
     if (m_optionStat) m_optionStat->setVisible(showDiffOpts());
@@ -882,6 +902,7 @@ QStringList DiffHost::applyLines() const {
 
 QList<QPair<QString, QString>> CronHost::actions() const {
     return {
+        {QStringLiteral("add"), CommandHostDialog::tr("Add scheduled task")},
         {QStringLiteral("pause"), CommandHostDialog::tr("Pause selected")},
         {QStringLiteral("resume"), CommandHostDialog::tr("Resume selected")},
         {QStringLiteral("run"), CommandHostDialog::tr("Run selected now")},
@@ -890,12 +911,29 @@ QList<QPair<QString, QString>> CronHost::actions() const {
 }
 
 LivePanelHost::Kind CronHost::kindOf(const QString &action) const {
-    Q_UNUSED(action);
+    if (action == QLatin1String("add")) return Kind::NeedsIntervalOrText;
     return Kind::NeedsSelection;
+}
+
+QString CronHost::placeholder(const QString &action) const {
+    if (action == QLatin1String("add"))
+        return CommandHostDialog::tr("What the task should do");
+    return LivePanelHost::placeholder(action);
+}
+
+bool CronHost::dirty() const {
+    if (liveAction() == QLatin1String("add"))
+        return !intervalText().isEmpty() && !textArgument().isEmpty();
+    return LivePanelHost::dirty();
 }
 
 QStringList CronHost::applyLines() const {
     const QString a = liveAction();
+    if (a == QLatin1String("add")) {
+        if (intervalText().isEmpty() || textArgument().isEmpty()) return {};
+        return {QStringLiteral("/cron add ") + quoteArg(intervalText())
+                + QLatin1Char(' ') + quoteArg(textArgument())};
+    }
     const QString selected = selectedValue();
     if (selected.isEmpty()) return {};
     if (a == QLatin1String("pause")) return {QStringLiteral("/cron pause ") + selected};

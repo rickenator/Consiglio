@@ -200,6 +200,25 @@ private slots:
         exp.setSaveFilename(QStringLiteral("notes.json"));
         QCOMPARE(exp.commandLine(), QString("/save json notes.json redact"));
 
+        CommandCatalog::Command expProf;
+        expProf.name = QStringLiteral("export");
+        CommandHostDialog exportDlg(CommandUi::planFor(QStringLiteral("export")), expProf);
+        QVERIFY(exportDlg.saveButton()->isEnabled());
+        QCOMPARE(exportDlg.commandLine(), QString("/export"));
+        exportDlg.setProfileName(QStringLiteral("work"));
+        exportDlg.setArchivePath(QStringLiteral("/tmp/work.tar.gz"));
+        QCOMPARE(exportDlg.commandLine(), QString("/export work -o /tmp/work.tar.gz"));
+
+        CommandCatalog::Command imp;
+        imp.name = QStringLiteral("import");
+        CommandHostDialog importDlg(CommandUi::planFor(QStringLiteral("import")), imp);
+        QVERIFY(!importDlg.saveButton()->isEnabled());
+        importDlg.setArchivePath(QStringLiteral("/tmp/work.tar.gz"));
+        QVERIFY(importDlg.saveButton()->isEnabled());
+        QCOMPARE(importDlg.commandLine(), QString("/import /tmp/work.tar.gz"));
+        importDlg.setProfileName(QStringLiteral("shared"));
+        QCOMPARE(importDlg.commandLine(), QString("/import /tmp/work.tar.gz --name shared"));
+
         CommandCatalog::Command compress;
         compress.name = QStringLiteral("compress");
         CommandHostDialog comp(CommandUi::planFor(QStringLiteral("compress")), compress);
@@ -377,6 +396,8 @@ private slots:
         QVERIFY(CommandUi::hasNativeUi(QStringLiteral("memory")));
         QVERIFY(CommandUi::hasNativeUi(QStringLiteral("skills")));
         QVERIFY(CommandUi::hasNativeUi(QStringLiteral("cron")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("export")));
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("import")));
         QVERIFY(CommandUi::hasNativeUi(QStringLiteral("debug")));
         QVERIFY(CommandUi::hasNativeUi(QStringLiteral("insights")));
         QVERIFY(CommandUi::hasNativeUi(QStringLiteral("diff")));
@@ -516,6 +537,16 @@ private slots:
                           QStringLiteral("Scheduled tasks:\n  1. job-1  active  every 1h  status ping\n"));
         cron.setLiveAction(QStringLiteral("pause"));
         cron.setSelectedValue(QStringLiteral("job-1"));
+        QCOMPARE(cron.commandLine(), QString("/cron pause job-1"));
+
+        cron.setLiveAction(QStringLiteral("add"));
+        QVERIFY(!cron.saveButton()->isEnabled());
+        cron.setIntervalText(QStringLiteral("every 2h"));
+        QVERIFY(!cron.saveButton()->isEnabled());
+        cron.setTextArgument(QStringLiteral("Check server status"));
+        QVERIFY(cron.saveButton()->isEnabled());
+        QCOMPARE(cron.commandLine(), QString("/cron add \"every 2h\" \"Check server status\""));
+        cron.setLiveAction(QStringLiteral("pause"));
         QCOMPARE(cron.commandLine(), QString("/cron pause job-1"));
 
         CommandHostDialog sug(CommandUi::planFor(QStringLiteral("suggestions")), liveCmd("suggestions", "Suggestions"));
