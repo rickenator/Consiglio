@@ -69,17 +69,30 @@ private slots:
 
     // End to end through a stand-in ssh, the same trick the transport test uses.
     void probeAsyncUsesSshAndReports() {
-        const QString shim = m_dir->filePath("ssh");
+#ifdef Q_OS_WIN
+        const QString shim = m_dir->filePath(QStringLiteral("ssh.cmd"));
+        QFile f(shim);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("@echo off\r\n"
+                "echo PATH=/opt/hermes/bin/hermes\r\n"
+                "echo VER=Hermes Agent v9.9.9 (test)\r\n");
+#else
+        const QString shim = m_dir->filePath(QStringLiteral("ssh"));
         QFile f(shim);
         QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
         f.write("#!/bin/sh\n"
                 "printf 'PATH=/opt/hermes/bin/hermes\\n'\n"
                 "printf 'VER=Hermes Agent v9.9.9 (test)\\n'\n");
+#endif
         f.close();
-        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+                         | QFileDevice::ReadUser | QFileDevice::ExeUser);
 
         const QByteArray savedPath = qgetenv("PATH");
-        qputenv("PATH", QFileInfo(shim).absolutePath().toUtf8() + ":" + savedPath);
+        const QByteArray prepended = QFileInfo(shim).absolutePath().toUtf8()
+            + QByteArray(1, static_cast<char>(QDir::listSeparator().toLatin1()))
+            + savedPath;
+        qputenv("PATH", prepended);
         RemoteProbe got;
         bool called = false;
         HermesRemote::probeAsync(this, QStringLiteral("fake-host"), {}, [&](const RemoteProbe &p) {
@@ -88,7 +101,7 @@ private slots:
         }, 8000);
         QTRY_VERIFY_WITH_TIMEOUT(called, 9000);
         qputenv("PATH", savedPath);
-        QVERIFY(got.ok);
+        QVERIFY2(got.ok, qPrintable(got.error.isEmpty() ? QStringLiteral("probe failed with no error") : got.error));
         QCOMPARE(got.executable, QString("/opt/hermes/bin/hermes"));
         QVERIFY(got.version.contains("v9.9.9"));
     }
