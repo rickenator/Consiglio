@@ -32,28 +32,28 @@ private slots:
     }
 
     void addSelectRemove() {
-        const QString a = HostManager::addProfile(QStringLiteral("  spark  "));
-        const QString b = HostManager::addProfile(QStringLiteral("rick@lefty"));
+        const QString a = HostManager::addProfile(QStringLiteral("  myhost  "));
+        const QString b = HostManager::addProfile(QStringLiteral("user@otherhost"));
         QVERIFY(!a.isEmpty());
         QVERIFY(a != b);
         QCOMPARE(HostManager::profiles().size(), 3);          // local + two
 
         HostProfile pa = HostManager::profile(a);
-        QCOMPARE(pa.destination, QString("spark"));
-        QCOMPARE(pa.displayName(), QString("spark"));         // label defaults to the destination
+        QCOMPARE(pa.destination, QString("myhost"));
+        QCOMPARE(pa.displayName(), QString("myhost"));         // label defaults to the destination
         QCOMPARE(pa.launcher, QString());                     // empty means "hermes"
 
         HostManager::setActiveId(a);
         QCOMPARE(HostManager::activeId(), a);
-        QCOMPARE(HostManager::active().destination, QString("spark"));
+        QCOMPARE(HostManager::active().destination, QString("myhost"));
 
         // Editing persists; the label is preserved when it differs.
-        pa.label = QStringLiteral("spark (dev)");
+        pa.label = QStringLiteral("myhost (dev)");
         pa.options = QStringLiteral("-p 2222");
         pa.launcher = QStringLiteral("/opt/hermes/bin/hermes");
         HostManager::updateProfile(pa);
         const HostProfile again = HostManager::profile(a);
-        QCOMPARE(again.label, QString("spark (dev)"));
+        QCOMPARE(again.label, QString("myhost (dev)"));
         QCOMPARE(again.options, QString("-p 2222"));
         QCOMPARE(again.launcher, QString("/opt/hermes/bin/hermes"));
 
@@ -85,7 +85,7 @@ private slots:
     // The one-connection settings of #80 turn into one profile, once.
     void migratesTheSingleConnectionSettings() {
         HermesRemote::setEnabled(true);
-        HermesRemote::setDestination(QStringLiteral("spark"));
+        HermesRemote::setDestination(QStringLiteral("myhost"));
         HermesRemote::setOptions(QStringLiteral("-p 2222"));
         HermesRemote::setLauncher(QStringLiteral("/opt/hermes/bin/hermes"));
 
@@ -93,7 +93,7 @@ private slots:
         const auto profiles = HostManager::profiles();
         QCOMPARE(profiles.size(), 2);
         const HostProfile migrated = profiles.at(1);
-        QCOMPARE(migrated.destination, QString("spark"));
+        QCOMPARE(migrated.destination, QString("myhost"));
         QCOMPARE(migrated.options, QString("-p 2222"));
         QCOMPARE(migrated.launcher, QString("/opt/hermes/bin/hermes"));
         QCOMPARE(HostManager::activeId(), migrated.id);
@@ -105,7 +105,7 @@ private slots:
 
     void migratesNothingWhenRemoteWasOff() {
         HermesRemote::setEnabled(false);
-        HermesRemote::setDestination(QStringLiteral("spark"));
+        HermesRemote::setDestination(QStringLiteral("myhost"));
         HostManager::migrateLegacy();
         QCOMPARE(HostManager::profiles().size(), 1);
         QCOMPARE(HostManager::active().isLocal(), true);

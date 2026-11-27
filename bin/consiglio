@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve symlinks so this works even when called via /home/rick/bin/consiglio
+# Resolve symlinks so this works even when called via /home/user/bin/consiglio
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 cd "$SCRIPT_DIR/.."
 

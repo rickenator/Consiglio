@@ -31,7 +31,7 @@ public:
     // Close stdin (the polite ACP goodbye), then escalate if it does not go.
     virtual void stop() = 0;
     virtual bool isRunning() const = 0;
-    // Human-readable, e.g. "hermes acp" or "spark.local: hermes acp".
+    // Human-readable, e.g. "hermes acp" or "myhost.local: hermes acp".
     virtual QString describe() const = 0;
 
 signals:

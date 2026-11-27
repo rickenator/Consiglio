@@ -18,12 +18,12 @@ private slots:
 
 void TestProviderSelectionDialog::acceptsCompleteSessionConfiguration() {
     AgentInfo provider;
-    provider.id = "lan:192.168.1.243:8081";
+    provider.id = "lan:192.0.2.10:8081";
     provider.provider = "remote_llamacpp";
     provider.name = "LAN llama.cpp";
     provider.installed = true;
     provider.authenticated = true;
-    provider.endpoint = "http://192.168.1.243:8081";
+    provider.endpoint = "http://192.0.2.10:8081";
     provider.model = "test-model";
     provider.diagnostic = "Ready";
 

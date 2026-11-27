@@ -3,7 +3,7 @@
     "id": "evt_1720000011_bcd890",
     "session_id": "sess_1720000010_efg123",
     "type": "system",
-    "content": "Started Codex in /home/rick/Projects/debug-project",
+    "content": "Started Codex in /home/user/Projects/debug-project",
     "timestamp": 1720000011000
   },
   {
@@ -17,14 +17,14 @@
     "id": "evt_1720000013_klm789",
     "session_id": "sess_1720000010_efg123",
     "type": "tool_call",
-    "content": "{\"command\": \"rg \\\"onMessage\\\" src/websocket/\", \"working_dir\": \"/home/rick/Projects/debug-project\"}",
+    "content": "{\"command\": \"rg \\\"onMessage\\\" src/websocket/\", \"working_dir\": \"/home/user/Projects/debug-project\"}",
     "timestamp": 1720000013000
   },
   {
     "id": "evt_1720000014_nop012",
     "session_id": "sess_1720000010_efg123",
     "type": "error",
-    "content": "EACCES: permission denied, open '/home/rick/Projects/debug-project/src/websocket/handler.ts'",
+    "content": "EACCES: permission denied, open '/home/user/Projects/debug-project/src/websocket/handler.ts'",
     "timestamp": 1720000014000
   },
   {

@@ -725,7 +725,7 @@ def main():
                     titles = ["Refactor the ACP transport", "Fix flaky bootstrap test", "Write release notes for 0.1",
                               "Investigate context overflow", "Add dark theme tokens", "Profile startup time"]
                     sessions = [{"sessionId": "S-h%d" % i, "title": t,
-                                 "cwd": params.get("cwd", "") or "/home/rick/consiglio",
+                                 "cwd": params.get("cwd", "") or "/home/user/consiglio",
                                  "updatedAt": "2026-11-%02dT1%d:00:00Z" % (19 - i, i)} for i, t in enumerate(titles)]
                 respond(rid, {"sessions": sessions})
         elif method == "session/prompt":

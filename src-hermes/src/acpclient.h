@@ -142,7 +142,7 @@ public:
     void clearRemote();
     bool isRemote() const { return !m_remoteHost.isEmpty(); }
     QString remoteHost() const { return m_remoteHost; }
-    // What the last launch actually ran, e.g. "hermes acp" or "spark: hermes acp".
+    // What the last launch actually ran, e.g. "hermes acp" or "myhost: hermes acp".
     QString transportDescription() const;
 
     // A pending agent->client permission request (session/request_permission).
