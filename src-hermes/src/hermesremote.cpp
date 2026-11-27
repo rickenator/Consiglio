@@ -49,11 +49,11 @@ QStringList HermesRemote::probeArgv(const QString &destination, const QStringLis
     return argv;
 }
 
-RemoteProbe HermesRemote::parse(const QByteArray &stdout, const QByteArray &stderr, int exitCode) {
+RemoteProbe HermesRemote::parse(const QByteArray &stdoutBytes, const QByteArray &stderrBytes, int exitCode) {
     RemoteProbe p;
     QString path;
     QString version;
-    const QStringList lines = QString::fromUtf8(stdout).split(QLatin1Char('\n'));
+    const QStringList lines = QString::fromUtf8(stdoutBytes).split(QLatin1Char('\n'));
     for (const QString &line : lines) {
         if (line.startsWith(QLatin1String("PATH="))) path = line.mid(5).trimmed();
         else if (line.startsWith(QLatin1String("VER="))) version = line.mid(4).trimmed();
@@ -65,7 +65,7 @@ RemoteProbe HermesRemote::parse(const QByteArray &stdout, const QByteArray &stde
         return p;
     }
     // No path: either the login shell has no hermes, or ssh itself failed.
-    const QString err = QString::fromUtf8(stderr).trimmed();
+    const QString err = QString::fromUtf8(stderrBytes).trimmed();
     if (!err.isEmpty()) {
         p.error = err;
     } else if (exitCode != 0) {
