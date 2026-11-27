@@ -1035,7 +1035,7 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
                 type="text"
-                placeholder="Name (e.g., Godzilla)"
+                placeholder="Name (e.g., Home server)"
                 value={lanForm.name}
                 onChange={e => setLanForm({ ...lanForm, name: e.target.value })}
                 className="codex-input"

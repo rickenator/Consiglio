@@ -94,27 +94,24 @@ The [releases page](https://github.com/rickenator/Consiglio/releases/latest) has
 >
 > Files named only `Consiglio-<version>-…` (no `Hermes`) are the **classic Electron app**. They wrap Codex and other CLIs and **do not run Hermes**. They are still published so those features stay available; they are not the new Hermes client.
 
+The current Latest release, [v0.2.2](https://github.com/rickenator/Consiglio/releases/tag/v0.2.2), ships **Linux x64** packages only.
+
 | Your computer | Native Hermes client (**recommended**) | Classic Electron app (Codex and other CLIs) |
 | --- | --- | --- |
-| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-<version>-linux-amd64.deb` | `Consiglio-<version>-linux-amd64.deb` |
-| Other Linux x64 | `Consiglio-Hermes-<version>-linux-x86_64.AppImage` | `Consiglio-<version>-linux-x86_64.AppImage` |
-| macOS Apple Silicon | `Consiglio-Hermes-<version>-mac-arm64.dmg` | `Consiglio-<version>-mac-arm64.dmg` |
-| macOS Intel | `Consiglio-Hermes-<version>-mac-x64.dmg` | `Consiglio-<version>-mac-x64.dmg` |
-| Windows 10/11 x64 | `Consiglio-Hermes-<version>-win-x64.zip` (run `ConsiglioHermes.exe`) | `Consiglio-<version>-windows-x64-setup.exe` |
+| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-0.2.2-linux-amd64.deb` | `Consiglio-0.2.2-linux-amd64.deb` |
+| Other Linux x64 | `Consiglio-Hermes-0.2.2-linux-x86_64.AppImage` | `Consiglio-0.2.2-linux-x86_64.AppImage` |
 
-On Debian or Ubuntu, install the Hermes client with `sudo apt install ./Consiglio-Hermes-*.deb`. The AppImage is `chmod +x` and run (Qt is bundled; the `.deb` uses the system Qt 5). macOS: drag **Consiglio Hermes** to Applications. Windows: unzip the Hermes zip anywhere.
+On Debian or Ubuntu, install the Hermes client with `sudo apt install ./Consiglio-Hermes-*.deb`. The AppImage is `chmod +x` and run (Qt is bundled; the `.deb` uses the system Qt 5).
 
-The macOS and Windows builds are not code-signed yet. On macOS, right-click the app and choose **Open** the first time (or run `xattr -dr com.apple.quarantine "/Applications/Consiglio Hermes.app"`); on Windows, SmartScreen asks you to confirm. Every file is listed in `SHA256SUMS.txt` and covered by the release's provenance attestation ([verifying a download](docs/RELEASING.md#verify-a-downloaded-release)).
+**macOS and Windows:** those packages are not in v0.2.2. Use [v0.2.1](https://github.com/rickenator/Consiglio/releases/tag/v0.2.1) for `Consiglio-Hermes-0.2.1-mac-arm64.dmg`, `Consiglio-Hermes-0.2.1-mac-x64.dmg`, `Consiglio-Hermes-0.2.1-win-x64.zip` (run `ConsiglioHermes.exe`), and the matching classic Electron installers, until a later release includes them again. The macOS and Windows builds are not code-signed yet. On macOS, right-click the app and choose **Open** the first time (or run `xattr -dr com.apple.quarantine "/Applications/Consiglio Hermes.app"`); on Windows, SmartScreen asks you to confirm.
+
+Every file in a release is listed in `SHA256SUMS.txt`. Releases built by GitHub Actions also include a provenance attestation ([verifying a download](docs/RELEASING.md#verify-a-downloaded-release)). v0.2.2 was packaged locally, so it has checksums and SBOMs but no Actions attestation.
 
 None of the Hermes-client packages installs, updates or touches Hermes Agent: the `.deb` has no install scripts, and the AppImage, `.dmg` and `.zip` are just the app.
 
 ### 2. First launch: your existing Hermes is kept as it is
 
 On first launch Consiglio looks for Hermes without changing anything: `$HERMES_BIN`, then `PATH`, then the standard install folders, and the Hermes data folder (`$HERMES_HOME`, or `~/.hermes`; `%LOCALAPPDATA%\hermes` on Windows). It shows what it found (version, executable, data folder, whether there is a config, API keys, sessions and skills; key files are never read) and asks:
-
-<p align="center">
-  <img src="docs/screenshots/setup-existing.png" alt="First-run setup: an existing Hermes was found and will be used as it is" width="560">
-</p>
 
 - **Use this Hermes as it is** (the default). Consiglio doesn't modify, update, reinstall or migrate it, and doesn't pin its path or version, so `hermes update` keeps working.
 - **Use a different hermes executable.** Only the path you pick is stored.

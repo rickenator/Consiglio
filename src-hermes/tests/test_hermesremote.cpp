@@ -28,14 +28,14 @@ private slots:
     // The probe must be argv: flags, destination and ONE remote command token.
     void probeIsArgvOnly() {
         const QStringList argv = HermesRemote::probeArgv(
-            QStringLiteral("spark.example"), {QStringLiteral("-p"), QStringLiteral("2222")});
+            QStringLiteral("myhost.example"), {QStringLiteral("-p"), QStringLiteral("2222")});
         QVERIFY(argv.contains(QStringLiteral("-T")));
         QVERIFY(argv.contains(QStringLiteral("BatchMode=yes")));
         QVERIFY(argv.contains(QStringLiteral("ConnectTimeout=10")));
         QVERIFY(argv.contains(QStringLiteral("-p")));
         QVERIFY(argv.contains(QStringLiteral("2222")));
         QVERIFY(argv.contains(QStringLiteral("--")));
-        const int dest = argv.indexOf(QStringLiteral("spark.example"));
+        const int dest = argv.indexOf(QStringLiteral("myhost.example"));
         QVERIFY(dest > 0);
         QCOMPARE(dest + 1, argv.size() - 1);   // exactly one token follows the destination
         const QString command = argv.last();
@@ -45,13 +45,13 @@ private slots:
     }
 
     void parsesTheRemoteAnswer() {
-        const QByteArray out = "PATH=/home/rick/.local/bin/hermes\n"
+        const QByteArray out = "PATH=/home/user/.local/bin/hermes\n"
                                "VER=Hermes Agent v0.23.2 (2026.9.24) · stable · local abc123\n";
         const RemoteProbe p = HermesRemote::parse(out, QByteArray(), 0);
         QVERIFY(p.ok);
-        QCOMPARE(p.executable, QString("/home/rick/.local/bin/hermes"));
+        QCOMPARE(p.executable, QString("/home/user/.local/bin/hermes"));
         QVERIFY(p.version.startsWith("Hermes Agent v0.23.2"));
-        QVERIFY(p.text().contains("/home/rick/.local/bin/hermes"));
+        QVERIFY(p.text().contains("/home/user/.local/bin/hermes"));
     }
 
     void reportsAMissingRemoteHermes() {
@@ -96,12 +96,12 @@ private slots:
     void preferencesRoundTrip() {
         QVERIFY(!HermesRemote::enabled());
         HermesRemote::setEnabled(true);
-        HermesRemote::setDestination(QStringLiteral("  spark  "));
+        HermesRemote::setDestination(QStringLiteral("  myhost  "));
         HermesRemote::setOptions(QStringLiteral("-p 2222 -i \"/tmp/my key\""));
         HermesRemote::setLauncher(QStringLiteral("/opt/hermes/bin/hermes"));
 
         QVERIFY(HermesRemote::enabled());
-        QCOMPARE(HermesRemote::destination(), QString("spark"));
+        QCOMPARE(HermesRemote::destination(), QString("myhost"));
         const QStringList opts = HermesRemote::options();
         QCOMPARE(opts.size(), 4);
         QCOMPARE(opts.first(), QString("-p"));

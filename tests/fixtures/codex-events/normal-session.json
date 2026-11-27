@@ -3,7 +3,7 @@
     "id": "evt_1720000001_abc123",
     "session_id": "sess_1720000000_xyz789",
     "type": "system",
-    "content": "Started Codex in /home/rick/Projects/example",
+    "content": "Started Codex in /home/user/Projects/example",
     "timestamp": 1720000001000
   },
   {
@@ -24,7 +24,7 @@
     "id": "evt_1720000004_jkl012",
     "session_id": "sess_1720000000_xyz789",
     "type": "tool_call",
-    "content": "{\"command\": \"rg -l \\\"routes\\\" src/\", \"working_dir\": \"/home/rick/Projects/example\"}",
+    "content": "{\"command\": \"rg -l \\\"routes\\\" src/\", \"working_dir\": \"/home/user/Projects/example\"}",
     "timestamp": 1720000004000
   },
   {
@@ -38,7 +38,7 @@
     "id": "evt_1720000006_pqr678",
     "session_id": "sess_1720000000_xyz789",
     "type": "approval_request",
-    "content": "{\"id\": \"appr_1720000006_stu901\", \"sessionId\": \"sess_1720000000_xyz789\", \"command\": \"git add src/routes/api.ts && git commit -m 'feat: add /api/stats endpoint'\", \"workingDir\": \"/home/rick/Projects/example\", \"sandboxPolicy\": \"use_default\", \"affectedPaths\": [\"src/routes/api.ts\"], \"timestamp\": 1720000006000, \"status\": \"pending\"}",
+    "content": "{\"id\": \"appr_1720000006_stu901\", \"sessionId\": \"sess_1720000000_xyz789\", \"command\": \"git add src/routes/api.ts && git commit -m 'feat: add /api/stats endpoint'\", \"workingDir\": \"/home/user/Projects/example\", \"sandboxPolicy\": \"use_default\", \"affectedPaths\": [\"src/routes/api.ts\"], \"timestamp\": 1720000006000, \"status\": \"pending\"}",
     "timestamp": 1720000006000
   },
   {
