@@ -94,18 +94,21 @@ The [releases page](https://github.com/rickenator/Consiglio/releases/latest) has
 >
 > Files named only `Consiglio-<version>-…` (no `Hermes`) are the **classic Electron app**. They wrap Codex and other CLIs and **do not run Hermes**. They are still published so those features stay available; they are not the new Hermes client.
 
-The current Latest release, [v0.2.2](https://github.com/rickenator/Consiglio/releases/tag/v0.2.2), ships **Linux x64** packages only.
+The current Latest release is [v0.2.3](https://github.com/rickenator/Consiglio/releases/tag/v0.2.3).
 
 | Your computer | Native Hermes client (**recommended**) | Classic Electron app (Codex and other CLIs) |
 | --- | --- | --- |
-| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-0.2.2-linux-amd64.deb` | `Consiglio-0.2.2-linux-amd64.deb` |
-| Other Linux x64 | `Consiglio-Hermes-0.2.2-linux-x86_64.AppImage` | `Consiglio-0.2.2-linux-x86_64.AppImage` |
+| Debian / Ubuntu 24.04+ x64 | `Consiglio-Hermes-0.2.3-linux-amd64.deb` | `Consiglio-0.2.3-linux-amd64.deb` |
+| Other Linux x64 | `Consiglio-Hermes-0.2.3-linux-x86_64.AppImage` | `Consiglio-0.2.3-linux-x86_64.AppImage` |
+| macOS Apple Silicon | `Consiglio-Hermes-0.2.3-mac-arm64.dmg` | `Consiglio-0.2.3-mac-arm64.dmg` |
+| macOS Intel | `Consiglio-Hermes-0.2.3-mac-x64.dmg` | `Consiglio-0.2.3-mac-x64.dmg` |
+| Windows x64 | `Consiglio-Hermes-0.2.3-win-x64.zip` (run `ConsiglioHermes.exe`) | `Consiglio-0.2.3-windows-x64-setup.exe` or the portable `.exe` |
 
 On Debian or Ubuntu, install the Hermes client with `sudo apt install ./Consiglio-Hermes-*.deb`. The AppImage is `chmod +x` and run (Qt is bundled; the `.deb` uses the system Qt 5).
 
-**macOS and Windows:** those packages are not in v0.2.2. Use [v0.2.1](https://github.com/rickenator/Consiglio/releases/tag/v0.2.1) for `Consiglio-Hermes-0.2.1-mac-arm64.dmg`, `Consiglio-Hermes-0.2.1-mac-x64.dmg`, `Consiglio-Hermes-0.2.1-win-x64.zip` (run `ConsiglioHermes.exe`), and the matching classic Electron installers, until a later release includes them again. The macOS and Windows builds are not code-signed yet. On macOS, right-click the app and choose **Open** the first time (or run `xattr -dr com.apple.quarantine "/Applications/Consiglio Hermes.app"`); on Windows, SmartScreen asks you to confirm.
+The macOS and Windows builds are not code-signed yet. On macOS, right-click the app and choose **Open** the first time (or run `xattr -dr com.apple.quarantine "/Applications/Consiglio Hermes.app"`); on Windows, SmartScreen asks you to confirm.
 
-Every file in a release is listed in `SHA256SUMS.txt`. Releases built by GitHub Actions also include a provenance attestation ([verifying a download](docs/RELEASING.md#verify-a-downloaded-release)). v0.2.2 was packaged locally, so it has checksums and SBOMs but no Actions attestation.
+Every file in a release is listed in `SHA256SUMS.txt`. Releases built by GitHub Actions also include a provenance attestation ([verifying a download](docs/RELEASING.md#verify-a-downloaded-release)).
 
 None of the Hermes-client packages installs, updates or touches Hermes Agent: the `.deb` has no install scripts, and the AppImage, `.dmg` and `.zip` are just the app.
 
