@@ -594,9 +594,12 @@ void MainWindow::connectClient() {
     connect(&m_client, &AcpClient::configChangeSucceeded, this, [this](const QString &id) {
         if (!m_commandUi || m_commandUiWait != CommandUiWait::Apply || m_pendingConfigId != id)
             return;
-        if (!m_pendingPersistLine.isEmpty() && m_client.runQuietCommand(m_pendingPersistLine)) {
-            m_commandUiWait = CommandUiWait::Persist;
-            return;
+        if (!m_pendingPersistLine.isEmpty()) {
+            if (const int token = m_client.runQuietCommand(m_pendingPersistLine)) {
+                m_commandUiQuietTokens.insert(token);
+                m_commandUiWait = CommandUiWait::Persist;
+                return;
+            }
         }
         m_commandUiWait = CommandUiWait::None;
         m_pendingConfigId.clear();
@@ -842,15 +845,23 @@ void MainWindow::startDiscovery(bool force) {
     m_discoveredVersion = version;
     m_discoveryPages = 1;
     m_catalog.beginListing();
-    m_client.runQuietCommand(QStringLiteral("/commands 1"));
+    if (const int token = m_client.runQuietCommand(QStringLiteral("/commands 1")))
+        m_discoveryQuietTokens.insert(token);
+    else
+        m_discoveryPages = 0;
 }
 
-void MainWindow::onQuietCommandFinished(const QString &command, const QString &output, bool ok) {
-    if (m_commandUi && m_commandUiWait != CommandUiWait::None) {
+void MainWindow::onQuietCommandFinished(const QString &command, const QString &output, bool ok, int token) {
+    const bool forCommandUi = token > 0 && m_commandUiQuietTokens.remove(token);
+    const bool forDiscovery = token > 0 && m_discoveryQuietTokens.remove(token);
+    if (forCommandUi && m_commandUi && m_commandUiWait != CommandUiWait::None) {
         finishCommandHostQuiet(command, output, ok);
         return;
     }
-    if (command.startsWith(QLatin1String("/commands"))) {
+    // Discovery pages always go to the catalog. Tokens keep them from being
+    // ingested as a command-dialog seed when both run on the quiet channel.
+    if (forDiscovery || (m_discoveryPages > 0 && command.startsWith(QLatin1String("/commands")))) {
+        if (!command.startsWith(QLatin1String("/commands"))) return;
         if (!ok) { m_discoveryPages = 0; return; }
         const auto page = CommandCatalog::parsePage(output);
         if (!page.valid) {
@@ -862,13 +873,17 @@ void MainWindow::onQuietCommandFinished(const QString &command, const QString &o
         const int next = m_catalog.addListedPage(page);
         if (next > 0 && m_discoveryPages < kMaxDiscoveryPages) {
             ++m_discoveryPages;
-            m_client.runQuietCommand(QStringLiteral("/commands %1").arg(next));
+            if (const int tok = m_client.runQuietCommand(QStringLiteral("/commands %1").arg(next)))
+                m_discoveryQuietTokens.insert(tok);
+            else
+                m_discoveryPages = 0;
             return;
         }
         m_discoveryPages = 0;
         m_catalog.saveCache(m_client.agentVersion());
         return;
     }
+    // A stale command-UI token after the dialog closed is ignored on purpose.
 }
 
 // ─── Running commands ─────────────────────────────────────────────────────
@@ -950,6 +965,7 @@ void MainWindow::triggerCommand(const QString &rawName, const QString &prefill) 
             m_commandUiWait = CommandUiWait::None;
             m_pendingConfigId.clear();
             m_pendingPersistLine.clear();
+            m_commandUiQuietTokens.clear();
         }
         return;
     }
@@ -991,6 +1007,8 @@ bool MainWindow::handleCommandAppLink(const CommandPlan &plan) {
     }
 }
 
+void MainWindow::seedCommandDialog(CommandHostDialog *dialog) { seedCommandHost(dialog); }
+
 void MainWindow::seedCommandHost(CommandHostDialog *dialog) {
     if (!dialog) return;
     const QStringList seeds = CommandUi::seedCommands(dialog->plan());
@@ -1003,7 +1021,9 @@ void MainWindow::seedCommandHost(CommandHostDialog *dialog) {
     m_pendingQuietLines = seeds.mid(1);
     m_commandUiWait = CommandUiWait::Seed;
     dialog->setBusy(true);
-    if (!m_client.runQuietCommand(seeds.first())) {
+    if (const int token = m_client.runQuietCommand(seeds.first())) {
+        m_commandUiQuietTokens.insert(token);
+    } else {
         dialog->setBusy(false);
         dialog->setError(tr("Couldn't ask Hermes for that just now."));
         m_commandUiWait = CommandUiWait::None;
@@ -1037,9 +1057,12 @@ void MainWindow::applyCommandHost(CommandHostDialog *dialog, const CommandApplyR
             if (o.id == id) previous = o.currentValue;
         if (have && !id.isEmpty()) {
             if (previous == request.value) {
-                if (!request.persistLine.isEmpty() && m_client.runQuietCommand(request.persistLine)) {
-                    m_commandUiWait = CommandUiWait::Persist;
-                    return;
+                if (!request.persistLine.isEmpty()) {
+                    if (const int token = m_client.runQuietCommand(request.persistLine)) {
+                        m_commandUiQuietTokens.insert(token);
+                        m_commandUiWait = CommandUiWait::Persist;
+                        return;
+                    }
                 }
                 dialog->endApply(true);
                 return;
@@ -1055,13 +1078,15 @@ void MainWindow::applyCommandHost(CommandHostDialog *dialog, const CommandApplyR
     }
     QStringList lines = request.quietLines;
     if (lines.isEmpty() && !request.quietLine.isEmpty()) lines << request.quietLine;
-    if (!m_client.isReady() || lines.isEmpty() || !m_client.runQuietCommand(lines.first())) {
+    int applyToken = 0;
+    if (!m_client.isReady() || lines.isEmpty() || !(applyToken = m_client.runQuietCommand(lines.first()))) {
         dialog->endApply(false, tr("Couldn't apply that change right now."));
         m_commandUiWait = CommandUiWait::None;
         m_pendingQuietLines.clear();
         m_pendingKeepOpen = false;
         return;
     }
+    m_commandUiQuietTokens.insert(applyToken);
     m_pendingQuietLines = lines.mid(1);
     m_pendingKeepOpen = request.keepOpen;
     m_pendingReseedAfter = request.reseedAfter;
@@ -1107,10 +1132,12 @@ void MainWindow::finishCommandHostQuiet(const QString &command, const QString &o
     auto runNextQuiet = [&](CommandUiWait stay) -> bool {
         if (m_pendingQuietLines.isEmpty()) return false;
         const QString next = m_pendingQuietLines.takeFirst();
-        if (!m_client.runQuietCommand(next)) {
+        const int token = m_client.runQuietCommand(next);
+        if (!token) {
             m_pendingQuietLines.clear();
             return false;
         }
+        m_commandUiQuietTokens.insert(token);
         m_commandUiWait = stay;
         dialog->setBusy(true);
         return true;
@@ -1161,9 +1188,12 @@ void MainWindow::finishCommandHostQuiet(const QString &command, const QString &o
     }
     ingest(command, output);
     if (runNextQuiet(CommandUiWait::Apply)) return;
-    if (!m_pendingPersistLine.isEmpty() && m_client.runQuietCommand(m_pendingPersistLine)) {
-        m_commandUiWait = CommandUiWait::Persist;
-        return;
+    if (!m_pendingPersistLine.isEmpty()) {
+        if (const int token = m_client.runQuietCommand(m_pendingPersistLine)) {
+            m_commandUiQuietTokens.insert(token);
+            m_commandUiWait = CommandUiWait::Persist;
+            return;
+        }
     }
     m_commandUiWait = CommandUiWait::None;
     m_pendingPersistLine.clear();

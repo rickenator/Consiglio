@@ -2,13 +2,16 @@
 // scripted ACP agent (fake_hermes_acp.py), offscreen.
 #include "mainwindow.h"
 #include "commanddialog.h"
+#include "commandui.h"
 
 #include <QApplication>
 #include <QComboBox>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QMenuBar>
 #include <QPushButton>
 #include <QTemporaryDir>
@@ -277,6 +280,45 @@ private slots:
         QVERIFY(host->canApply());
         QVERIFY(host->applyRequest().keepOpen);
     }
+
+    // A command-dialog seed and /commands discovery share the quiet channel.
+    // Each response must go to its requester: the Goal panel must not show a
+    // commands page, and discovery must still finish.
+    void commandSeedDoesNotIngestDiscoveryPages() {
+        QScopedPointer<MainWindow> w(makeWindow());
+        QVERIFY(QTest::qWaitFor([&]() {
+            return w->stateText().startsWith("Connected") || w->client()->isReady();
+        }, 15000));
+        if (!w->client()->isReady()) w->startNewSession();
+        QVERIFY(QTest::qWaitFor([&]() { return w->client()->isReady(); }, 15000));
+
+        w->refreshCommands();
+        QScopedPointer<QDialog> d(w->createCommandDialog("goal"));
+        auto *host = qobject_cast<CommandHostDialog *>(d.data());
+        QVERIFY(host);
+        w->seedCommandDialog(host);
+
+        QVERIFY(QTest::qWaitFor([&]() {
+            auto *status = host->findChild<QLabel *>(QStringLiteral("commandLiveStatus"));
+            return status && !status->text().isEmpty()
+                && status->text() != QStringLiteral("Loading…");
+        }, 15000));
+
+        QString shown;
+        if (auto *status = host->findChild<QLabel *>(QStringLiteral("commandLiveStatus")))
+            shown += status->text();
+        for (auto *body : host->findChildren<QPlainTextEdit *>())
+            shown += QLatin1Char('\n') + body->toPlainText();
+        QVERIFY2(!shown.contains(QStringLiteral("**Commands**")), qPrintable(shown.left(240)));
+        QVERIFY2(!shown.contains(QStringLiteral("total, page")), qPrintable(shown.left(240)));
+        QVERIFY(shown.contains(QStringLiteral("goal"), Qt::CaseInsensitive)
+                || shown.contains(QStringLiteral("Goal"), Qt::CaseInsensitive)
+                || shown.contains(QStringLiteral("No active")));
+
+        QVERIFY(QTest::qWaitFor([&]() { return w->catalog()->listingComplete(); }, 15000));
+        QVERIFY(!w->catalog()->commands().isEmpty());
+    }
+
 
     void badExecutableShowsDisconnected() {
         MainWindow::Options o;

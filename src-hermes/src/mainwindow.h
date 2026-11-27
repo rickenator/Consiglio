@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QMainWindow>
 #include <QMap>
+#include <QSet>
 #include <QPointer>
 #include <QProgressBar>
 #include <QTimer>
@@ -75,6 +76,8 @@ public:
     SettingsDialog *openSettings(const QString &page = QString());
     // Build (but don't exec) dialogs — used by the screenshot tour.
     QDialog *createCommandDialog(const QString &name, const QString &prefill = QString());
+    // Seed an already-built command dialog the same way opening it from the menu would.
+    void seedCommandDialog(class CommandHostDialog *dialog);
     void refreshCommands();
 
 protected:
@@ -107,7 +110,7 @@ private slots:
     void onAgentRestartFailed(const QString &message);
     void onAgentVersionChanged(const QString &oldVersion, const QString &newVersion);
     void onSessionRestored(const QString &sessionId);
-    void onQuietCommandFinished(const QString &command, const QString &output, bool ok);
+    void onQuietCommandFinished(const QString &command, const QString &output, bool ok, int token);
     void onPaletteAction(const QString &id);
     void onTimerTick();
     // File picker: "/" at a non-first position opens it; a chosen path is
@@ -213,6 +216,8 @@ private:
     QString m_pendingConfigId;
     QString m_pendingPersistLine;
     QStringList m_pendingQuietLines;
+    QSet<int> m_commandUiQuietTokens;
+    QSet<int> m_discoveryQuietTokens;
     bool m_pendingKeepOpen = false;
     bool m_pendingReseedAfter = true;
     enum class CommandUiWait { None, Seed, Apply, Persist } m_commandUiWait = CommandUiWait::None;
