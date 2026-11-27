@@ -1111,7 +1111,6 @@ void ResumeHost::build(CommandHostDialog &shell) {
     m_shell = &shell;
     shell.buildPickerBody();
     shell.buildTextPromptBody();
-    shell.setBusy(true);
 }
 
 void ResumeHost::setSessions(const QList<AcpClient::SessionInfo> &sessions) {

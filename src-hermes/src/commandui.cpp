@@ -616,6 +616,7 @@ void CommandHostDialog::buildPickerBody() {
         setPickerItems(items, QString());
     } else {
         updateInfoPanel();
+        rebuildPickerList();
     }
 }
 
