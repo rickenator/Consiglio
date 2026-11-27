@@ -193,7 +193,10 @@ public:
     // discover Hermes's full command list with "/commands N"). Queued behind
     // any turn in flight; a user prompt sent meanwhile waits for it. Emits
     // quietCommandFinished(). Returns false when no session is live.
-    bool runQuietCommand(const QString &text);
+    // Enqueue a hidden prompt. Returns a token > 0 that is later emitted on
+    // quietCommandFinished() so each response can be routed to its requester.
+    // Returns 0 if no session is live or the line is empty.
+    int runQuietCommand(const QString &text);
     bool hasQuietWork() const;
 
     // Session configuration (ACP session/set_config_option, session/set_mode).
@@ -250,7 +253,7 @@ signals:
     // After a relaunch, the previously active session was re-opened.
     void sessionRestored(const QString &sessionId);
     // A runQuietCommand() finished: `output` is the agent's reply text.
-    void quietCommandFinished(const QString &command, const QString &output, bool ok);
+    void quietCommandFinished(const QString &command, const QString &output, bool ok, int token);
     void configOptionsChanged();
     void modesChanged();
     // set_config_option / set_mode was rejected; the previous value stands.
@@ -318,10 +321,13 @@ private:
     QMap<QString, ConfigChange> m_configChanges;
 
     // Quiet (hidden) slash commands.
-    QStringList m_quietQueue;
+    struct QuietJob { QString text; int token = 0; };
+    QList<QuietJob> m_quietQueue;
     QString m_quietCommand;
     QString m_quietOutput;
     int m_quietReqId = -1;
+    int m_quietToken = 0;
+    int m_nextQuietToken = 0;
     QString m_deferredPrompt;          // user prompt waiting for a quiet command
     bool m_hasDeferredPrompt = false;
     int m_cancelGraceMs = 8000;

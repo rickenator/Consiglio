@@ -403,11 +403,12 @@ bool AcpClient::sendPrompt(const QString &text) {
     return dispatchPrompt(text, false);
 }
 
-bool AcpClient::runQuietCommand(const QString &text) {
-    if (!m_sessionReady || text.trimmed().isEmpty()) return false;
-    m_quietQueue.append(text);
+int AcpClient::runQuietCommand(const QString &text) {
+    if (!m_sessionReady || text.trimmed().isEmpty()) return 0;
+    const int token = ++m_nextQuietToken;
+    m_quietQueue.append(QuietJob{text, token});
     pumpQuietQueue();
-    return true;
+    return token;
 }
 
 bool AcpClient::hasQuietWork() const { return m_quietReqId >= 0 || !m_quietQueue.isEmpty(); }
@@ -418,19 +419,24 @@ void AcpClient::pumpQuietQueue() {
     if (m_quietReqId >= 0 || m_busy || !m_sessionReady || m_quietQueue.isEmpty()) {
         return;
     }
-    const QString next = m_quietQueue.takeFirst();
-    if (!dispatchPrompt(next, true)) {
-        emit quietCommandFinished(next, QString(), false);
+    const QuietJob next = m_quietQueue.takeFirst();
+    m_quietToken = next.token;
+    if (!dispatchPrompt(next.text, true)) {
+        const int token = m_quietToken;
+        m_quietToken = 0;
+        emit quietCommandFinished(next.text, QString(), false, token);
     }
 }
 
 void AcpClient::finishQuiet(bool ok) {
     const QString command = m_quietCommand;
     const QString output = m_quietOutput;
+    const int token = m_quietToken;
     m_quietReqId = -1;
+    m_quietToken = 0;
     m_quietCommand.clear();
     m_quietOutput.clear();
-    emit quietCommandFinished(command, output, ok);
+    emit quietCommandFinished(command, output, ok, token);
     if (m_hasDeferredPrompt) {
         const QString text = m_deferredPrompt;
         m_deferredPrompt.clear();
@@ -649,8 +655,10 @@ void AcpClient::resetSessionState() {
     m_commands.clear();
     if (m_quietReqId >= 0) m_pending.remove(QString::number(m_quietReqId));
     const QString droppedQuiet = m_quietCommand;
-    const QStringList droppedQueue = m_quietQueue;
+    const int droppedToken = m_quietToken;
+    const QList<QuietJob> droppedQueue = m_quietQueue;
     m_quietReqId = -1;
+    m_quietToken = 0;
     m_quietCommand.clear();
     m_quietOutput.clear();
     m_quietQueue.clear();
@@ -662,8 +670,8 @@ void AcpClient::resetSessionState() {
     m_modes.clear();
     m_currentMode.clear();
     if (hadConfig) { emit configOptionsChanged(); emit modesChanged(); }
-    if (!droppedQuiet.isEmpty()) emit quietCommandFinished(droppedQuiet, QString(), false);
-    for (const QString &q : droppedQueue) emit quietCommandFinished(q, QString(), false);
+    if (!droppedQuiet.isEmpty()) emit quietCommandFinished(droppedQuiet, QString(), false, droppedToken);
+    for (const QuietJob &q : droppedQueue) emit quietCommandFinished(q.text, QString(), false, q.token);
     m_contextUsed = 0;
     m_contextSize = 0;
     // Let the palette drop the previous session's slash commands.

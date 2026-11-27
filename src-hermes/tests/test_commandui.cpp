@@ -303,6 +303,66 @@ private slots:
         Theme::instance().setMode(Theme::Mode::Dark);
     }
 
+    void phase3PlansAndHiddenChrome() {
+        QCOMPARE(CommandUi::planFor(QStringLiteral("busy")).archetype, CommandArchetype::Picker);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("autoprune")).archetype, CommandArchetype::Picker);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("codex-runtime")).archetype, CommandArchetype::Picker);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("bg")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("moa")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("refine")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("review")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("learn")).apply, CommandApply::SendPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("init")).archetype, CommandArchetype::TextPrompt);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("resume")).apply, CommandApply::ResumeSession);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("subscription")).archetype, CommandArchetype::Info);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("upgrade")).name, QString("subscription"));
+        QCOMPARE(CommandUi::planFor(QStringLiteral("topup")).archetype, CommandArchetype::Info);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("reload-mcp")).archetype, CommandArchetype::Confirm);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("bundles")).archetype, CommandArchetype::Info);
+        QCOMPARE(CommandUi::planFor(QStringLiteral("kanban")).archetype, CommandArchetype::Info);
+        QVERIFY(CommandUi::hasNativeUi(QStringLiteral("busy")));
+        QCOMPARE(CommandUi::badgeFor(QStringLiteral("busy")), QString("Dialog"));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("footer")));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("statusbar")));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("pet")));
+        QVERIFY(CommandUi::isHiddenChrome(QStringLiteral("history")));
+        QVERIFY(!CommandUi::isHiddenChrome(QStringLiteral("busy")));
+        QVERIFY(!CommandUi::isHiddenChrome(QStringLiteral("goal")));
+        CommandHostDialog busy(CommandUi::planFor(QStringLiteral("busy")), liveCmd("busy", "Busy input"));
+        busy.setSelectedValue(QStringLiteral("steer"));
+        QCOMPARE(busy.commandLine(), QString("/busy steer"));
+        CommandHostDialog init(CommandUi::planFor(QStringLiteral("init")), liveCmd("init", "Generate AGENTS.md"));
+        QVERIFY(init.canApply());
+        QCOMPARE(init.commandLine(), QString("/init"));
+        init.setTextArgument(QStringLiteral("prefer Qt 5"));
+        QCOMPARE(init.commandLine(), QString("/init prefer Qt 5"));
+        QVERIFY(init.applyRequest().keepOpen);
+        QCOMPARE(init.findChild<QLineEdit *>(QStringLiteral("commandTextArgument"))->placeholderText(),
+                 QString("Optional notes for AGENTS.md"));
+
+        CommandHostDialog sub(CommandUi::planFor(QStringLiteral("subscription")), liveCmd("subscription", "Subscription"));
+        QVERIFY(sub.cancelButton());
+        QVERIFY(!sub.cancelButton()->isVisible());
+        QVERIFY(sub.saveButton());
+        QCOMPARE(sub.saveButton()->text(), QString("Close"));
+        // Adding a chrome button must not bring Cancel back.
+        sub.addChromeButton(QStringLiteral("Open portal"));
+        QVERIFY(!sub.cancelButton()->isVisible());
+
+        CommandHostDialog usage(CommandUi::planFor(QStringLiteral("usage")), liveCmd("usage", "Usage"));
+        QVERIFY(!usage.cancelButton()->isVisible());
+        usage.addChromeButton(QStringLiteral("Reset…"));
+        QVERIFY(!usage.cancelButton()->isVisible());
+
+        CommandHostDialog bundles(CommandUi::planFor(QStringLiteral("bundles")), liveCmd("bundles", "Skill bundles"));
+        QVERIFY(bundles.pickerList() == nullptr);
+        QVERIFY(!bundles.cancelButton()->isVisible());
+
+        CommandHostDialog moa(CommandUi::planFor(QStringLiteral("moa")), liveCmd("moa", "Mixture of agents"));
+        QCOMPARE(moa.findChild<QLineEdit *>(QStringLiteral("commandTextArgument"))->placeholderText(),
+                 QString("What should the mixture of agents work on?"));
+    }
+
     void livePanelPlansAndSeeds() {
         QCOMPARE(CommandUi::planFor(QStringLiteral("goal")).archetype, CommandArchetype::LivePanel);
         QCOMPARE(CommandUi::planFor(QStringLiteral("subgoal")).name, QString("subgoal"));

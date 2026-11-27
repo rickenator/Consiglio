@@ -53,6 +53,17 @@ QStringList CommandUi::seedCommands(const CommandPlan &plan) {
     if (n == QLatin1String("suggestions")) return {QStringLiteral("/suggestions")};
     if (n == QLatin1String("blueprint")) return {QStringLiteral("/blueprint")};
     if (n == QLatin1String("usage")) return {QStringLiteral("/usage")};
+    if (n == QLatin1String("busy")) return {QStringLiteral("/busy status")};
+    if (n == QLatin1String("autoprune")) return {QStringLiteral("/autoprune status")};
+    if (n == QLatin1String("codex-runtime")) return {QStringLiteral("/codex-runtime")};
+    if (n == QLatin1String("subscription") || n == QLatin1String("upgrade"))
+        return {QStringLiteral("/subscription")};
+    if (n == QLatin1String("topup")) return {QStringLiteral("/topup")};
+    if (n == QLatin1String("bundles")) return {QStringLiteral("/bundles")};
+    if (n == QLatin1String("plugins")) return {QStringLiteral("/plugins")};
+    if (n == QLatin1String("toolsets")) return {QStringLiteral("/toolsets")};
+    if (n == QLatin1String("curator")) return {QStringLiteral("/curator")};
+    if (n == QLatin1String("kanban")) return {QStringLiteral("/kanban")};
     if (n == QLatin1String("tools")) return {QStringLiteral("/tools")};
     if (n == QLatin1String("personality")) return {QStringLiteral("/personality")};
     if (n == QLatin1String("approvals")) return {QStringLiteral("/approvals")};

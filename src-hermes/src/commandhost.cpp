@@ -85,6 +85,18 @@ public:
         if (name() == QLatin1String("personality")) shell.buildPersonalityExtras();
     }
 
+    void seedReport(const QString &report) override {
+        if (!m_shell) return;
+        const auto items = CommandUi::itemsFromReport(report);
+        if (!items.isEmpty()) {
+            QStringList known;
+            for (const auto &it : items) known << it.value;
+            m_shell->setPickerItems(items, CommandUi::currentFromReport(report, known));
+        } else if (m_shell->pickerCount() == 0 && !report.trimmed().isEmpty()) {
+            m_shell->setBodyText(report);
+        }
+    }
+
     void seedConfig(const QList<AcpClient::ConfigOption> &options,
                     const QStringList &models) override {
         if (!m_shell) return;
@@ -141,6 +153,9 @@ public:
     void build(CommandHostDialog &shell) override {
         m_shell = &shell;
         shell.buildInfoBody();
+    }
+    void seedReport(const QString &report) override {
+        if (m_shell) m_shell->setBodyText(report);
     }
     bool dirty() const override { return true; }  // Close is always available
     QString line() const override { return slash(); }
@@ -276,6 +291,9 @@ public:
         m_shell = &shell;
         shell.buildToolsForm();
     }
+    void seedReport(const QString &report) override {
+        if (m_shell) m_shell->setBodyText(report);
+    }
     bool dirty() const override {
         return m_shell && !m_shell->toolsAction().isEmpty() && !m_shell->toolsNames().isEmpty();
     }
@@ -312,6 +330,39 @@ CommandHost *createCommandHost(const CommandPlan &plan, const CommandCatalog::Co
     if (n == QLatin1String("cron")) return new CronHost(plan, command);
     if (n == QLatin1String("suggestions")) return new SuggestionsHost(plan, command);
     if (n == QLatin1String("blueprint")) return new BlueprintHost(plan, command);
+    if (n == QLatin1String("busy"))
+        return new ChoicePickerHost(plan, command, {
+            {QStringLiteral("queue"), CommandHostDialog::tr("Queue"),
+             CommandHostDialog::tr("Hold new messages until this turn finishes")},
+            {QStringLiteral("steer"), CommandHostDialog::tr("Steer"),
+             CommandHostDialog::tr("Treat new messages as mid-turn guidance")},
+            {QStringLiteral("interrupt"), CommandHostDialog::tr("Interrupt"),
+             CommandHostDialog::tr("Stop the current turn when a new message arrives")},
+        });
+    if (n == QLatin1String("autoprune"))
+        return new ChoicePickerHost(plan, command, {
+            {QStringLiteral("on"), CommandHostDialog::tr("On"),
+             CommandHostDialog::tr("Automatically prune old sessions")},
+            {QStringLiteral("off"), CommandHostDialog::tr("Off"),
+             CommandHostDialog::tr("Keep old sessions until you delete them")},
+            {QStringLiteral("later"), CommandHostDialog::tr("Later"),
+             CommandHostDialog::tr("Ask again later")},
+        });
+    if (n == QLatin1String("codex-runtime"))
+        return new ChoicePickerHost(plan, command, {
+            {QStringLiteral("auto"), CommandHostDialog::tr("Auto"),
+             CommandHostDialog::tr("Let Hermes pick the runtime")},
+            {QStringLiteral("codex_app_server"), CommandHostDialog::tr("Codex app server"),
+             CommandHostDialog::tr("Use the Codex app-server runtime")},
+        });
+    if (n == QLatin1String("subscription") || n == QLatin1String("topup"))
+        return new BillingHost(plan, command);
+    if (n == QLatin1String("init")) return new InitHost(plan, command);
+    if (n == QLatin1String("resume")) return new ResumeHost(plan, command);
+    if (n == QLatin1String("bundles") || n == QLatin1String("plugins")
+        || n == QLatin1String("toolsets") || n == QLatin1String("curator")
+        || n == QLatin1String("kanban"))
+        return new ViewReportHost(plan, command);
 
     // Everything else is handled by the archetype's generic host, so a command
     // this build has never heard of still gets a real surface.

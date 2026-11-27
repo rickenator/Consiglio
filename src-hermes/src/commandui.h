@@ -49,6 +49,8 @@ enum class CommandApply {
     StopTurn,
     QuitApp,
     OpenSetup,      // provider / login setup
+    SendPrompt,     // compose in a dialog, then send as a visible chat turn
+    ResumeSession,  // ACP session resume from a picker
     Passthrough     // send the line to chat
 };
 
@@ -86,6 +88,7 @@ struct CommandApplyRequest {
     QStringList quietLines;       // when applying more than one quiet command (e.g. queue sync)
     bool keepOpen = false;        // live panels: apply, then refresh instead of closing
     bool reseedAfter = true;      // when keepOpen, ask Hermes for a fresh list
+    QString sessionCwd;           // workspace for ResumeSession
     QString settingsPage;
     QString paletteQuery;
 };
@@ -95,6 +98,8 @@ public:
     static CommandPlan planFor(const QString &name);
     static bool hasNativeUi(const QString &name);
     static bool isAppLink(const QString &name);
+    // TUI-only / petdex chrome: advertised or not, it stays out of menus and the palette.
+    static bool isHiddenChrome(const QString &name);
     // Palette badge: "Dialog" (native or existing Consiglio surface) or "Chat".
     static QString badgeFor(const QString &name);
     static QStringList nativeCommandNames();
@@ -210,7 +215,9 @@ public:
     QPushButton *addChromeButton(const QString &label);
     void setSaveText(const QString &text);
     void setSaveVisible(bool visible);
+    void setCancelVisible(bool visible);
     void submitApply(const CommandApplyRequest &request);
+    void focusFirstField();
     void refreshSaveEnabled() { updateSaveEnabled(); }
 
     // Live-panel test / apply helpers (forwarded to the LivePanelHost when present).
@@ -246,6 +253,7 @@ private:
     void onPickerCurrentChanged();
     void updateInfoPanel();
     void updateSaveEnabled();
+    void applyCancelVisible();
     void onSave();
     static void splitModelIdentity(const CommandPickerItem &item,
                                    QString *provider, QString *model, QString *id);
@@ -280,6 +288,7 @@ private:
     QDialogButtonBox *m_buttons = nullptr;
     QPushButton *m_save = nullptr;
     QPushButton *m_cancel = nullptr;
+    bool m_cancelVisible = true;
     QPushButton *m_refresh = nullptr;
 
     QList<CommandPickerItem> m_items;

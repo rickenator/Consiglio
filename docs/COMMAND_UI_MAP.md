@@ -113,12 +113,12 @@ Aliases share the canonical row (they open the same surface).
 | `status` | Session, model, token, and context report. | Info | Quiet `/status`, seeded with ACP usage when present. | P1 | Read-only report |
 | `context` (`ctx`) | Context-window breakdown. | Info | Quiet `/context` (`all` toggle). | P1 | Read-only report + optional All |
 | `rollback` | List or restore filesystem checkpoints. | **Live panel** | Seed quiet `/rollback`. Restore is Confirm (`/rollback <n> [--all]`) and closes. Diff selected runs `/rollback --diff N` and stays open. | P2 | Status + list + Restore/Diff + Confirm |
-| `resume` | Resume a named session. | App link / picker (P2) | Session rail covers the common case. | P2 | Console in phase 1 |
-| `bg`, `btw`, `moa` | Side / background / mixture-of-agents prompt. | Text prompt | Quiet or send as a structured run once we have a result view. | P2 | Console in phase 1 |
+| `resume` | Resume a named session. | **Picker** | ACP `listSessions` / `resumeSession`, or quiet `/resume <name>` if typed. Session rail still covers the common case. | P3 | Session list + optional name + Save |
+| `bg`, `btw`, `moa` | Side / background / mixture-of-agents prompt. | Text prompt | Save sends the composed `/bg`, `/btw`, or `/moa` line as a visible chat turn. | P3 | Prompt field + Save |
 | `agents` (`tasks`) | Active agents and tasks. | **Live panel** | Seed quiet `/agents`. View-only this pass (Refresh, no Save). | P2 | Status + list + report + Refresh |
 | `goal`, `subgoal` | Standing goal and extra criteria across turns. | **Live panel** (shared Goal dialog) | Seed `/goal status` then `/subgoal`. Save applies quiet `/goal set\|pause\|resume\|clear` or `/subgoal add\|rm\|clear`. Keep open and refresh, except where a restore-style close is clearer. | P2 | Status + subgoal list + action + Save/Cancel |
 | `heartbeat` (`hb`), `loop` (`proactive`) | Recurring prompts in this session. | **Live panel** | Seed `/heartbeat status` or `/loop status`. Save applies set/pause/resume/clear or set/stop. Keep open and refresh. | P2 | Status + interval + prompt + Save/Cancel |
-| `refine`, `review` | Memory extraction / independent review subagent. | Text prompt + confirm | Quiet `/refine` / `/review`. | P2 | Console in phase 1 |
+| `refine`, `review` | Memory extraction / independent review subagent. | Text prompt | Save sends `/refine` or `/review` (optional instructions) as a visible chat turn. | P3 | Prompt field + Save |
 | `snapshot` (`snap`) | Create, list, restore, or prune workspace snapshots. | **Live panel** | Seed `/snapshot list`. Create is Save; restore and prune are Confirm. Keep open after create; close after restore. | P2 | Status + list + Create/Restore/Prune |
 | `history`, `prompt` (`compose`), `rewind`, `clear`, `redraw`, `worktree` | CLI/TUI session tools. | — | Terminal-oriented; no ACP GUI equivalent. | P3 | Hidden or console if advertised |
 | `start`, `topic`, `discard`, `pause`, `approve`, `deny`, `sethome`, `restart` | Gateway / messaging only. | — | Not meaningful in the desktop ACP client. | P3 | Console only if advertised |
@@ -136,9 +136,9 @@ Aliases share the canonical row (they open the same surface).
 | `config` | Show or edit configuration. | App link | Existing Settings → Configuration. | P1 | Opens Settings |
 | `update` | Update the Hermes agent. | App link | Existing “Check for Updates” flow. Must keep `hermes update` working. | P1 | Existing updater dialog |
 | `login` | Sign in with a Nous account. | App link | Existing setup / Settings path. | P1 | Existing setup |
-| `autoprune` | Automatic pruning of old sessions. | Picker | Quiet `/autoprune on\|off\|later\|status`. | P2 | Console in phase 1 |
-| `codex-runtime` | Toggle Codex app-server runtime. | Picker | Quiet `/codex-runtime`. | P2 | Console in phase 1 |
-| `busy` | Mid-run message policy (queue / steer / interrupt). | Picker | Quiet `/busy`. | P2 | Console in phase 1 |
+| `autoprune` | Automatic pruning of old sessions. | **Picker** | Seed `/autoprune status`; Save applies `/autoprune on\|off\|later`. | P3 | Info panel + list + Save |
+| `codex-runtime` | Toggle Codex app-server runtime. | **Picker** | Seed `/codex-runtime`; Save applies `/codex-runtime auto\|codex_app_server`. | P3 | Info panel + list + Save |
+| `busy` | Mid-run message policy (queue / steer / interrupt). | **Picker** | Seed `/busy status`; Save applies `/busy queue\|steer\|interrupt`. | P3 | Info panel + list + Save |
 | `voice`, `wake` | Voice mode / wake word. | Settings form | Needs device UI; not this pass. | P2/P3 | Console if advertised |
 | `statusbar`, `battery`, `timestamps`, `verbose`, `focus`, `footer`, `skin`, `indicator` | TUI display toggles. | — | Terminal-only. | P3 | — |
 | `export`, `import` | Profile archive import/export. | Settings form | CLI; file picker later. | P2 | Console if advertised |
@@ -157,7 +157,7 @@ Aliases share the canonical row (they open the same surface).
 | `palette` | Fuzzy command palette. | App link | Existing Ctrl+K/P palette. | P1 | Palette |
 | `debug` | Debug report (versions, config keys; optional upload). | **Live panel** | Seed quiet `/debug`. Upload is Confirm (`/debug --upload`) and closes. | P2 | Report + Refresh + optional Confirm upload |
 | `insights` | Usage insights. | **Live panel** | Seed `/insights`. Days spinner + Run refreshes with `/insights <days>` and stays open. | P2 | Report + days + Run / Refresh |
-| `subscription` (`upgrade`), `topup` | Nous plan / billing portal. | Info + link | Quiet `/subscription` / `/topup`, then open the portal URL if present. | P2 | Console in phase 1 |
+| `subscription` (`upgrade`), `topup` | Nous plan / billing portal. | Info + link | Seed quiet `/subscription` / `/topup`. **Open portal** is enabled when the report contains a URL. | P3 | Report + Open portal + Close |
 | `diff` | Git changes in the workspace. | **Live panel** | Seed `/diff --stat`. Mode / summary / optional path + Run stays open with the new report. | P2 | Report + mode + Run / Refresh |
 | `platforms` (`gateway`), `platform`, `egress` | Gateway / Docker egress status. | Info | Meaningful mainly for gateway hosts. | P3 | Console if advertised |
 | `copy`, `paste`, `image` | TUI clipboard / attach image. | — | Consiglio already has its own attach/copy path. | P3 | — |
@@ -170,11 +170,12 @@ Aliases share the canonical row (they open the same surface).
 | `tools` | List, disable, or enable tools. | Info + picker (enable/disable is a second step) | Quiet `/tools` to list. Apply quiet `/tools enable\|disable <name…>` on Save. ACP advertises this even though the CLI marks it `cli_only`. | P1 | Report + optional selection + Save when changing |
 | `skills` | Search, inspect, and manage skills; optional install with confirm. | **Live panel** | Seed `/skills`. Search/inspect refresh the report. Install is an explicit confirmed action (`/skills install …`). Pending write approve/reject and the write-approval gate use quiet `/skills …`. | P2 | Status + list + action + Save/Confirm |
 | `memory` | Pending memory writes and the approval gate. | **Live panel** | Seed `/memory pending`. Save applies `/memory approve\|reject <id>` or `/memory write-approval on\|off`, then refreshes. | P2 | Status + pending list + action + Save/Cancel |
-| `bundles`, `learn`, `init` | Skill bundles, learn-a-skill, generate `AGENTS.md`. | Text prompt / form | Quiet commands. | P2 | Console in phase 1 |
+| `bundles`, `learn`, `init` | Skill bundles, learn-a-skill, generate `AGENTS.md`. | Info / text prompt | Bundles: view-only report. Learn: Save sends a visible `/learn` turn. Init: optional notes, quiet `/init`, stays open with the report. | P3 | Report or prompt + Save |
 | `cron` | List or control scheduled tasks. | **Live panel** | Seed `/cron`. Pause/resume/run/remove the selected id. No add wizard this pass. | P2 | List + action + Confirm/Save |
 | `suggestions` (`suggest`) | Review suggested follow-ups. | **Live panel** | Seed `/suggestions`. Save applies `/suggestions accept\|dismiss N` and refreshes. | P2 | List + Accept/Dismiss + Save |
 | `blueprint` (`bp`) | List or apply a session blueprint. | **Live panel** | Seed `/blueprint`. Save runs `/blueprint <name> [slot=value…]` directly (bare name may start a conversation on real Hermes). | P2 | Catalog list + optional slots + Save |
-| `curator`, `kanban`, `plugins`, `reload`, `reload-mcp`, `reload-skills`, `browser`, `toolsets` | Maintenance and extras. | Confirm or info | Quiet command or console. | P2/P3 | Console in phase 1 |
+| `curator`, `kanban`, `plugins`, `toolsets` | Maintenance reports. | Info (view-only) | Seed `/curator`, `/kanban`, `/plugins`, or `/toolsets`. Refresh while open. | P3 | Report + Refresh + Close |
+| `reload`, `reload-mcp`, `reload-skills` | Reload environment, MCP servers, or skills. | Confirm | Quiet `/reload`, `/reload-mcp`, or `/reload-skills` after Confirm. | P3 | Confirm/Cancel |
 | `pet`, `hatch` | Petdex mascot (CLI fun). | — | Out of scope for a polished desktop wrap. | P3 | Console if advertised |
 
 ## Phase 1 surfaces (this pass)
@@ -240,17 +241,31 @@ Unknown or post-update commands still use the **Command console**.
 14. `suggestions` / `suggest` — accept/dismiss selected
 15. `blueprint` / `bp` — pick a template + optional `slot=value`
 
-## Remaining (phase 3+)
+## Phase 3 surfaces (this pass)
 
-1. **Still console or later UI:** `learn` / `init` / `bundles`, `resume` by name
-   (session rail already covers the common case), `bg` / `btw` / `moa`,
-   `refine` / `review`, `autoprune`, `codex-runtime`, `busy`, `export` /
-   `import`, `voice` / `wake`, billing / `subscription` / `topup` with a
-   clearly-labeled link out.
+Native wraps for the remaining worthwhile console commands, TUI chrome hidden
+from menus and the palette, and a shared quiet-channel token so discovery
+pages never land in a command dialog.
+
+1. `busy`, `autoprune`, `codex-runtime` — pickers
+2. `bg`, `btw`, `moa`, `refine`, `review`, `learn` — text prompt; Save sends a visible chat turn
+3. `init` — optional notes, quiet apply, stays open with the report
+4. `resume` — session picker (ACP list/resume) plus an optional typed name
+5. `bundles`, `plugins`, `toolsets`, `curator`, `kanban` — view-only reports with Refresh
+6. `subscription` / `upgrade`, `topup` — report plus Open portal when a URL is present
+7. `reload`, `reload-mcp`, `reload-skills` — confirm
+8. **Hidden TUI / petdex chrome:** `history`, `prompt` / `compose`, `rewind`, `clear`,
+   `redraw`, `worktree`, `statusbar`, `battery`, `timestamps`, `verbose`, `focus`,
+   `footer`, `skin`, `indicator`, `copy`, `paste`, `image`, `pet`, `hatch`
+
+## Remaining
+
+1. **Still console or later UI:** `export` / `import` (file picker), `voice` / `wake`
+   (device UI), gateway-only commands (`start`, `topic`, `egress`, `platform`, …)
+   if advertised, and any skill command Hermes lists after an update.
 2. **Cron add wizard**, richer skills marketplace, and any new Hermes command
    after an update (those stay on the Command console until mapped).
-3. **Keep as console or hide:** gateway-only, TUI chrome, petdex, and any
-   command whose only honest interface is a terminal wizard.
+3. **Kept hidden:** TUI chrome and petdex, listed above.
 
 Dynamic, natural-language generation of command references and descriptions
 is a future note, not part of this pass.

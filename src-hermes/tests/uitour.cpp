@@ -177,7 +177,12 @@ static void tourDialogs(MainWindow &w, bool real) {
                                 "context", "version", "tools", "save", "plan", "queue", "steer", "yolo",
                                 "goal", "heartbeat", "loop", "agents", "memory", "skills",
                                 "rollback", "snapshot", "debug", "insights", "diff",
-                                "cron", "suggestions", "blueprint"};
+                                "cron", "suggestions", "blueprint",
+                                "busy", "autoprune", "codex-runtime",
+                                "bg", "btw", "moa", "refine", "review", "learn", "init",
+                                "resume", "bundles", "plugins", "toolsets",
+                                "curator", "kanban", "subscription", "topup",
+                                "reload", "reload-mcp", "reload-skills"};
     for (const QString &name : native) {
         QDialog *d = w.createCommandDialog(name);
         if (auto *host = qobject_cast<CommandHostDialog *>(d)) {
