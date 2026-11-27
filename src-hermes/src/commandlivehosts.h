@@ -261,13 +261,15 @@ public:
 };
 
 // View-only live report (agents, bundles, plugins, toolsets, curator, kanban).
-class ViewReportHost : public LivePanelHost {
+// bundles / plugins / toolsets / curator / kanban — a report plus Refresh/Close.
+class ViewReportHost : public CommandHost {
 public:
-    ViewReportHost(const CommandPlan &p, const CommandCatalog::Command &c) : LivePanelHost(p, c) {}
-    QList<QPair<QString, QString>> actions() const override;
-    Kind kindOf(const QString &action) const override;
-    bool showBody() const override { return true; }
-    QStringList applyLines() const override { return {}; }
+    ViewReportHost(const CommandPlan &p, const CommandCatalog::Command &c) : CommandHost(p, c) {}
+    void build(CommandHostDialog &shell) override;
+    void seedReport(const QString &report) override;
+    bool dirty() const override { return true; }
+    QString line() const override { return slash(); }
+    bool canApply() const override { return true; }
 };
 
 // Fixed-choice picker (busy, autoprune, codex-runtime). Seed highlights the current value.

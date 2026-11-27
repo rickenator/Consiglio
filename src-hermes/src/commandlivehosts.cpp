@@ -989,13 +989,13 @@ CommandApplyRequest UsageHost::request() const {
 
 // ─── View-only reports ────────────────────────────────────────────────────
 
-QList<QPair<QString, QString>> ViewReportHost::actions() const {
-    return {{QStringLiteral("refresh"), CommandHostDialog::tr("View only")}};
+void ViewReportHost::build(CommandHostDialog &shell) {
+    m_shell = &shell;
+    shell.buildInfoBody();
 }
 
-LivePanelHost::Kind ViewReportHost::kindOf(const QString &action) const {
-    Q_UNUSED(action);
-    return Kind::Never;
+void ViewReportHost::seedReport(const QString &report) {
+    if (this->shell()) this->shell()->setBodyText(report);
 }
 
 // ─── Fixed-choice pickers ─────────────────────────────────────────────────
@@ -1078,6 +1078,12 @@ void InitHost::build(CommandHostDialog &shell) {
     m_shell = &shell;
     shell.buildTextPromptBody();
     shell.buildInfoBody();
+    if (auto *body = shell.findChild<QPlainTextEdit *>(QStringLiteral("commandInfoBodyText"))) {
+        body->setMinimumHeight(Theme::instance().px(100));
+        body->setPlaceholderText(CommandHostDialog::tr(
+            "The report from /init will appear here after you Save."));
+        body->clear();
+    }
 }
 
 void InitHost::seedReport(const QString &report) {
@@ -1105,6 +1111,7 @@ void ResumeHost::build(CommandHostDialog &shell) {
     m_shell = &shell;
     shell.buildPickerBody();
     shell.buildTextPromptBody();
+    shell.setBusy(true);
 }
 
 void ResumeHost::setSessions(const QList<AcpClient::SessionInfo> &sessions) {

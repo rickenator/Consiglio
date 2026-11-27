@@ -215,6 +215,7 @@ public:
     QPushButton *addChromeButton(const QString &label);
     void setSaveText(const QString &text);
     void setSaveVisible(bool visible);
+    void setCancelVisible(bool visible);
     void submitApply(const CommandApplyRequest &request);
     void focusFirstField();
     void refreshSaveEnabled() { updateSaveEnabled(); }
@@ -252,6 +253,7 @@ private:
     void onPickerCurrentChanged();
     void updateInfoPanel();
     void updateSaveEnabled();
+    void applyCancelVisible();
     void onSave();
     static void splitModelIdentity(const CommandPickerItem &item,
                                    QString *provider, QString *model, QString *id);
@@ -286,6 +288,7 @@ private:
     QDialogButtonBox *m_buttons = nullptr;
     QPushButton *m_save = nullptr;
     QPushButton *m_cancel = nullptr;
+    bool m_cancelVisible = true;
     QPushButton *m_refresh = nullptr;
 
     QList<CommandPickerItem> m_items;

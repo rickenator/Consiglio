@@ -170,11 +170,11 @@ Aliases share the canonical row (they open the same surface).
 | `tools` | List, disable, or enable tools. | Info + picker (enable/disable is a second step) | Quiet `/tools` to list. Apply quiet `/tools enable\|disable <name…>` on Save. ACP advertises this even though the CLI marks it `cli_only`. | P1 | Report + optional selection + Save when changing |
 | `skills` | Search, inspect, and manage skills; optional install with confirm. | **Live panel** | Seed `/skills`. Search/inspect refresh the report. Install is an explicit confirmed action (`/skills install …`). Pending write approve/reject and the write-approval gate use quiet `/skills …`. | P2 | Status + list + action + Save/Confirm |
 | `memory` | Pending memory writes and the approval gate. | **Live panel** | Seed `/memory pending`. Save applies `/memory approve\|reject <id>` or `/memory write-approval on\|off`, then refreshes. | P2 | Status + pending list + action + Save/Cancel |
-| `bundles`, `learn`, `init` | Skill bundles, learn-a-skill, generate `AGENTS.md`. | Live panel / text prompt | Bundles: view-only live report. Learn: Save sends a visible `/learn` turn. Init: optional notes, quiet `/init`, stays open with the report. | P3 | Report or prompt + Save |
+| `bundles`, `learn`, `init` | Skill bundles, learn-a-skill, generate `AGENTS.md`. | Info / text prompt | Bundles: view-only report. Learn: Save sends a visible `/learn` turn. Init: optional notes, quiet `/init`, stays open with the report. | P3 | Report or prompt + Save |
 | `cron` | List or control scheduled tasks. | **Live panel** | Seed `/cron`. Pause/resume/run/remove the selected id. No add wizard this pass. | P2 | List + action + Confirm/Save |
 | `suggestions` (`suggest`) | Review suggested follow-ups. | **Live panel** | Seed `/suggestions`. Save applies `/suggestions accept\|dismiss N` and refreshes. | P2 | List + Accept/Dismiss + Save |
 | `blueprint` (`bp`) | List or apply a session blueprint. | **Live panel** | Seed `/blueprint`. Save runs `/blueprint <name> [slot=value…]` directly (bare name may start a conversation on real Hermes). | P2 | Catalog list + optional slots + Save |
-| `curator`, `kanban`, `plugins`, `toolsets` | Maintenance reports. | **Live panel** (view-only) | Seed `/curator`, `/kanban`, `/plugins`, or `/toolsets`. Refresh while open. | P3 | Status + list + report + Refresh |
+| `curator`, `kanban`, `plugins`, `toolsets` | Maintenance reports. | Info (view-only) | Seed `/curator`, `/kanban`, `/plugins`, or `/toolsets`. Refresh while open. | P3 | Report + Refresh + Close |
 | `reload`, `reload-mcp`, `reload-skills` | Reload environment, MCP servers, or skills. | Confirm | Quiet `/reload`, `/reload-mcp`, or `/reload-skills` after Confirm. | P3 | Confirm/Cancel |
 | `pet`, `hatch` | Petdex mascot (CLI fun). | — | Out of scope for a polished desktop wrap. | P3 | Console if advertised |
 
@@ -251,7 +251,7 @@ pages never land in a command dialog.
 2. `bg`, `btw`, `moa`, `refine`, `review`, `learn` — text prompt; Save sends a visible chat turn
 3. `init` — optional notes, quiet apply, stays open with the report
 4. `resume` — session picker (ACP list/resume) plus an optional typed name
-5. `bundles`, `plugins`, `toolsets`, `curator`, `kanban` — view-only live reports
+5. `bundles`, `plugins`, `toolsets`, `curator`, `kanban` — view-only reports with Refresh
 6. `subscription` / `upgrade`, `topup` — report plus Open portal when a URL is present
 7. `reload`, `reload-mcp`, `reload-skills` — confirm
 8. **Hidden TUI / petdex chrome:** `history`, `prompt` / `compose`, `rewind`, `clear`,
