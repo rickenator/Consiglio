@@ -33,7 +33,7 @@ public:
     // The remote command string sent to ssh (single argv token).
     static QString probeCommand();
     // Parse the probe's stdout/stderr. Pure; the tests drive it directly.
-    static RemoteProbe parse(const QByteArray &stdout, const QByteArray &stderr, int exitCode);
+    static RemoteProbe parse(const QByteArray &stdoutBytes, const QByteArray &stderrBytes, int exitCode);
 
     // Blocking probe with a timeout (tests, screenshot tour). The UI uses
     // probeAsync so a slow or unreachable host never freezes the window.
